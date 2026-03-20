@@ -471,6 +471,11 @@ for (const source of mqttSources) {
           cache.invalidate('node:' + p.pubKey);
           cache.invalidate('health:' + p.pubKey);
           cache.invalidate('bulk-health');
+
+          // Cross-reference: if this node's pubkey matches an observer, backfill observer name
+          if (p.name && p.pubKey) {
+            db.updateObserverStatus({ id: p.pubKey, name: p.name });
+          }
         }
 
         if (observerId) {
