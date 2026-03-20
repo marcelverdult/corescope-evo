@@ -69,7 +69,44 @@ See [PERFORMANCE.md](PERFORMANCE.md) for the full benchmark.
 
 ## Quick Start
 
-### Prerequisites
+### Docker (Recommended)
+
+The easiest way to run MeshCore Analyzer. Includes Mosquitto MQTT broker — everything in one container.
+
+```bash
+docker build -t meshcore-analyzer .
+docker run -d \
+  --name meshcore-analyzer \
+  -p 3000:3000 \
+  -p 1883:1883 \
+  -v meshcore-data:/app/data \
+  meshcore-analyzer
+```
+
+Open `http://localhost:3000`. Point your MeshCore gateway's MQTT to `<host-ip>:1883`.
+
+**Custom config:**
+```bash
+# Copy and edit the example config
+cp config.example.json config.json
+# Edit config.json with your channel keys, regions, etc.
+
+docker run -d \
+  --name meshcore-analyzer \
+  -p 3000:3000 \
+  -p 1883:1883 \
+  -v meshcore-data:/app/data \
+  -v $(pwd)/config.json:/app/config.json \
+  meshcore-analyzer
+```
+
+**Persist your database** across container rebuilds by using a named volume (`meshcore-data`) or bind mount (`-v ./data:/app/data`).
+
+### Manual Install
+
+### Manual Install
+
+#### Prerequisites
 
 - **Node.js** 18+ (tested with 22.x)
 - **MQTT broker** (Mosquitto recommended) — optional, can inject packets via API

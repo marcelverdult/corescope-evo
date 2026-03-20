@@ -1,0 +1,14 @@
+# Docker
+.git
+node_modules
+data
+config.json
+*.db
+*.db-shm
+*.db-wal
+*.bak
+benchmark*.sh
+benchmark*.js
+PERFORMANCE.md
+docs/
+.gitignore
