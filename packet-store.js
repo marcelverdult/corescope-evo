@@ -161,22 +161,20 @@ class PacketStore {
       if (node) {
         // Resolve name to pubkey if needed
         let pubkey = node;
+        let nodeName = node;
         if (!this.byNode.has(node)) {
           try {
-            const row = this.db.prepare("SELECT public_key FROM nodes WHERE public_key = ? OR name = ? LIMIT 1").get(node, node);
-            if (row) pubkey = row.public_key;
+            const row = this.db.prepare("SELECT public_key, name FROM nodes WHERE public_key = ? OR name = ? LIMIT 1").get(node, node);
+            if (row) { pubkey = row.public_key; nodeName = row.name || node; }
           } catch {}
         }
+        // Combine: byNode index hits + text search by both name and pubkey
         const indexed = this.byNode.get(pubkey);
-        if (indexed) {
-          const idSet = new Set(indexed.map(p => p.id));
-          results = results.filter(p => idSet.has(p.id));
-        } else {
-          // Text search fallback (node name)
-          results = results.filter(p =>
-            p.decoded_json && p.decoded_json.includes(node)
-          );
-        }
+        const idSet = indexed ? new Set(indexed.map(p => p.id)) : new Set();
+        results = results.filter(p =>
+          idSet.has(p.id) ||
+          (p.decoded_json && (p.decoded_json.includes(nodeName) || p.decoded_json.includes(pubkey)))
+        );
       }
     }
 
