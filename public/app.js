@@ -464,7 +464,7 @@ window.addEventListener('DOMContentLoaded', () => {
         const chList = Array.isArray(channels) ? channels : [];
         for (const c of chList) {
           if (c.name && c.name.toLowerCase().includes(q.toLowerCase())) {
-            html += `<div class="search-result-item" onclick="location.hash='#/channels?ch=${c.channel_hash}';document.getElementById('searchOverlay').classList.add('hidden')">
+            html += `<div class="search-result-item" onclick="location.hash='#/channels/${c.channel_hash}';document.getElementById('searchOverlay').classList.add('hidden')">
               <span class="search-result-type">Channel</span>${c.name}</div>`;
           }
         }

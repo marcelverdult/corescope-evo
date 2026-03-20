@@ -211,7 +211,7 @@
     });
   }
 
-  function init(app) {
+  function init(app, routeParam) {
     app.innerHTML = `<div class="ch-layout">
       <div class="ch-sidebar" aria-label="Channel list">
         <div class="ch-sidebar-header">
@@ -235,7 +235,9 @@
       </div>
     </div>`;
 
-    loadChannels();
+    loadChannels().then(() => {
+      if (routeParam) selectChannel(routeParam);
+    });
 
     // #89: Sidebar resize handle
     (function () {
@@ -438,6 +440,7 @@
 
   async function selectChannel(hash) {
     selectedHash = hash;
+    history.replaceState(null, '', `#/channels/${hash}`);
     renderChannelList();
     const ch = channels.find(c => c.hash === hash);
     const name = ch?.name || `Channel ${hash}`;
