@@ -188,6 +188,18 @@ app.get('/api/config/cache', (req, res) => {
   res.json(config.cacheTTL || {});
 });
 
+app.get('/api/config/regions', (req, res) => {
+  // Merge config regions with any IATA codes seen from observers
+  const regions = { ...(config.regions || {}) };
+  try {
+    const rows = db.db.prepare("SELECT DISTINCT iata FROM observers WHERE iata IS NOT NULL").all();
+    for (const r of rows) {
+      if (r.iata && !regions[r.iata]) regions[r.iata] = r.iata; // fallback to code itself
+    }
+  } catch {}
+  res.json(regions);
+});
+
 app.get('/api/perf', (req, res) => {
   const summary = {};
   for (const [path, ep] of Object.entries(perfStats.endpoints)) {
@@ -1664,7 +1676,7 @@ app.get('/api/observers', (req, res) => {
   const observers = db.getObservers();
   const oneHourAgo = new Date(Date.now() - 3600000).toISOString();
   // Join observer location from nodes table (observers are nodes — same pubkey)
-  const nodeLocStmt = db.db.prepare("SELECT lat, lon, role FROM nodes WHERE public_key = ?");
+  const nodeLocStmt = db.db.prepare("SELECT lat, lon, role FROM nodes WHERE public_key = ? COLLATE NOCASE");
   const result = observers.map(o => {
     const obsPackets = pktStore.byObserver.get(o.id) || [];
     const lastHour = { count: obsPackets.filter(p => p.timestamp > oneHourAgo).length };

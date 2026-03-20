@@ -1090,11 +1090,10 @@
     return '<div class="byop-row"><span class="byop-key">' + key + '</span><span class="byop-val">' + val + '</span></div>';
   }
 
-  // Load regions from config
+  // Load regions from config API
   (async () => {
     try {
-      // We'll use a simple approach - hardcode from config
-      regionMap = {"SJC":"San Jose, US","SFO":"San Francisco, US","OAK":"Oakland, US","MRY":"Monterey, US","LAR":"Los Angeles, US"};
+      regionMap = await api('/config/regions', { ttl: 3600 });
     } catch {}
   })();
 

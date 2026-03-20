@@ -268,6 +268,9 @@
 
   async function loadNodes() {
     try {
+      // Load regions from config + observed IATAs
+      try { REGION_NAMES = await api('/config/regions', { ttl: 3600 }); } catch {}
+
       const data = await api(`/nodes?limit=10000&lastHeard=${filters.lastHeard}`, { ttl: CLIENT_TTL.nodeList });
       nodes = data.nodes || [];
 
@@ -308,7 +311,7 @@
     }
   }
 
-  const REGION_NAMES = { SJC: 'San Jose', SFO: 'San Francisco', OAK: 'Oakland', MTV: 'Mountain View', SCZ: 'Santa Cruz', MRY: 'Monterey', PAO: 'Palo Alto' };
+  let REGION_NAMES = {};
 
   function buildJumpButtons() {
     const el = document.getElementById('mcJumps');
