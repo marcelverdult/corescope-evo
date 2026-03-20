@@ -40,7 +40,8 @@
     tip.id = 'chNodeTooltip';
     tip.className = 'ch-node-tooltip';
     tip.setAttribute('role', 'tooltip');
-    const role = node.is_repeater ? '📡 Repeater' : node.is_room ? '🏠 Room' : node.is_sensor ? '🌡 Sensor' : '📻 Companion';
+    const roleKey = node.role || (node.is_repeater ? 'repeater' : node.is_room ? 'room' : node.is_sensor ? 'sensor' : 'companion');
+    const role = (ROLE_EMOJI[roleKey] || '●') + ' ' + (ROLE_LABELS[roleKey] || roleKey);
     const lastSeen = node.last_seen ? timeAgo(node.last_seen) : 'unknown';
     tip.innerHTML = `<div class="ch-tooltip-name">${escapeHtml(node.name)}</div>
       <div class="ch-tooltip-role">${role}</div>
@@ -113,7 +114,8 @@
       const detail = await api('/nodes/' + encodeURIComponent(node.public_key), { ttl: CLIENT_TTL.nodeDetail });
       const n = detail.node;
       const adverts = detail.recentAdverts || [];
-      const role = n.is_repeater ? '📡 Repeater' : n.is_room ? '🏠 Room' : n.is_sensor ? '🌡 Sensor' : '📻 Companion';
+      const roleKey = n.role || (n.is_repeater ? 'repeater' : n.is_room ? 'room' : n.is_sensor ? 'sensor' : 'companion');
+      const role = (ROLE_EMOJI[roleKey] || '●') + ' ' + (ROLE_LABELS[roleKey] || roleKey);
       const lastSeen = n.last_seen ? timeAgo(n.last_seen) : 'unknown';
 
       panel.innerHTML = `<div class="ch-node-panel-header">

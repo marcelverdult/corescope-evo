@@ -97,8 +97,8 @@
 
     // Health status
     const ago = obs.last_seen ? Date.now() - new Date(obs.last_seen).getTime() : Infinity;
-    const statusCls = ago < 600000 ? 'health-green' : ago < 3600000 ? 'health-yellow' : 'health-red';
-    const statusLabel = ago < 600000 ? 'Online' : ago < 3600000 ? 'Stale' : 'Offline';
+    const statusCls = ago < 600000 ? 'health-green' : ago < HEALTH_THRESHOLDS.nodeDegradedMs ? 'health-yellow' : 'health-red';
+    const statusLabel = ago < 600000 ? 'Online' : ago < HEALTH_THRESHOLDS.nodeDegradedMs ? 'Stale' : 'Offline';
 
     el.innerHTML = `
       <div class="obs-info-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:20px">

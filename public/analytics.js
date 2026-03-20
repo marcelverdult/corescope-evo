@@ -1129,7 +1129,7 @@
     // Render minimap
     if (hasMap && typeof L !== 'undefined') {
       const map = L.map('subpathMap', { zoomControl: false, attributionControl: false });
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 18 }).addTo(map);
+      L.tileLayer(getTileUrl(), { maxZoom: 18 }).addTo(map);
 
       const latlngs = [];
       nodesWithLoc.forEach((n, i) => {
@@ -1182,7 +1182,7 @@
         return myKeys.has(n.public_key) ? ' <span style="color:var(--accent);font-size:10px">★ MINE</span>' : '';
       }
 
-      const ROLE_COLORS = { repeater: '#dc2626', companion: '#2563eb', room: '#16a34a', sensor: '#d97706' };
+      // ROLE_COLORS from shared roles.js
 
       el.innerHTML = `
         <div class="analytics-section">

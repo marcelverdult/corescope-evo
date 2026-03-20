@@ -253,7 +253,7 @@
         const obs = h.observers || [];
 
         const age = stats.lastHeard ? Date.now() - new Date(stats.lastHeard).getTime() : null;
-        const status = age === null ? 'silent' : age < 3600000 ? 'healthy' : age < 86400000 ? 'degraded' : 'silent';
+        const status = age === null ? 'silent' : age < HEALTH_THRESHOLDS.nodeDegradedMs ? 'healthy' : age < HEALTH_THRESHOLDS.nodeSilentMs ? 'degraded' : 'silent';
         const statusDot = status === 'healthy' ? '🟢' : status === 'degraded' ? '🟡' : '🔴';
         const statusText = status === 'healthy' ? 'Active' : status === 'degraded' ? 'Degraded' : 'Silent';
         const name = node.name || mn.name || truncate(mn.pubkey, 12);
@@ -403,8 +403,8 @@
       if (stats.lastHeard) {
         const ageMs = Date.now() - new Date(stats.lastHeard).getTime();
         const ago = timeAgo(stats.lastHeard);
-        if (ageMs < 3600000) { status = 'healthy'; color = 'green'; statusMsg = `Last heard ${ago}`; }
-        else if (ageMs < 86400000) { status = 'degraded'; color = 'yellow'; statusMsg = `Last heard ${ago}`; }
+        if (ageMs < HEALTH_THRESHOLDS.nodeDegradedMs) { status = 'healthy'; color = 'green'; statusMsg = `Last heard ${ago}`; }
+        else if (ageMs < HEALTH_THRESHOLDS.nodeSilentMs) { status = 'degraded'; color = 'yellow'; statusMsg = `Last heard ${ago}`; }
         else { statusMsg = `Last heard ${ago}`; }
       }
 

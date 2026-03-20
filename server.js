@@ -7,6 +7,23 @@ const mqtt = require('mqtt');
 const path = require('path');
 const config = require('./config.json');
 const decoder = require('./decoder');
+
+// Health thresholds — configurable with sensible defaults
+const _ht = config.healthThresholds || {};
+const HEALTH = {
+  infraDegradedMs: _ht.infraDegradedMs || 86400000,
+  infraSilentMs:   _ht.infraSilentMs   || 259200000,
+  nodeDegradedMs:  _ht.nodeDegradedMs  || 3600000,
+  nodeSilentMs:    _ht.nodeSilentMs    || 86400000
+};
+function getHealthMs(role) {
+  const isInfra = role === 'repeater' || role === 'room';
+  return {
+    degradedMs: isInfra ? HEALTH.infraDegradedMs : HEALTH.nodeDegradedMs,
+    silentMs:   isInfra ? HEALTH.infraSilentMs   : HEALTH.nodeSilentMs
+  };
+}
+const MAX_HOP_DIST_SERVER = config.maxHopDist || 1.8;
 const crypto = require('crypto');
 const PacketStore = require('./packet-store');
 
@@ -188,6 +205,23 @@ app.get('/api/config/cache', (req, res) => {
   res.json(config.cacheTTL || {});
 });
 
+// Expose all client-side config (roles, thresholds, tiles, limits, etc.)
+app.get('/api/config/client', (req, res) => {
+  res.json({
+    roles: config.roles || null,
+    healthThresholds: config.healthThresholds || null,
+    tiles: config.tiles || null,
+    snrThresholds: config.snrThresholds || null,
+    distThresholds: config.distThresholds || null,
+    maxHopDist: config.maxHopDist || null,
+    limits: config.limits || null,
+    perfSlowMs: config.perfSlowMs || null,
+    wsReconnectMs: config.wsReconnectMs || null,
+    cacheInvalidateMs: config.cacheInvalidateMs || null,
+    externalUrls: config.externalUrls || null
+  });
+});
+
 app.get('/api/config/regions', (req, res) => {
   // Merge config regions with any IATA codes seen from observers
   const regions = { ...(config.regions || {}) };
@@ -312,7 +346,7 @@ function geoDist(lat1, lon1, lat2, lon2) { return Math.sqrt((lat1 - lat2) ** 2 +
 // Sequential hop disambiguation: resolve 1-byte prefixes to best-matching nodes
 // Returns array of {hop, name, lat, lon, pubkey, ambiguous, unreliable} per hop
 function disambiguateHops(hops, allNodes) {
-  const MAX_HOP_DIST = 1.8; // ~200km
+  const MAX_HOP_DIST = MAX_HOP_DIST_SERVER;
 
   // Build prefix index on first call (cached on allNodes array)
   if (!allNodes._prefixIdx) {
@@ -970,8 +1004,7 @@ app.get('/api/nodes/network-status', (req, res) => {
     const ls = n.last_seen ? new Date(n.last_seen).getTime() : 0;
     const age = now - ls;
     const isInfra = r === 'repeater' || r === 'room';
-    const degradedMs = isInfra ? 86400000 : 3600000;
-    const silentMs = isInfra ? 259200000 : 86400000;
+    const { degradedMs, silentMs } = getHealthMs(r);
     if (age < degradedMs) active++;
     else if (age < silentMs) degraded++;
     else silent++;
@@ -1520,7 +1553,7 @@ app.get('/api/resolve-hops', (req, res) => {
   }
 
   // Sanity check: drop hops impossibly far from both neighbors (>200km ≈ 1.8°)
-  const MAX_HOP_DIST = 1.8;
+  const MAX_HOP_DIST = MAX_HOP_DIST_SERVER;
   for (let i = 0; i < hops.length; i++) {
     const pos = hopPositions[hops[i]];
     if (!pos) continue;

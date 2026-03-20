@@ -24,7 +24,7 @@
   let wsHandler = null;
   let detailMap = null;
 
-  const ROLE_COLORS = { repeater: '#3b82f6', room: '#6b7280', companion: '#22c55e', sensor: '#f59e0b' };
+  // ROLE_COLORS loaded from shared roles.js
   const TABS = [
     { key: 'all', label: 'All' },
     { key: 'repeater', label: 'Repeaters' },
@@ -107,9 +107,7 @@
       // Repeaters/rooms: flood advert every 12-24h, so degraded after 24h, silent after 72h
       // Companions/sensors: user-initiated adverts, shorter thresholds
       const role = (n.role || '').toLowerCase();
-      const isInfra = role === 'repeater' || role === 'room';
-      const degradedMs = isInfra ? 86400000 : 3600000;   // 24h : 1h
-      const silentMs = isInfra ? 259200000 : 86400000;    // 72h : 24h
+      const { degradedMs, silentMs } = getHealthThresholds(role);
       const statusLabel = statusAge < degradedMs ? '🟢 Active' : statusAge < silentMs ? '🟡 Degraded' : '🔴 Silent';
 
       body.innerHTML = `
@@ -426,9 +424,7 @@
     const lastHeard = stats.lastHeard;
     const statusAge = lastHeard ? (Date.now() - new Date(lastHeard).getTime()) : Infinity;
     const role = (n.role || '').toLowerCase();
-    const isInfra = role === 'repeater' || role === 'room';
-    const degradedMs = isInfra ? 86400000 : 3600000;
-    const silentMs = isInfra ? 259200000 : 86400000;
+    const { degradedMs, silentMs } = getHealthThresholds(role);
     const statusLabel = statusAge < degradedMs ? '🟢 Active' : statusAge < silentMs ? '🟡 Degraded' : '🔴 Silent';
     const totalPackets = stats.totalPackets || n.advert_count || 0;
 

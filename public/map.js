@@ -17,17 +17,7 @@
   // Safe escape — falls back to identity if app.js hasn't loaded yet
   const safeEsc = (typeof esc === 'function') ? esc : function (s) { return s; };
 
-  // Distinct shapes + high-contrast WCAG AA colors for each role
-  const ROLE_STYLE = {
-    repeater:  { color: '#dc2626', shape: 'diamond',  radius: 10, weight: 2 },  // red diamond
-    companion: { color: '#2563eb', shape: 'circle',   radius: 8,  weight: 2 },  // blue circle
-    room:      { color: '#16a34a', shape: 'square',   radius: 9,  weight: 2 },  // green square
-    sensor:    { color: '#d97706', shape: 'triangle', radius: 8,  weight: 2 },  // amber triangle
-    observer:  { color: '#8b5cf6', shape: 'star',     radius: 11, weight: 2 },  // purple star
-  };
-
-  const ROLE_LABELS = { repeater: 'Repeaters', companion: 'Companions', room: 'Room Servers', sensor: 'Sensors', observer: 'Observers' };
-  const ROLE_COLORS = { repeater: '#dc2626', companion: '#2563eb', room: '#16a34a', sensor: '#d97706', observer: '#8b5cf6' };
+  // Roles loaded from shared roles.js (ROLE_STYLE, ROLE_LABELS, ROLE_COLORS globals)
 
   function makeMarkerIcon(role) {
     const s = ROLE_STYLE[role] || ROLE_STYLE.companion;
@@ -119,18 +109,16 @@
     }
     map = L.map('leaflet-map', { zoomControl: true }).setView(initCenter, initZoom);
 
-    const DARK_TILES = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
-    const LIGHT_TILES = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark' ||
       (document.documentElement.getAttribute('data-theme') !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-    const tileLayer = L.tileLayer(isDark ? DARK_TILES : LIGHT_TILES, {
+    const tileLayer = L.tileLayer(isDark ? TILE_DARK : TILE_LIGHT, {
       attribution: '© OpenStreetMap © CartoDB',
       maxZoom: 19,
     }).addTo(map);
     const _mapThemeObs = new MutationObserver(function () {
       const dark = document.documentElement.getAttribute('data-theme') === 'dark' ||
         (document.documentElement.getAttribute('data-theme') !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-      tileLayer.setUrl(dark ? DARK_TILES : LIGHT_TILES);
+      tileLayer.setUrl(dark ? TILE_DARK : TILE_LIGHT);
     });
     _mapThemeObs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 

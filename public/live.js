@@ -30,10 +30,7 @@
     timelineFetchedScope: 0, // last fetched scope to avoid redundant fetches
   };
 
-  const ROLE_COLORS = {
-    repeater: '#3b82f6', companion: '#06b6d4', room: '#a855f7',
-    sensor: '#f59e0b', unknown: '#6b7280'
-  };
+  // ROLE_COLORS loaded from shared roles.js (includes 'unknown')
 
   const TYPE_COLORS = {
     ADVERT: '#22c55e', GRP_TXT: '#3b82f6', TXT_MSG: '#f59e0b', ACK: '#6b7280',
@@ -656,15 +653,13 @@
 
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark' ||
       (document.documentElement.getAttribute('data-theme') !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-    const DARK_TILES = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
-    const LIGHT_TILES = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
-    let tileLayer = L.tileLayer(isDark ? DARK_TILES : LIGHT_TILES, { maxZoom: 19 }).addTo(map);
+    let tileLayer = L.tileLayer(isDark ? TILE_DARK : TILE_LIGHT, { maxZoom: 19 }).addTo(map);
 
     // Swap tiles when theme changes
     const _themeObs = new MutationObserver(function () {
       const dark = document.documentElement.getAttribute('data-theme') === 'dark' ||
         (document.documentElement.getAttribute('data-theme') !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-      tileLayer.setUrl(dark ? DARK_TILES : LIGHT_TILES);
+      tileLayer.setUrl(dark ? TILE_DARK : TILE_LIGHT);
     });
     _themeObs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
     L.control.zoom({ position: 'topright' }).addTo(map);
@@ -1059,7 +1054,7 @@
         if (msg.type === 'packet') bufferPacket(msg.data);
       } catch {}
     };
-    ws.onclose = () => setTimeout(connectWS, 3000);
+    ws.onclose = () => setTimeout(connectWS, WS_RECONNECT_MS);
     ws.onerror = () => {};
   }
 
@@ -1154,7 +1149,7 @@
 
     // Sanity check: drop hops that are impossibly far from both neighbors (>200km ≈ 1.8°)
     // These are almost certainly 1-byte prefix collisions with distant nodes
-    const MAX_HOP_DIST = 1.8;
+    // MAX_HOP_DIST from shared roles.js
     for (let i = 0; i < raw.length; i++) {
       if (!raw[i].known || !raw[i].pos) continue;
       const prev = i > 0 && raw[i-1].known && raw[i-1].pos ? raw[i-1].pos : null;
