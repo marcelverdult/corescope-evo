@@ -4,3 +4,5 @@ data/
 *.db
 *.db-journal
 config.json
+data-lincomatic/
+config-lincomatic.json
