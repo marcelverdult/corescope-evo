@@ -3,6 +3,13 @@
 
 (function () {
   let packets = [];
+
+  // Resolve observer_id to friendly name from loaded observers list
+  function obsName(id) {
+    if (!id) return '—';
+    const o = observers.find(ob => ob.id === id);
+    return o?.name || id;
+  }
   let selectedId = null;
   let groupByHash = true;
   let filters = {};
@@ -624,7 +631,7 @@
           <td class="mono col-hash">${truncate(p.hash || '—', 8)}</td>
           <td class="col-size">${groupSize ? groupSize + 'B' : '—'}</td>
           <td class="col-type">${p.payload_type != null ? `<span class="badge badge-${groupTypeClass}">${groupTypeName}</span>` : '—'}</td>
-          <td class="col-observer">${isSingle ? truncate(p.observer_name || p.observer_id || '—', 16) : truncate(p.observer_name || p.observer_id || '—', 10) + (p.observer_count > 1 ? ' +' + (p.observer_count - 1) : '')}</td>
+          <td class="col-observer">${isSingle ? truncate(obsName(p.observer_id), 16) : truncate(obsName(p.observer_id), 10) + (p.observer_count > 1 ? ' +' + (p.observer_count - 1) : '')}</td>
           <td class="col-path"><span class="path-hops">${groupPathStr}</span></td>
           <td class="col-rpt">${isSingle ? '' : p.count}</td>
           <td class="col-details">${getDetailPreview((() => { try { return JSON.parse(p.decoded_json || '{}'); } catch { return {}; } })())}</td>
@@ -645,7 +652,7 @@
               <td class="mono col-hash">${truncate(c.hash || '', 8)}</td>
               <td class="col-size">${size}B</td>
               <td class="col-type"><span class="badge badge-${typeClass}">${typeName}</span></td>
-              <td class="col-observer">${truncate(c.observer_name || c.observer_id || '—', 16)}</td>
+              <td class="col-observer">${truncate(obsName(c.observer_id), 16)}</td>
               <td class="col-path"><span class="path-hops">${childPathStr}</span></td>
               <td class="col-rpt"></td>
               <td class="col-details">${getDetailPreview((() => { try { return JSON.parse(c.decoded_json); } catch { return {}; } })())}</td>
@@ -675,7 +682,7 @@
         <td class="mono col-hash">${truncate(p.hash || String(p.id), 8)}</td>
         <td class="col-size">${size}B</td>
         <td class="col-type"><span class="badge badge-${typeClass}">${typeName}</span></td>
-        <td class="col-observer">${truncate(p.observer_name || p.observer_id || '—', 16)}</td>
+        <td class="col-observer">${truncate(obsName(p.observer_id), 16)}</td>
         <td class="col-path"><span class="path-hops">${pathStr}</span></td>
         <td class="col-rpt"></td>
         <td class="col-details">${detail}</td>
@@ -795,7 +802,7 @@
       <div class="detail-hash">${pkt.hash || 'Packet #' + pkt.id}</div>
       ${messageHtml}
       <dl class="detail-meta">
-        <dt>Observer</dt><dd>${pkt.observer_name || pkt.observer_id || '—'}</dd>
+        <dt>Observer</dt><dd>${obsName(pkt.observer_id)}</dd>
         <dt>SNR / RSSI</dt><dd>${snr != null ? snr + ' dB' : '—'} / ${rssi != null ? rssi + ' dBm' : '—'}</dd>
         <dt>Route Type</dt><dd>${routeTypeName(pkt.route_type)}</dd>
         <dt>Payload Type</dt><dd><span class="badge badge-${payloadTypeColor(pkt.payload_type)}">${typeName}</span></dd>
@@ -836,7 +843,7 @@
           id: pkt.id, hash: pkt.hash,
           _ts: new Date(pkt.timestamp).getTime(),
           decoded: { header: { payloadTypeName: typeName }, payload: decoded, path: { hops: pathHops } },
-          snr: pkt.snr, rssi: pkt.rssi, observer: pkt.observer_name
+          snr: pkt.snr, rssi: pkt.rssi, observer: obsName(pkt.observer_id)
         };
         sessionStorage.setItem('replay-packet', JSON.stringify(livePkt));
         window.location.hash = '#/live';
@@ -848,7 +855,7 @@
     if (routeBtn && pathHops.length) {
       routeBtn.addEventListener('click', async () => {
         try {
-          const obsId = pkt.observer_name || pkt.observer_id || '';
+          const obsId = obsName(pkt.observer_id);
           const observerParam = obsId ? '&observer=' + encodeURIComponent(obsId) : '';
           const resp = await fetch('/api/resolve-hops?hops=' + encodeURIComponent(pathHops.join(',')) + observerParam);
           const data = await resp.json();
