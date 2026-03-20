@@ -9,7 +9,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --production
 
 # Copy application
-COPY server.js db.js packet-store.js config.example.json ./
+COPY *.js config.example.json ./
 COPY public/ ./public/
 
 # Supervisor + Mosquitto + Caddy config
