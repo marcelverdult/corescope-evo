@@ -1525,16 +1525,14 @@ app.get('/api/nodes/:pubkey/analytics', (req, res) => {
   res.json(data);
 });
 
-// Subpath frequency analysis
-app.get('/api/analytics/subpaths', (req, res) => {
-  const _ck = 'analytics:subpaths:' + (req.query.minLen||2) + ':' + (req.query.maxLen||8) + ':' + (req.query.limit||100);
-  const _c = cache.get(_ck); if (_c) return res.json(_c);
-  const minLen = Math.max(2, Number(req.query.minLen) || 2);
-  const maxLen = Number(req.query.maxLen) || 8;
+// Pre-compute all subpath data in a single pass (shared across all subpath queries)
+function computeAllSubpaths() {
+  const _c = cache.get('analytics:subpaths:master');
+  if (_c) return _c;
+
   const packets = pktStore.filter(p => p.path_json && p.path_json !== '[]');
   const allNodes = db.db.prepare('SELECT public_key, name, lat, lon FROM nodes WHERE name IS NOT NULL').all();
 
-  // Disambiguate per path with caching (same hop sequence = same result)
   const disambigCache = {};
   function cachedDisambiguate(hops) {
     const key = hops.join(',');
@@ -1544,7 +1542,8 @@ app.get('/api/analytics/subpaths', (req, res) => {
     return result;
   }
 
-  const subpathCounts = {};
+  // Single pass: extract ALL subpaths (lengths 2-8) at once
+  const subpathsByLen = {}; // len → { path → { count, raw } }
   let totalPaths = 0;
 
   for (const pkt of packets) {
@@ -1556,20 +1555,44 @@ app.get('/api/analytics/subpaths', (req, res) => {
     const resolved = cachedDisambiguate(hops);
     const named = resolved.map(r => r.name);
 
-    // Extract all subpaths of length minLen..maxLen
-    for (let len = minLen; len <= Math.min(maxLen, named.length); len++) {
+    for (let len = 2; len <= Math.min(8, named.length); len++) {
+      if (!subpathsByLen[len]) subpathsByLen[len] = {};
       for (let start = 0; start <= named.length - len; start++) {
         const sub = named.slice(start, start + len).join(' → ');
         const raw = hops.slice(start, start + len).join(',');
-        if (!subpathCounts[sub]) subpathCounts[sub] = { count: 0, raw };
-        subpathCounts[sub].count++;
+        if (!subpathsByLen[len][sub]) subpathsByLen[len][sub] = { count: 0, raw };
+        subpathsByLen[len][sub].count++;
       }
     }
   }
 
-  // Sort by frequency, return top results
+  const master = { subpathsByLen, totalPaths };
+  cache.set('analytics:subpaths:master', master, TTL.analyticsSubpaths);
+  return master;
+}
+
+// Subpath frequency analysis — reads from pre-computed master
+app.get('/api/analytics/subpaths', (req, res) => {
+  const _ck = 'analytics:subpaths:' + (req.query.minLen||2) + ':' + (req.query.maxLen||8) + ':' + (req.query.limit||100);
+  const _c = cache.get(_ck); if (_c) return res.json(_c);
+
+  const minLen = Math.max(2, Number(req.query.minLen) || 2);
+  const maxLen = Number(req.query.maxLen) || 8;
   const limit = Number(req.query.limit) || 100;
-  const ranked = Object.entries(subpathCounts)
+
+  const { subpathsByLen, totalPaths } = computeAllSubpaths();
+
+  // Merge requested length ranges
+  const merged = {};
+  for (let len = minLen; len <= maxLen; len++) {
+    const bucket = subpathsByLen[len] || {};
+    for (const [path, data] of Object.entries(bucket)) {
+      if (!merged[path]) merged[path] = { count: 0, raw: data.raw };
+      merged[path].count += data.count;
+    }
+  }
+
+  const ranked = Object.entries(merged)
     .map(([path, data]) => ({
       path,
       rawHops: data.raw.split(','),
@@ -1690,6 +1713,12 @@ app.get('/{*splat}', (req, res) => {
 // --- Start ---
 server.listen(process.env.PORT || config.port, () => {
   console.log(`MeshCore Analyzer running on http://localhost:${config.port}`);
+  // Pre-warm expensive caches on startup
+  setTimeout(() => {
+    const t0 = Date.now();
+    try { computeAllSubpaths(); } catch (e) { console.error('[pre-warm] subpaths:', e.message); }
+    console.log(`[pre-warm] subpaths: ${Date.now() - t0}ms`);
+  }, 1000);
 });
 
 module.exports = { app, server, wss };
