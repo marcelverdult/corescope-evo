@@ -1663,30 +1663,13 @@ app.get('/api/observers', (req, res) => {
   const _c = cache.get('observers'); if (_c) return res.json(_c);
   const observers = db.getObservers();
   const oneHourAgo = new Date(Date.now() - 3600000).toISOString();
-  // Pre-compute observer locations from nodes they've seen (via packets)
-  const nodeLocStmt = db.db.prepare("SELECT lat, lon FROM nodes WHERE public_key = ? AND lat IS NOT NULL AND lon IS NOT NULL");
+  // Join observer location from nodes table (observers are nodes — same pubkey)
+  const nodeLocStmt = db.db.prepare("SELECT lat, lon, role FROM nodes WHERE public_key = ?");
   const result = observers.map(o => {
     const obsPackets = pktStore.byObserver.get(o.id) || [];
     const lastHour = { count: obsPackets.filter(p => p.timestamp > oneHourAgo).length };
-    let lat = null, lon = null;
-    // Collect unique node pubkeys from this observer's packets
-    const seen = new Set();
-    for (const p of obsPackets) {
-      try {
-        const d = JSON.parse(p.decoded_json || '{}');
-        if (d.pubKey) seen.add(d.pubKey);
-      } catch {}
-    }
-    const locs = [];
-    for (const pk of seen) {
-      const n = nodeLocStmt.get(pk);
-      if (n) locs.push(n);
-    }
-    if (locs.length > 0) {
-      lat = locs.reduce((s, n) => s + n.lat, 0) / locs.length;
-      lon = locs.reduce((s, n) => s + n.lon, 0) / locs.length;
-    }
-    return { ...o, packetsLastHour: lastHour.count, lat, lon };
+    const node = nodeLocStmt.get(o.id);
+    return { ...o, packetsLastHour: lastHour.count, lat: node?.lat || null, lon: node?.lon || null, nodeRole: node?.role || null };
   });
   const _oResult = { observers: result, server_time: new Date().toISOString() };
   cache.set('observers', _oResult, TTL.observers);
