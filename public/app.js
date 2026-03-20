@@ -283,6 +283,11 @@ function navigate() {
     basePage = 'node-analytics';
   }
 
+  // Special route: packet/123 → standalone packet detail page
+  if (basePage === 'packet' && routeParam) {
+    basePage = 'packet-detail';
+  }
+
   // Update nav active state
   document.querySelectorAll('.nav-link[data-route]').forEach(el => {
     el.classList.toggle('active', el.dataset.route === basePage);

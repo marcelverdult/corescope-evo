@@ -817,7 +817,7 @@
     const copyLinkBtn = panel.querySelector('.copy-link-btn');
     if (copyLinkBtn) {
       copyLinkBtn.addEventListener('click', () => {
-        const url = `${location.origin}/#/packets/id/${copyLinkBtn.dataset.packetId}`;
+        const url = `${location.origin}/#/packet/${copyLinkBtn.dataset.packetId}`;
         navigator.clipboard.writeText(url).then(() => {
           copyLinkBtn.textContent = '✅ Copied!';
           setTimeout(() => { copyLinkBtn.textContent = '🔗 Copy Link'; }, 1500);
@@ -1125,4 +1125,31 @@
   }
 
   registerPage('packets', { init, destroy });
+
+  // Standalone packet detail page: #/packet/123
+  registerPage('packet-detail', {
+    init: async (app, routeParam) => {
+      const id = Number(routeParam);
+      app.innerHTML = `<div style="max-width:800px;margin:0 auto;padding:20px"><div class="text-center text-muted" style="padding:40px">Loading packet #${id}…</div></div>`;
+      try {
+        const data = await api(`/packets/${id}`);
+        if (!data?.packet) { app.innerHTML = `<div style="max-width:800px;margin:0 auto;padding:40px;text-align:center"><h2>Packet not found</h2><p>Packet #${id} doesn't exist.</p><a href="#/packets">← Back to packets</a></div>`; return; }
+        const hops = [];
+        try { const ph = JSON.parse(data.packet.path_json || '[]'); hops.push(...ph); } catch {}
+        const newHops = hops.filter(h => !(h in hopNameCache));
+        if (newHops.length) await resolveHops(newHops);
+        const container = document.createElement('div');
+        container.style.cssText = 'max-width:800px;margin:0 auto;padding:20px';
+        container.innerHTML = `<div style="margin-bottom:16px"><a href="#/packets" style="color:var(--primary);text-decoration:none">← Back to packets</a></div>`;
+        const detail = document.createElement('div');
+        container.appendChild(detail);
+        renderDetail(detail, data);
+        app.innerHTML = '';
+        app.appendChild(container);
+      } catch (e) {
+        app.innerHTML = `<div style="max-width:800px;margin:0 auto;padding:40px;text-align:center"><h2>Error</h2><p>${e.message}</p><a href="#/packets">← Back to packets</a></div>`;
+      }
+    },
+    destroy: () => {}
+  });
 })();
