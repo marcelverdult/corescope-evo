@@ -22,12 +22,14 @@
       "topics": [
         "meshcore/SJC/#",
         "meshcore/SFO/#",
-        "meshcore/OAK/#"
+        "meshcore/OAK/#",
+        "meshcore/MRY/#"
       ],
       "iataFilter": [
         "SJC",
         "SFO",
-        "OAK"
+        "OAK",
+        "MRY"
       ]
     }
   ],
