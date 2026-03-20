@@ -16,7 +16,8 @@
       "username": "your-username",
       "password": "your-password",
       "rejectUnauthorized": false,
-      "topics": ["meshcore/#"]
+      "topics": ["meshcore/+/+/packets", "meshcore/+/+/status"],
+      "iataFilter": ["SJC", "SFO", "OAK"]
     }
   ],
   "channelKeys": {

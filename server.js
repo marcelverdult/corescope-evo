@@ -403,6 +403,39 @@ for (const source of mqttSources) {
       const parts = topic.split('/');
       const now = new Date().toISOString();
 
+      // IATA filter: if source has iataFilter, only accept matching regions
+      const region = parts[1] || null;
+      if (source.iataFilter && Array.isArray(source.iataFilter) && region) {
+        if (!source.iataFilter.includes(region)) return;
+      }
+
+      // --- Status topic: meshcore/<region>/<observer_id>/status ---
+      if (parts[3] === 'status' && parts[2]) {
+        const observerId = parts[2];
+        const name = msg.origin || null;
+        const iata = region;
+        // Parse radio string: "freq,bw,sf,cr"
+        let radioInfo = null;
+        if (msg.radio) {
+          const rp = msg.radio.split(',');
+          radioInfo = { freq: parseFloat(rp[0]), bw: parseFloat(rp[1]), sf: parseInt(rp[2]), cr: parseInt(rp[3]) };
+        }
+        db.updateObserverStatus({
+          id: observerId,
+          name: name,
+          iata: iata,
+          model: msg.model || null,
+          firmware: msg.firmware_version || null,
+          client_version: msg.client_version || null,
+          radio: msg.radio || null,
+          battery_mv: msg.stats?.battery_mv || null,
+          uptime_secs: msg.stats?.uptime_secs || null,
+          noise_floor: msg.stats?.noise_floor || null,
+        });
+        console.log(`MQTT [${tag}] status: ${name || observerId} (${iata}) - ${msg.status}`);
+        return;
+      }
+
       // --- Format 1: Raw packet logging (meshcoretomqtt / Cisien format) ---
       // Topic: meshcore/<region>/<observer>/packets, payload: { raw, SNR, RSSI, hash }
       if (msg.raw && typeof msg.raw === 'string') {

@@ -49,7 +49,14 @@ db.exec(`
     iata TEXT,
     last_seen TEXT,
     first_seen TEXT,
-    packet_count INTEGER DEFAULT 0
+    packet_count INTEGER DEFAULT 0,
+    model TEXT,
+    firmware TEXT,
+    client_version TEXT,
+    radio TEXT,
+    battery_mv INTEGER,
+    uptime_secs INTEGER,
+    noise_floor INTEGER
   );
 
   CREATE TABLE IF NOT EXISTS paths (
@@ -65,6 +72,16 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_nodes_last_seen ON nodes(last_seen);
   CREATE INDEX IF NOT EXISTS idx_observers_last_seen ON observers(last_seen);
 `);
+
+// --- Migrations for existing DBs ---
+const observerCols = db.pragma('table_info(observers)').map(c => c.name);
+for (const col of ['model', 'firmware', 'client_version', 'radio', 'battery_mv', 'uptime_secs', 'noise_floor']) {
+  if (!observerCols.includes(col)) {
+    const type = ['battery_mv', 'uptime_secs', 'noise_floor'].includes(col) ? 'INTEGER' : 'TEXT';
+    db.exec(`ALTER TABLE observers ADD COLUMN ${col} ${type}`);
+    console.log(`[migration] Added observers.${col}`);
+  }
+}
 
 // --- Prepared statements ---
 const stmts = {
@@ -85,13 +102,35 @@ const stmts = {
       advert_count = advert_count + 1
   `),
   upsertObserver: db.prepare(`
-    INSERT INTO observers (id, name, iata, last_seen, first_seen, packet_count)
-    VALUES (@id, @name, @iata, @last_seen, @first_seen, 1)
+    INSERT INTO observers (id, name, iata, last_seen, first_seen, packet_count, model, firmware, client_version, radio, battery_mv, uptime_secs, noise_floor)
+    VALUES (@id, @name, @iata, @last_seen, @first_seen, 1, @model, @firmware, @client_version, @radio, @battery_mv, @uptime_secs, @noise_floor)
     ON CONFLICT(id) DO UPDATE SET
       name = COALESCE(@name, name),
       iata = COALESCE(@iata, iata),
       last_seen = @last_seen,
-      packet_count = packet_count + 1
+      packet_count = packet_count + 1,
+      model = COALESCE(@model, model),
+      firmware = COALESCE(@firmware, firmware),
+      client_version = COALESCE(@client_version, client_version),
+      radio = COALESCE(@radio, radio),
+      battery_mv = COALESCE(@battery_mv, battery_mv),
+      uptime_secs = COALESCE(@uptime_secs, uptime_secs),
+      noise_floor = COALESCE(@noise_floor, noise_floor)
+  `),
+  updateObserverStatus: db.prepare(`
+    INSERT INTO observers (id, name, iata, last_seen, first_seen, packet_count, model, firmware, client_version, radio, battery_mv, uptime_secs, noise_floor)
+    VALUES (@id, @name, @iata, @last_seen, @first_seen, 0, @model, @firmware, @client_version, @radio, @battery_mv, @uptime_secs, @noise_floor)
+    ON CONFLICT(id) DO UPDATE SET
+      name = COALESCE(@name, name),
+      iata = COALESCE(@iata, iata),
+      last_seen = @last_seen,
+      model = COALESCE(@model, model),
+      firmware = COALESCE(@firmware, firmware),
+      client_version = COALESCE(@client_version, client_version),
+      radio = COALESCE(@radio, radio),
+      battery_mv = COALESCE(@battery_mv, battery_mv),
+      uptime_secs = COALESCE(@uptime_secs, uptime_secs),
+      noise_floor = COALESCE(@noise_floor, noise_floor)
   `),
   getPacket: db.prepare(`SELECT * FROM packets WHERE id = ?`),
   getPathsForPacket: db.prepare(`SELECT * FROM paths WHERE packet_id = ? ORDER BY hop_index`),
@@ -159,6 +198,31 @@ function upsertObserver(data) {
     iata: data.iata || null,
     last_seen: data.last_seen || now,
     first_seen: data.first_seen || now,
+    model: data.model || null,
+    firmware: data.firmware || null,
+    client_version: data.client_version || null,
+    radio: data.radio || null,
+    battery_mv: data.battery_mv || null,
+    uptime_secs: data.uptime_secs || null,
+    noise_floor: data.noise_floor || null,
+  });
+}
+
+function updateObserverStatus(data) {
+  const now = new Date().toISOString();
+  stmts.updateObserverStatus.run({
+    id: data.id,
+    name: data.name || null,
+    iata: data.iata || null,
+    last_seen: data.last_seen || now,
+    first_seen: data.first_seen || now,
+    model: data.model || null,
+    firmware: data.firmware || null,
+    client_version: data.client_version || null,
+    radio: data.radio || null,
+    battery_mv: data.battery_mv || null,
+    uptime_secs: data.uptime_secs || null,
+    noise_floor: data.noise_floor || null,
   });
 }
 
@@ -493,4 +557,4 @@ function getNodeAnalytics(pubkey, days) {
   };
 }
 
-module.exports = { db, insertPacket, insertPath, upsertNode, upsertObserver, getPackets, getPacket, getNodes, getNode, getObservers, getStats, seed, searchNodes, getNodeHealth, getNodeAnalytics };
+module.exports = { db, insertPacket, insertPath, upsertNode, upsertObserver, updateObserverStatus, getPackets, getPacket, getNodes, getNode, getObservers, getStats, seed, searchNodes, getNodeHealth, getNodeAnalytics };
