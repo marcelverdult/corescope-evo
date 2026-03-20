@@ -128,7 +128,7 @@
           <dl class="detail-meta">
             <dt>Last Heard</dt><dd>${lastHeard ? timeAgo(lastHeard) : (n.last_seen ? timeAgo(n.last_seen) : '—')}</dd>
             <dt>First Seen</dt><dd>${n.first_seen ? new Date(n.first_seen).toLocaleString() : '—'}</dd>
-            <dt>Total Packets</dt><dd>${stats.totalPackets || n.advert_count || 0}</dd>
+            <dt>Total Packets</dt><dd>${stats.totalTransmissions || stats.totalPackets || n.advert_count || 0}${stats.totalObservations && stats.totalObservations !== (stats.totalTransmissions || stats.totalPackets) ? ' <span class="text-muted" style="font-size:0.85em">(seen ' + stats.totalObservations + '×)</span>' : ''}</dd>
             <dt>Packets Today</dt><dd>${stats.packetsToday || 0}</dd>
             ${stats.avgSnr != null ? `<dt>Avg SNR</dt><dd>${stats.avgSnr.toFixed(1)} dB</dd>` : ''}
             ${stats.avgHops ? `<dt>Avg Hops</dt><dd>${stats.avgHops}</dd>` : ''}
@@ -161,9 +161,10 @@
               const obs = p.observer_name || p.observer_id;
               const snr = p.snr != null ? ` · SNR ${p.snr}dB` : '';
               const rssi = p.rssi != null ? ` · RSSI ${p.rssi}dBm` : '';
+              const obsBadge = p.observation_count > 1 ? ` <span class="badge badge-obs" title="Seen ${p.observation_count} times">👁 ${p.observation_count}</span>` : '';
               return `<div class="node-activity-item">
                 <span class="node-activity-time">${timeAgo(p.timestamp)}</span>
-                <span>${typeLabel}${detail}${obs ? ' via ' + escapeHtml(obs) : ''}${snr}${rssi}</span>
+                <span>${typeLabel}${detail}${obsBadge}${obs ? ' via ' + escapeHtml(obs) : ''}${snr}${rssi}</span>
                 <a href="#/packets/id/${p.id}" class="ch-analyze-link" style="margin-left:8px;font-size:0.8em">Analyze →</a>
               </div>`;
             }).join('') : '<div class="text-muted">No recent packets</div>'}
@@ -426,7 +427,7 @@
     const role = (n.role || '').toLowerCase();
     const { degradedMs, silentMs } = getHealthThresholds(role);
     const statusLabel = statusAge < degradedMs ? '🟢 Active' : statusAge < silentMs ? '🟡 Degraded' : '🔴 Silent';
-    const totalPackets = stats.totalPackets || n.advert_count || 0;
+    const totalPackets = stats.totalTransmissions || stats.totalPackets || n.advert_count || 0;
 
     panel.innerHTML = `
       <div class="node-detail">
@@ -480,6 +481,7 @@
                 <span class="advert-dot" style="background:${roleColor}"></span>
                 <div class="advert-info">
                   <strong>${timeAgo(a.timestamp)}</strong> ${icon} ${pType}${detail}
+                  ${a.observation_count > 1 ? ' <span class="badge badge-obs">👁 ' + a.observation_count + '</span>' : ''}
                   ${obs ? ' via ' + escapeHtml(obs) : ''}
                   ${a.snr != null ? ` · SNR ${a.snr}dB` : ''}${a.rssi != null ? ` · RSSI ${a.rssi}dBm` : ''}
                   <br><a href="#/packets/id/${a.id}" class="ch-analyze-link">Analyze →</a>

@@ -55,7 +55,7 @@
         <div style="margin-bottom:12px">
           <a href="#/nodes/${encodeURIComponent(n.public_key)}" style="color:var(--accent);text-decoration:none;font-size:12px">← Back to ${nodeName}</a>
           <h2 style="margin:4px 0 2px;font-size:18px">📊 ${nodeName} — Analytics</h2>
-          <div style="color:var(--text-muted);font-size:11px">${n.role || 'Unknown role'} · ${s.totalPackets} packets in ${days}d window</div>
+          <div style="color:var(--text-muted);font-size:11px">${n.role || 'Unknown role'} · ${s.totalTransmissions || s.totalPackets} packets in ${days}d window</div>
         </div>
 
         <div class="analytics-time-range" id="timeRangeBtns">

@@ -150,13 +150,13 @@
     el.innerHTML = `
       <div class="stats-grid">
         <div class="stat-card">
-          <div class="stat-value">${(rf.totalAllPackets || rf.totalPackets).toLocaleString()}</div>
-          <div class="stat-label">Total Packets</div>
+          <div class="stat-value">${(rf.totalTransmissions || rf.totalAllPackets || rf.totalPackets).toLocaleString()}</div>
+          <div class="stat-label">Total Transmissions</div>
           <div class="stat-spark">${sparkSvg(rf.packetsPerHour.map(h=>h.count), 'var(--accent)')}</div>
         </div>
         <div class="stat-card">
           <div class="stat-value">${rf.totalPackets.toLocaleString()}</div>
-          <div class="stat-label">With Signal Data</div>
+          <div class="stat-label">Observations with Signal</div>
         </div>
         <div class="stat-card">
           <div class="stat-value">${topo.uniqueNodes}</div>
@@ -1167,7 +1167,7 @@
       const enriched = nodes.filter(n => healthMap[n.public_key]).map(n => ({ ...n, health: { stats: healthMap[n.public_key].stats, observers: healthMap[n.public_key].observers } }));
 
       // Compute rankings
-      const byPackets = [...enriched].sort((a, b) => (b.health.stats.totalPackets || 0) - (a.health.stats.totalPackets || 0));
+      const byPackets = [...enriched].sort((a, b) => (b.health.stats.totalTransmissions || b.health.stats.totalPackets || 0) - (a.health.stats.totalTransmissions || a.health.stats.totalPackets || 0));
       const bySnr = [...enriched].filter(n => n.health.stats.avgSnr != null).sort((a, b) => b.health.stats.avgSnr - a.health.stats.avgSnr);
       const byObservers = [...enriched].sort((a, b) => (b.health.observers?.length || 0) - (a.health.observers?.length || 0));
       const byRecent = [...enriched].filter(n => n.health.stats.lastHeard).sort((a, b) => new Date(b.health.stats.lastHeard) - new Date(a.health.stats.lastHeard));
@@ -1223,7 +1223,7 @@
                 return `<tr>
                   <td>${nodeLink(n)}</td>
                   <td><span class="badge" style="background:${(ROLE_COLORS[n.role]||'#6b7280')}20;color:${ROLE_COLORS[n.role]||'#6b7280'}">${n.role}</span></td>
-                  <td>${s.totalPackets || 0}</td>
+                  <td>${s.totalTransmissions || s.totalPackets || 0}</td>
                   <td>${s.avgSnr != null ? s.avgSnr.toFixed(1) + ' dB' : '—'}</td>
                   <td>${n.health.observers?.length || 0}</td>
                   <td>${s.lastHeard ? timeAgo(s.lastHeard) : '—'}</td>
@@ -1240,7 +1240,7 @@
                 <td>${i + 1}</td>
                 <td>${nodeLink(n)}${claimedBadge(n)}</td>
                 <td><span class="badge" style="background:${(ROLE_COLORS[n.role]||'#6b7280')}20;color:${ROLE_COLORS[n.role]||'#6b7280'}">${n.role}</span></td>
-                <td>${n.health.stats.totalPackets || 0}</td>
+                <td>${n.health.stats.totalTransmissions || n.health.stats.totalPackets || 0}</td>
                 <td>${n.health.stats.packetsToday || 0}</td>
                 <td><a href="#/nodes/${encodeURIComponent(n.public_key)}/analytics" class="analytics-link">📊</a></td>
               </tr>`).join('')}

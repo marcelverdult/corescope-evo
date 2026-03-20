@@ -373,7 +373,7 @@
       const el = document.getElementById('homeStats');
       if (!el) return;
       el.innerHTML = `
-        <div class="home-stat"><div class="val">${s.totalPackets ?? '—'}</div><div class="lbl">Packets</div></div>
+        <div class="home-stat"><div class="val">${s.totalTransmissions ?? s.totalPackets ?? '—'}</div><div class="lbl">Transmissions</div></div>
         <div class="home-stat"><div class="val">${s.totalNodes ?? '—'}</div><div class="lbl">Nodes</div></div>
         <div class="home-stat"><div class="val">${s.totalObservers ?? '—'}</div><div class="lbl">Observers</div></div>
         <div class="home-stat"><div class="val">${s.packetsLast24h ?? '—'}</div><div class="lbl">Last 24h</div></div>
