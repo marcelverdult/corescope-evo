@@ -709,62 +709,34 @@ app.get('/api/nodes/bulk-health', (req, res) => {
   const _c = cache.get(_ck); if (_c) return res.json(_c);
 
   const nodes = db.db.prepare(`SELECT * FROM nodes ORDER BY last_seen DESC LIMIT ?`).all(limit);
+  if (nodes.length === 0) { cache.set(_ck, [], TTL.bulkHealth); return res.json([]); }
+
   const todayStart = new Date();
   todayStart.setUTCHours(0, 0, 0, 0);
   const todayISO = todayStart.toISOString();
 
-  if (nodes.length === 0) { cache.set(_ck, [], TTL.bulkHealth); return res.json([]); }
-
-  // Build OR conditions for all nodes to fetch matching packets in ONE query
-  const likeConditions = [];
-  const params = {};
-  nodes.forEach((node, i) => {
-    params['k' + i] = '%' + node.public_key + '%';
-    likeConditions.push('decoded_json LIKE @k' + i);
-    if (node.name) {
-      params['n' + i] = '%' + node.name.replace(/[%_]/g, '') + '%';
-      likeConditions.push('decoded_json LIKE @n' + i);
-    }
-  });
-
-  // Single query to get ALL matching packets
-  const allPackets = db.db.prepare(
-    'SELECT decoded_json, snr, rssi, timestamp, observer_id, observer_name FROM packets WHERE ' + likeConditions.join(' OR ')
-  ).all(params);
-
-  // Match packets to nodes in JS
-  const nodeMap = new Map();
+  const results = [];
   for (const node of nodes) {
-    nodeMap.set(node.public_key, {
-      node, totalPackets: 0, packetsToday: 0, snrSum: 0, snrCount: 0, lastHeard: null,
-      observers: {}
-    });
-  }
+    const packets = pktStore.byNode.get(node.public_key) || [];
+    let totalPackets = packets.length, packetsToday = 0, snrSum = 0, snrCount = 0, lastHeard = null;
+    const observers = {};
 
-  for (const pkt of allPackets) {
-    const dj = pkt.decoded_json || '';
-    for (const [pk, data] of nodeMap) {
-      const nd = data.node;
-      if (!dj.includes(pk) && !(nd.name && dj.includes(nd.name))) continue;
-      data.totalPackets++;
-      if (pkt.timestamp > todayISO) data.packetsToday++;
-      if (pkt.snr != null) { data.snrSum += pkt.snr; data.snrCount++; }
-      if (!data.lastHeard || pkt.timestamp > data.lastHeard) data.lastHeard = pkt.timestamp;
+    for (const pkt of packets) {
+      if (pkt.timestamp > todayISO) packetsToday++;
+      if (pkt.snr != null) { snrSum += pkt.snr; snrCount++; }
+      if (!lastHeard || pkt.timestamp > lastHeard) lastHeard = pkt.timestamp;
       if (pkt.observer_id) {
-        if (!data.observers[pkt.observer_id]) {
-          data.observers[pkt.observer_id] = { name: pkt.observer_name, snrSum: 0, snrCount: 0, rssiSum: 0, rssiCount: 0, count: 0 };
+        if (!observers[pkt.observer_id]) {
+          observers[pkt.observer_id] = { name: pkt.observer_name, snrSum: 0, snrCount: 0, rssiSum: 0, rssiCount: 0, count: 0 };
         }
-        const obs = data.observers[pkt.observer_id];
+        const obs = observers[pkt.observer_id];
         obs.count++;
         if (pkt.snr != null) { obs.snrSum += pkt.snr; obs.snrCount++; }
         if (pkt.rssi != null) { obs.rssiSum += pkt.rssi; obs.rssiCount++; }
       }
     }
-  }
 
-  const results = [];
-  for (const [pk, data] of nodeMap) {
-    const observerRows = Object.entries(data.observers)
+    const observerRows = Object.entries(observers)
       .map(([id, o]) => ({
         observer_id: id, observer_name: o.name,
         avgSnr: o.snrCount ? o.snrSum / o.snrCount : null,
@@ -772,13 +744,11 @@ app.get('/api/nodes/bulk-health', (req, res) => {
         packetCount: o.count
       }))
       .sort((a, b) => b.packetCount - a.packetCount);
+
     results.push({
-      public_key: pk, name: data.node.name, role: data.node.role,
-      lat: data.node.lat, lon: data.node.lon,
-      stats: {
-        totalPackets: data.totalPackets, packetsToday: data.packetsToday,
-        avgSnr: data.snrCount ? data.snrSum / data.snrCount : null, lastHeard: data.lastHeard
-      },
+      public_key: node.public_key, name: node.name, role: node.role,
+      lat: node.lat, lon: node.lon,
+      stats: { totalPackets, packetsToday, avgSnr: snrCount ? snrSum / snrCount : null, lastHeard },
       observers: observerRows
     });
   }
