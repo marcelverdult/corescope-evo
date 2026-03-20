@@ -69,10 +69,9 @@
   }
 
   function sparkBar(count, max) {
-    const aria = `role="meter" aria-valuenow="${count}" aria-valuemin="0" aria-valuemax="${max}" aria-label="Packet rate"`;
-    if (max === 0) return `<div class="spark-bar" ${aria}><div class="spark-fill" style="width:0"></div></div>`;
+    if (max === 0) return `<span class="text-muted">0/hr</span>`;
     const pct = Math.min(100, Math.round((count / max) * 100));
-    return `<div class="spark-bar" ${aria}><div class="spark-fill" style="width:${pct}%"></div><span class="spark-label">${count}/hr</span></div>`;
+    return `<span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap"><span style="display:inline-block;width:60px;height:12px;background:var(--border);border-radius:3px;overflow:hidden;vertical-align:middle"><span style="display:block;height:100%;width:${pct}%;background:linear-gradient(90deg,#3b82f6,#60a5fa);border-radius:3px"></span></span><span style="font-size:11px">${count}/hr</span></span>`;
   }
 
   function render() {
@@ -113,7 +112,7 @@
             <td>${o.iata ? `<span class="badge-region">${o.iata}</span>` : '—'}</td>
             <td>${timeAgo(o.last_seen)}</td>
             <td>${(o.packet_count || 0).toLocaleString()}</td>
-            <td class="col-spark" style="max-width:none;overflow:visible;min-width:80px;position:relative;z-index:1">${sparkBar(o.packetsLastHour || 0, maxPktsHr)}</td>
+            <td>${sparkBar(o.packetsLastHour || 0, maxPktsHr)}</td>
             <td>${uptimeStr(o.first_seen)}</td>
           </tr>`;
         }).join('')}</tbody>
