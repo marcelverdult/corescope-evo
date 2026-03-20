@@ -1020,6 +1020,7 @@ app.get('/api/analytics/rf', (req, res) => {
 
   const _rfResult = {
     totalPackets: packets.length,
+    totalAllPackets: pktStore.packets.length,
     snr: { min: Math.min(...snrVals), max: Math.max(...snrVals), avg: snrAvg, median: median(snrVals), stddev: stddev(snrVals, snrAvg) },
     rssi: { min: Math.min(...rssiVals), max: Math.max(...rssiVals), avg: rssiAvg, median: median(rssiVals), stddev: stddev(rssiVals, rssiAvg) },
     snrValues: snrHistogram, rssiValues: rssiHistogram, packetSizes: sizeHistogram,

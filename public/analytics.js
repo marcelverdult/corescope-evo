@@ -150,9 +150,13 @@
     el.innerHTML = `
       <div class="stats-grid">
         <div class="stat-card">
-          <div class="stat-value">${rf.totalPackets.toLocaleString()}</div>
+          <div class="stat-value">${(rf.totalAllPackets || rf.totalPackets).toLocaleString()}</div>
           <div class="stat-label">Total Packets</div>
           <div class="stat-spark">${sparkSvg(rf.packetsPerHour.map(h=>h.count), 'var(--accent)')}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">${rf.totalPackets.toLocaleString()}</div>
+          <div class="stat-label">With Signal Data</div>
         </div>
         <div class="stat-card">
           <div class="stat-value">${topo.uniqueNodes}</div>
