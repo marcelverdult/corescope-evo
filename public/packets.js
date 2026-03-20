@@ -775,6 +775,10 @@
     let pathHops;
     try { pathHops = JSON.parse(pkt.path_json || '[]'); } catch { pathHops = []; }
 
+    // Parse hash size from path byte
+    const rawPathByte = pkt.raw_hex ? parseInt(pkt.raw_hex.slice(2, 4), 16) : NaN;
+    const hashSize = isNaN(rawPathByte) ? null : ((rawPathByte >> 6) + 1);
+
     const size = pkt.raw_hex ? Math.floor(pkt.raw_hex.length / 2) : 0;
     const typeName = payloadTypeName(pkt.payload_type);
 
@@ -804,6 +808,7 @@
         <dt>SNR / RSSI</dt><dd>${snr != null ? snr + ' dB' : '—'} / ${rssi != null ? rssi + ' dBm' : '—'}</dd>
         <dt>Route Type</dt><dd>${routeTypeName(pkt.route_type)}</dd>
         <dt>Payload Type</dt><dd><span class="badge badge-${payloadTypeColor(pkt.payload_type)}">${typeName}</span></dd>
+        ${hashSize ? `<dt>Hash Size</dt><dd>${hashSize} byte${hashSize !== 1 ? 's' : ''}</dd>` : ''}
         <dt>Timestamp</dt><dd>${pkt.timestamp}</dd>
         <dt>Path</dt><dd>${pathHops.length ? renderPath(pathHops) : '—'}</dd>
       </dl>
@@ -888,7 +893,10 @@
     // Header section
     rows += sectionRow('Header');
     rows += fieldRow(0, 'Header Byte', '0x' + (buf.slice(0, 2) || '??'), `Route: ${routeTypeName(pkt.route_type)}, Payload: ${payloadTypeName(pkt.payload_type)}`);
-    rows += fieldRow(1, 'Path Length', '0x' + (buf.slice(2, 4) || '??'), `hash_size=${decoded ? '' : '?'}, hash_count=${pathHops.length}`);
+    const pathByte0 = parseInt(buf.slice(2, 4), 16);
+    const hashSizeVal = isNaN(pathByte0) ? '?' : ((pathByte0 >> 6) + 1);
+    const hashCountVal = isNaN(pathByte0) ? '?' : (pathByte0 & 0x3F);
+    rows += fieldRow(1, 'Path Length', '0x' + (buf.slice(2, 4) || '??'), `hash_size=${hashSizeVal} byte${hashSizeVal !== 1 ? 's' : ''}, hash_count=${hashCountVal}`);
 
     // Transport codes
     let off = 2;
