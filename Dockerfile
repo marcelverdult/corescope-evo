@@ -1,6 +1,6 @@
 FROM node:22-alpine
 
-RUN apk add --no-cache mosquitto mosquitto-clients supervisor
+RUN apk add --no-cache mosquitto mosquitto-clients supervisor caddy
 
 WORKDIR /app
 
@@ -12,12 +12,13 @@ RUN npm ci --production
 COPY server.js db.js packet-store.js config.example.json ./
 COPY public/ ./public/
 
-# Supervisor config
+# Supervisor + Mosquitto + Caddy config
 COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 COPY docker/mosquitto.conf /etc/mosquitto/mosquitto.conf
+COPY docker/Caddyfile /etc/caddy/Caddyfile
 
-# Create data directory for SQLite + Mosquitto persistence
-RUN mkdir -p /app/data /var/lib/mosquitto && \
+# Create data directory for SQLite + Mosquitto persistence + Caddy certs
+RUN mkdir -p /app/data /var/lib/mosquitto /data/caddy && \
     chown -R node:node /app/data && \
     chown -R mosquitto:mosquitto /var/lib/mosquitto
 
@@ -25,8 +26,8 @@ RUN mkdir -p /app/data /var/lib/mosquitto && \
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-EXPOSE 3000 1883
+EXPOSE 80 443 1883
 
-VOLUME ["/app/data"]
+VOLUME ["/app/data", "/data/caddy"]
 
 ENTRYPOINT ["/entrypoint.sh"]

@@ -77,13 +77,33 @@ The easiest way to run MeshCore Analyzer. Includes Mosquitto MQTT broker — eve
 docker build -t meshcore-analyzer .
 docker run -d \
   --name meshcore-analyzer \
-  -p 3000:3000 \
+  -p 80:80 \
+  -p 443:443 \
   -p 1883:1883 \
   -v meshcore-data:/app/data \
+  -v caddy-certs:/data/caddy \
   meshcore-analyzer
 ```
 
-Open `http://localhost:3000`. Point your MeshCore gateway's MQTT to `<host-ip>:1883`.
+Open `http://localhost`. Point your MeshCore gateway's MQTT to `<host-ip>:1883`.
+
+**With a domain (automatic HTTPS):**
+```bash
+# Create a Caddyfile with your domain
+echo 'analyzer.example.com { reverse_proxy localhost:3000 }' > Caddyfile
+
+docker run -d \
+  --name meshcore-analyzer \
+  -p 80:80 \
+  -p 443:443 \
+  -p 1883:1883 \
+  -v meshcore-data:/app/data \
+  -v caddy-certs:/data/caddy \
+  -v $(pwd)/Caddyfile:/etc/caddy/Caddyfile \
+  meshcore-analyzer
+```
+
+Caddy automatically provisions Let's Encrypt TLS certificates.
 
 **Custom config:**
 ```bash
