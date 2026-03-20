@@ -135,10 +135,10 @@ async function run() {
   }
 
   if (!JSON_OUT) {
-    // Summary comparison
-    console.log(`\n${'='.repeat(70)}`);
+    // Summary comparison: cached vs nocache
+    console.log(`\n${'='.repeat(80)}`);
     console.log('  📊 CACHE IMPACT (avg ms: cached → nocache)');
-    console.log(`${'='.repeat(70)}`);
+    console.log(`${'='.repeat(80)}`);
     console.log(`${'Endpoint'.padEnd(28)} ${'Cached'.padStart(8)} ${'No-cache'.padStart(8)} ${'Speedup'.padStart(8)}`);
     console.log(`${'-'.repeat(28)} ${'-'.repeat(8)} ${'-'.repeat(8)} ${'-'.repeat(8)}`);
 
@@ -152,6 +152,29 @@ async function run() {
       console.log(
         `${c.name.padEnd(28)} ${(c.avg + 'ms').padStart(8)} ${(nc.avg + 'ms').padStart(8)} ${speedup.padStart(8)}`
       );
+    }
+
+    // Compare against baseline (pre-optimization) if available
+    let baseline;
+    try { baseline = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, 'benchmark-baseline.json'), 'utf8')); } catch {}
+    if (baseline) {
+      console.log(`\n${'='.repeat(80)}`);
+      console.log('  🏁 vs BASELINE (pre-optimization, pure SQLite, no in-memory store)');
+      console.log(`${'='.repeat(80)}`);
+      console.log(`${'Endpoint'.padEnd(28)} ${'Baseline'.padStart(9)} ${'Current'.padStart(9)} ${'Speedup'.padStart(9)} ${'Size Δ'.padStart(12)}`);
+      console.log(`${'-'.repeat(28)} ${'-'.repeat(9)} ${'-'.repeat(9)} ${'-'.repeat(9)} ${'-'.repeat(12)}`);
+
+      for (const c of cached) {
+        const bl = baseline.endpoints[c.name];
+        if (!bl) continue;
+        const speedup = bl.avg > 0 && c.avg > 0 ? (bl.avg / c.avg).toFixed(0) + '×' : '—';
+        const sizeOld = bl.bytes > 1024 ? (bl.bytes / 1024).toFixed(0) + 'KB' : bl.bytes + 'B';
+        const sizeNew = c.bytes > 1024 ? (c.bytes / 1024).toFixed(0) + 'KB' : c.bytes + 'B';
+        const sizeChange = bl.bytes && c.bytes ? (((c.bytes - bl.bytes) / bl.bytes) * 100).toFixed(0) + '%' : '—';
+        console.log(
+          `${c.name.padEnd(28)} ${(bl.avg + 'ms').padStart(9)} ${(c.avg + 'ms').padStart(9)} ${speedup.padStart(9)} ${(sizeOld + '→' + sizeNew).padStart(12)}`
+        );
+      }
     }
   }
 
