@@ -28,6 +28,26 @@
         <div class="perf-card"><div class="perf-num">${server.slowQueries.length}</div><div class="perf-label">Slow (&gt;100ms)</div></div>
       </div>`;
 
+      // Cache stats
+      if (server.cache) {
+        const c = server.cache;
+        const clientCache = _apiCache ? _apiCache.size : 0;
+        html += `<h3>Cache</h3><div style="display:flex;gap:16px;flex-wrap:wrap;margin:8px 0;">
+          <div class="perf-card"><div class="perf-num">${c.size}</div><div class="perf-label">Server Entries</div></div>
+          <div class="perf-card"><div class="perf-num">${c.hits}</div><div class="perf-label">Server Hits</div></div>
+          <div class="perf-card"><div class="perf-num">${c.misses}</div><div class="perf-label">Server Misses</div></div>
+          <div class="perf-card"><div class="perf-num" style="color:${c.hitRate > 50 ? '#22c55e' : c.hitRate > 20 ? '#f59e0b' : '#ef4444'}">${c.hitRate}%</div><div class="perf-label">Server Hit Rate</div></div>
+          <div class="perf-card"><div class="perf-num">${clientCache}</div><div class="perf-label">Client Entries</div></div>
+        </div>`;
+        if (client) {
+          html += `<div style="display:flex;gap:16px;flex-wrap:wrap;margin:8px 0;">
+            <div class="perf-card"><div class="perf-num">${client.cacheHits || 0}</div><div class="perf-label">Client Hits</div></div>
+            <div class="perf-card"><div class="perf-num">${client.cacheMisses || 0}</div><div class="perf-label">Client Misses</div></div>
+            <div class="perf-card"><div class="perf-num" style="color:${(client.cacheHitRate||0) > 50 ? '#22c55e' : '#f59e0b'}">${client.cacheHitRate || 0}%</div><div class="perf-label">Client Hit Rate</div></div>
+          </div>`;
+        }
+      }
+
       // Server endpoints table
       const eps = Object.entries(server.endpoints);
       if (eps.length) {
