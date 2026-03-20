@@ -161,7 +161,7 @@
         </div>
         <div class="chart-card" style="padding:12px">
           <h3 style="margin:0 0 8px;font-size:0.95em">Packet Types</h3>
-          <canvas id="obsTypeChart"></canvas>
+          <div style="max-width:280px;margin:0 auto"><canvas id="obsTypeChart"></canvas></div>
         </div>
         <div class="chart-card" style="padding:12px">
           <h3 style="margin:0 0 8px;font-size:0.95em">Unique Nodes Heard</h3>

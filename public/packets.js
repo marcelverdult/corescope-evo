@@ -382,7 +382,7 @@
 
     const obsSel = document.getElementById('fObserver');
     for (const o of observers) {
-      obsSel.innerHTML += `<option value="${o.id}" ${filters.observer === o.id ? 'selected' : ''}>${o.id}</option>`;
+      obsSel.innerHTML += `<option value="${o.id}" ${filters.observer === o.id ? 'selected' : ''}>${o.name || o.id}</option>`;
     }
 
     const typeSel = document.getElementById('fType');
