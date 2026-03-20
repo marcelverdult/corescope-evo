@@ -1516,10 +1516,141 @@ app.get('/api/nodes/:pubkey/health', (req, res) => {
 });
 
 app.get('/api/nodes/:pubkey/analytics', (req, res) => {
+  const pubkey = req.params.pubkey;
   const days = Math.min(Math.max(Number(req.query.days) || 7, 1), 365);
-  const data = db.getNodeAnalytics(req.params.pubkey, days);
-  if (!data) return res.status(404).json({ error: 'Not found' });
-  res.json(data);
+  const _ck = `node-analytics:${pubkey}:${days}`;
+  const _c = cache.get(_ck); if (_c) return res.json(_c);
+
+  const node = db.getNode(pubkey);
+  if (!node) return res.status(404).json({ error: 'Not found' });
+
+  const now = new Date();
+  const fromISO = new Date(now.getTime() - days * 86400000).toISOString();
+  const toISO = now.toISOString();
+
+  // Read from in-memory index, filter by time range
+  const allPkts = pktStore.byNode.get(pubkey) || [];
+  const packets = allPkts.filter(p => p.timestamp > fromISO);
+
+  // Activity timeline
+  const timelineBuckets = {};
+  for (const p of packets) { const b = p.timestamp.slice(0, 13) + ':00:00Z'; timelineBuckets[b] = (timelineBuckets[b] || 0) + 1; }
+  const activityTimeline = Object.entries(timelineBuckets).sort().map(([bucket, count]) => ({ bucket, count }));
+
+  // SNR trend
+  const snrTrend = packets.filter(p => p.snr != null).map(p => ({
+    timestamp: p.timestamp, snr: p.snr, rssi: p.rssi, observer_id: p.observer_id, observer_name: p.observer_name
+  }));
+
+  // Packet type breakdown
+  const typeBuckets = {};
+  for (const p of packets) { typeBuckets[p.payload_type] = (typeBuckets[p.payload_type] || 0) + 1; }
+  const packetTypeBreakdown = Object.entries(typeBuckets).map(([payload_type, count]) => ({ payload_type: +payload_type, count }));
+
+  // Observer coverage
+  const obsMap = {};
+  for (const p of packets) {
+    if (!p.observer_id) continue;
+    if (!obsMap[p.observer_id]) obsMap[p.observer_id] = { observer_name: p.observer_name, packetCount: 0, snrSum: 0, snrN: 0, rssiSum: 0, rssiN: 0, first: p.timestamp, last: p.timestamp };
+    const o = obsMap[p.observer_id]; o.packetCount++;
+    if (p.snr != null) { o.snrSum += p.snr; o.snrN++; }
+    if (p.rssi != null) { o.rssiSum += p.rssi; o.rssiN++; }
+    if (p.timestamp < o.first) o.first = p.timestamp;
+    if (p.timestamp > o.last) o.last = p.timestamp;
+  }
+  const observerCoverage = Object.entries(obsMap).map(([observer_id, o]) => ({
+    observer_id, observer_name: o.observer_name, packetCount: o.packetCount,
+    avgSnr: o.snrN ? o.snrSum / o.snrN : null, avgRssi: o.rssiN ? o.rssiSum / o.rssiN : null,
+    firstSeen: o.first, lastSeen: o.last
+  })).sort((a, b) => b.packetCount - a.packetCount);
+
+  // Hop distribution
+  const hopCounts = {};
+  let totalWithPath = 0, relayedCount = 0;
+  for (const p of packets) {
+    if (!p.path_json) continue;
+    try {
+      const hops = JSON.parse(p.path_json);
+      if (Array.isArray(hops)) {
+        const h = hops.length; const key = h >= 4 ? '4+' : String(h);
+        hopCounts[key] = (hopCounts[key] || 0) + 1;
+        totalWithPath++; if (h > 1) relayedCount++;
+      }
+    } catch {}
+  }
+  const hopDistribution = Object.entries(hopCounts).map(([hops, count]) => ({ hops, count }))
+    .sort((a, b) => a.hops.localeCompare(b.hops, undefined, { numeric: true }));
+
+  // Peer interactions
+  const peerMap = {};
+  for (const p of packets) {
+    if (!p.decoded_json) continue;
+    try {
+      const d = JSON.parse(p.decoded_json);
+      const candidates = [];
+      if (d.sender_key && d.sender_key !== pubkey) candidates.push({ key: d.sender_key, name: d.sender_name || d.sender_short_name });
+      if (d.recipient_key && d.recipient_key !== pubkey) candidates.push({ key: d.recipient_key, name: d.recipient_name || d.recipient_short_name });
+      if (d.pubkey && d.pubkey !== pubkey) candidates.push({ key: d.pubkey, name: d.name });
+      for (const c of candidates) {
+        if (!c.key) continue;
+        if (!peerMap[c.key]) peerMap[c.key] = { peer_key: c.key, peer_name: c.name || c.key.slice(0, 12), messageCount: 0, lastContact: p.timestamp };
+        peerMap[c.key].messageCount++;
+        if (p.timestamp > peerMap[c.key].lastContact) peerMap[c.key].lastContact = p.timestamp;
+      }
+    } catch {}
+  }
+  const peerInteractions = Object.values(peerMap).sort((a, b) => b.messageCount - a.messageCount).slice(0, 20);
+
+  // Uptime heatmap
+  const heatmap = [];
+  for (const p of packets) {
+    const d = new Date(p.timestamp);
+    heatmap.push({ dayOfWeek: d.getUTCDay(), hour: d.getUTCHours() });
+  }
+  const heatBuckets = {};
+  for (const h of heatmap) { const k = `${h.dayOfWeek}:${h.hour}`; heatBuckets[k] = (heatBuckets[k] || 0) + 1; }
+  const uptimeHeatmap = Object.entries(heatBuckets).map(([k, count]) => {
+    const [d, h] = k.split(':'); return { dayOfWeek: +d, hour: +h, count };
+  });
+
+  // Computed stats
+  const totalPackets = packets.length;
+  const distinctHours = activityTimeline.length;
+  const availabilityPct = days * 24 > 0 ? Math.round(distinctHours / (days * 24) * 1000) / 10 : 0;
+  const avgPacketsPerDay = days > 0 ? Math.round(totalPackets / days * 10) / 10 : totalPackets;
+
+  // Longest silence
+  const timestamps = packets.map(p => new Date(p.timestamp).getTime()).sort((a, b) => a - b);
+  let longestSilenceMs = 0, longestSilenceStart = null;
+  for (let i = 1; i < timestamps.length; i++) {
+    const gap = timestamps[i] - timestamps[i - 1];
+    if (gap > longestSilenceMs) { longestSilenceMs = gap; longestSilenceStart = new Date(timestamps[i - 1]).toISOString(); }
+  }
+
+  // Signal grade
+  const snrValues = snrTrend.map(r => r.snr);
+  const snrMean = snrValues.length > 0 ? snrValues.reduce((a, b) => a + b, 0) / snrValues.length : 0;
+  const snrStdDev = snrValues.length > 1 ? Math.sqrt(snrValues.reduce((s, v) => s + (v - snrMean) ** 2, 0) / snrValues.length) : 0;
+  let signalGrade = 'D';
+  if (snrMean > 15 && snrStdDev < 2) signalGrade = 'A';
+  else if (snrMean > 15) signalGrade = 'A-';
+  else if (snrMean > 12 && snrStdDev < 3) signalGrade = 'B+';
+  else if (snrMean > 8) signalGrade = 'B';
+  else if (snrMean > 3) signalGrade = 'C';
+  const relayPct = totalWithPath > 0 ? Math.round(relayedCount / totalWithPath * 1000) / 10 : 0;
+
+  const result = {
+    node: node.node || node,
+    timeRange: { from: fromISO, to: toISO, days },
+    activityTimeline, snrTrend, packetTypeBreakdown, observerCoverage, hopDistribution, peerInteractions, uptimeHeatmap,
+    computedStats: {
+      availabilityPct, longestSilenceMs, longestSilenceStart, signalGrade,
+      snrMean: Math.round(snrMean * 10) / 10, snrStdDev: Math.round(snrStdDev * 10) / 10,
+      relayPct, totalPackets, uniqueObservers: observerCoverage.length, uniquePeers: peerInteractions.length, avgPacketsPerDay
+    }
+  };
+  cache.set(_ck, result, TTL.nodeAnalytics);
+  res.json(result);
 });
 
 // Pre-compute all subpath data in a single pass (shared across all subpath queries)
