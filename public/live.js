@@ -1005,14 +1005,14 @@
         <div style="padding:16px;">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
             <span class="${statusDot}" style="font-size:18px">●</span>
-            <h3 style="margin:0;font-size:16px;font-weight:700;">${esc(n.name || 'Unknown')}</h3>
+            <h3 style="margin:0;font-size:16px;font-weight:700;">${escapeHtml(n.name || 'Unknown')}</h3>
           </div>
           <div style="margin-bottom:12px;">
             <span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:600;background:${roleColor};color:#fff;">${roleLabel.toUpperCase()}</span>
             <span style="color:var(--text-muted);font-size:12px;margin-left:8px;">${statusLabel}</span>
           </div>
           <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">
-            <code style="font-size:10px;word-break:break-all;">${esc(n.public_key)}</code>
+            <code style="font-size:10px;word-break:break-all;">${escapeHtml(n.public_key)}</code>
           </div>
           <table style="font-size:12px;width:100%;border-collapse:collapse;">
             <tr><td style="color:var(--text-muted);padding:4px 8px 4px 0;">Last Seen</td><td>${lastSeen}</td></tr>
@@ -1026,7 +1026,7 @@
       if (observers.length) {
         html += `<h4 style="font-size:12px;margin:12px 0 6px;color:var(--text-muted);">Heard By</h4>
           <div style="font-size:11px;">` +
-          observers.map(o => `<div style="padding:2px 0;">${esc(o.observer_name || o.observer_id.slice(0, 12))} — ${o.count} pkts</div>`).join('') +
+          observers.map(o => `<div style="padding:2px 0;">${escapeHtml(o.observer_name || o.observer_id.slice(0, 12))} — ${o.count} pkts</div>`).join('') +
           '</div>';
       }
 
@@ -1034,7 +1034,7 @@
         html += `<h4 style="font-size:12px;margin:12px 0 6px;color:var(--text-muted);">Recent Packets</h4>
           <div style="font-size:11px;max-height:200px;overflow-y:auto;">` +
           recent.slice(0, 10).map(p => `<div style="padding:2px 0;display:flex;justify-content:space-between;">
-            <span>${esc(p.payload_type || '?')}</span>
+            <span>${escapeHtml(p.payload_type || '?')}</span>
             <span style="color:var(--text-muted)">${p.timestamp ? timeAgo(p.timestamp) : '—'}</span>
           </div>`).join('') +
           '</div>';
