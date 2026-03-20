@@ -1847,7 +1847,14 @@ app.get('/api/observers/:id/analytics', (req, res) => {
 
 app.get('/api/traces/:hash', (req, res) => {
   const packets = (pktStore.getSiblings(req.params.hash) || []).sort((a,b) => a.timestamp > b.timestamp ? 1 : -1);
-  const traces = packets.map(p => ({ observer: p.observer_id, time: p.timestamp, snr: p.snr, rssi: p.rssi }));
+  const traces = packets.map(p => ({
+    observer: p.observer_id,
+    observer_name: p.observer_name || null,
+    time: p.timestamp,
+    snr: p.snr,
+    rssi: p.rssi,
+    path_json: p.path_json || null
+  }));
   res.json({ traces });
 });
 
