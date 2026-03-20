@@ -1034,7 +1034,7 @@
         html += `<h4 style="font-size:12px;margin:12px 0 6px;color:var(--text-muted);">Recent Packets</h4>
           <div style="font-size:11px;max-height:200px;overflow-y:auto;">` +
           recent.slice(0, 10).map(p => `<div style="padding:2px 0;display:flex;justify-content:space-between;">
-            <a href="#/packets?hash=${encodeURIComponent(p.hash || '')}" style="color:var(--accent);text-decoration:none;">${escapeHtml(p.payload_type || '?')}${p.observation_count > 1 ? ' <span class="badge badge-obs" style="font-size:9px">👁 ' + p.observation_count + '</span>' : ''}</a>
+            <a href="#/packets/${encodeURIComponent(p.hash || '')}" style="color:var(--accent);text-decoration:none;">${escapeHtml(p.payload_type || '?')}${p.observation_count > 1 ? ' <span class="badge badge-obs" style="font-size:9px">👁 ' + p.observation_count + '</span>' : ''}</a>
             <span style="color:var(--text-muted)">${p.timestamp ? timeAgo(p.timestamp) : '—'}</span>
           </div>`).join('') +
           '</div>';
