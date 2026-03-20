@@ -23,6 +23,7 @@ class PacketStore {
 
     // Indexes
     this.byId = new Map();           // observation_id → observation object (backward compat for packet detail links)
+    this.byTxId = new Map();         // transmission_id → transmission object
     this.byHash = new Map();         // hash → transmission object (1:1)
     this.byObserver = new Map();     // observer_id → [observation objects]
     this.byNode = new Map();         // pubkey → [transmission objects] (deduped)
@@ -102,6 +103,7 @@ class PacketStore {
         this.byTransmission.set(row.hash, tx);
         this.byHash.set(row.hash, tx);
         this.packets.push(tx);
+        this.byTxId.set(tx.id, tx);
         this._indexByNode(tx);
       }
 
@@ -188,6 +190,7 @@ class PacketStore {
       this.byTransmission.set(pkt.hash, tx);
       this.byHash.set(pkt.hash, tx);
       this.packets.push(tx);
+        this.byTxId.set(tx.id, tx);
       this._indexByNode(tx);
     }
 
@@ -250,6 +253,7 @@ class PacketStore {
       const old = this.packets.pop();
       this.byHash.delete(old.hash);
       this.byTransmission.delete(old.hash);
+      this.byTxId.delete(old.id);
       // Remove observations from byId and byObserver
       for (const obs of old.observations) {
         this.byId.delete(obs.id);
@@ -292,6 +296,7 @@ class PacketStore {
         this.byTransmission.set(row.hash, tx);
         this.byHash.set(row.hash, tx);
         this.packets.unshift(tx); // newest first
+        this.byTxId.set(tx.id, tx);
         this._indexByNode(tx);
       } else {
         // Update first_seen if earlier
@@ -515,6 +520,12 @@ class PacketStore {
   getById(id) {
     if (this.sqliteOnly) return this.db.prepare('SELECT * FROM packets WHERE id = ?').get(id) || null;
     return this.byId.get(id) || null;
+  }
+
+  /** Get a transmission by its transmission table ID */
+  getByTxId(id) {
+    if (this.sqliteOnly) return this.db.prepare('SELECT * FROM transmissions WHERE id = ?').get(id) || null;
+    return this.byTxId.get(id) || null;
   }
 
   /** Get all siblings of a packet (same hash) — returns observations array */
