@@ -780,7 +780,8 @@ app.get('/api/packets/timestamps', (req, res) => {
 app.get('/api/packets/:id', (req, res) => {
   const id = Number(req.params.id);
   // Try observation ID first, then transmission ID, then legacy packets table
-  const packet = pktStore.getById(id) || pktStore.getByTxId(id) || db.getPacket(id);
+  // Try transmission ID first (what the UI sends), then observation ID, then legacy
+  const packet = pktStore.getByTxId(id) || pktStore.getById(id) || db.getPacket(id);
   if (!packet) return res.status(404).json({ error: 'Not found' });
 
   // Use the sibling with the longest path (most hops) for display
