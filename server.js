@@ -472,6 +472,7 @@ for (const source of mqttSources) {
           raw_hex: msg.raw,
           timestamp: now,
           observer_id: observerId,
+          observer_name: msg.origin || null,
           snr: msg.SNR ?? null,
           rssi: msg.RSSI ?? null,
           hash: computeContentHash(msg.raw),
@@ -505,7 +506,7 @@ for (const source of mqttSources) {
         }
 
         if (observerId) {
-          db.upsertObserver({ id: observerId, iata: region });
+          db.upsertObserver({ id: observerId, name: msg.origin || null, iata: region });
         }
 
 
