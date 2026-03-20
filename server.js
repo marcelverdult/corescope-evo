@@ -1506,7 +1506,7 @@ app.get('/api/nodes/:pubkey/health', (req, res) => {
   const _ck = 'health:' + pubkey;
   const _c = cache.get(_ck); if (_c) return res.json(_c);
 
-  const node = db.getNode(pubkey);
+  const node = db.db.prepare('SELECT * FROM nodes WHERE public_key = ?').get(pubkey);
   if (!node) return res.status(404).json({ error: 'Not found' });
 
   const todayStart = new Date(); todayStart.setUTCHours(0, 0, 0, 0);
@@ -1553,7 +1553,7 @@ app.get('/api/nodes/:pubkey/analytics', (req, res) => {
   const _ck = `node-analytics:${pubkey}:${days}`;
   const _c = cache.get(_ck); if (_c) return res.json(_c);
 
-  const node = db.getNode(pubkey);
+  const node = db.db.prepare('SELECT * FROM nodes WHERE public_key = ?').get(pubkey);
   if (!node) return res.status(404).json({ error: 'Not found' });
 
   const now = new Date();
