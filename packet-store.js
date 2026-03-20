@@ -249,6 +249,12 @@ class PacketStore {
     return this.byHash.get(hash) || [];
   }
 
+  /** Get all packets (raw array reference — do not mutate) */
+  all() { return this.packets; }
+
+  /** Get all packets matching a filter function */
+  filter(fn) { return this.packets.filter(fn); }
+
   /** Memory stats */
   getStats() {
     return {

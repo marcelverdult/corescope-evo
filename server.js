@@ -815,7 +815,7 @@ app.get('/api/nodes/:pubkey', (req, res) => {
 app.get('/api/analytics/rf', (req, res) => {
   const _c = cache.get('analytics:rf'); if (_c) return res.json(_c);
   const PTYPES = { 0:'REQ',1:'RESPONSE',2:'TXT_MSG',3:'ACK',4:'ADVERT',5:'GRP_TXT',7:'ANON_REQ',8:'PATH',9:'TRACE',11:'CONTROL' };
-  const packets = db.db.prepare(`SELECT snr, rssi, payload_type, timestamp, raw_hex FROM packets WHERE snr IS NOT NULL`).all();
+  const packets = pktStore.filter(p => p.snr != null);
 
   const snrVals = packets.map(p => p.snr).filter(v => v != null);
   const rssiVals = packets.map(p => p.rssi).filter(v => v != null);
@@ -891,7 +891,7 @@ app.get('/api/analytics/rf', (req, res) => {
 // --- Topology Analytics ---
 app.get('/api/analytics/topology', (req, res) => {
   const _c = cache.get('analytics:topology'); if (_c) return res.json(_c);
-  const packets = db.db.prepare(`SELECT path_json, snr, decoded_json, observer_id FROM packets WHERE path_json IS NOT NULL AND path_json != '[]'`).all();
+  const packets = pktStore.filter(p => p.path_json && p.path_json !== '[]');
   const allNodes = db.db.prepare('SELECT public_key, name, lat, lon FROM nodes WHERE name IS NOT NULL').all();
   const resolveHop = (hop, contextPositions) => {
     const h = hop.toLowerCase();
@@ -969,7 +969,7 @@ app.get('/api/analytics/topology', (req, res) => {
     .sort((a, b) => a.hops - b.hops);
 
   // Reachability: per-observer hop distances + cross-observer comparison + best path
-  const observers = db.db.prepare(`SELECT DISTINCT observer_id, observer_name FROM packets WHERE path_json IS NOT NULL AND path_json != '[]'`).all();
+  const observerMap = new Map(); pktStore.filter(p => p.path_json && p.path_json !== '[]' && p.observer_id).forEach(p => observerMap.set(p.observer_id, p.observer_name)); const observers = [...observerMap].map(([observer_id, observer_name]) => ({ observer_id, observer_name }));
 
   // Per-observer: node → min hop distance seen from that observer
   const perObserver = {}; // observer_id → { hop_hex → { minDist, maxDist, count } }
@@ -1057,7 +1057,7 @@ app.get('/api/analytics/topology', (req, res) => {
 // --- Channel Analytics ---
 app.get('/api/analytics/channels', (req, res) => {
   const _c = cache.get('analytics:channels'); if (_c) return res.json(_c);
-  const packets = db.db.prepare(`SELECT decoded_json, timestamp FROM packets WHERE payload_type = 5 AND decoded_json IS NOT NULL`).all();
+  const packets = pktStore.filter(p => p.payload_type === 5 && p.decoded_json);
 
   const channels = {};
   const senderCounts = {};
@@ -1357,7 +1357,7 @@ const channelHashNames = {};
 
 app.get('/api/channels', (req, res) => {
   const _c = cache.get('channels'); if (_c) return res.json(_c);
-  const packets = db.db.prepare(`SELECT * FROM packets WHERE payload_type = 5 ORDER BY timestamp DESC`).all();
+  const packets = pktStore.filter(p => p.payload_type === 5).sort((a,b) => b.timestamp > a.timestamp ? 1 : -1);
   const channelMap = {};
 
   for (const pkt of packets) {
@@ -1395,7 +1395,7 @@ app.get('/api/channels', (req, res) => {
   }
 
   // Also include companion bridge messages (no raw_hex, have text directly)
-  const companionPkts = db.db.prepare(`SELECT * FROM packets WHERE payload_type = 5 AND raw_hex IS NULL ORDER BY timestamp DESC`).all();
+  const companionPkts = pktStore.filter(p => p.payload_type === 5 && !p.raw_hex).sort((a,b) => b.timestamp > a.timestamp ? 1 : -1);
   for (const pkt of companionPkts) {
     let decoded;
     try { decoded = JSON.parse(pkt.decoded_json); } catch { continue; }
@@ -1425,7 +1425,7 @@ app.get('/api/channels/:hash/messages', (req, res) => {
   const _c = cache.get(_ck); if (_c) return res.json(_c);
   const { limit = 100, offset = 0 } = req.query;
   const channelHash = req.params.hash;
-  const packets = db.db.prepare(`SELECT * FROM packets WHERE payload_type = 5 ORDER BY timestamp ASC`).all();
+  const packets = pktStore.filter(p => p.payload_type === 5).sort((a,b) => a.timestamp > b.timestamp ? 1 : -1);
 
   // Group by message content + timestamp to deduplicate repeats
   const msgMap = new Map();
@@ -1492,7 +1492,8 @@ app.get('/api/observers', (req, res) => {
   const observers = db.getObservers();
   const oneHourAgo = new Date(Date.now() - 3600000).toISOString();
   const result = observers.map(o => {
-    const lastHour = db.db.prepare(`SELECT COUNT(*) as count FROM packets WHERE observer_id = ? AND timestamp > ?`).get(o.id, oneHourAgo);
+    const obsPackets = pktStore.byObserver.get(o.id) || [];
+    const lastHour = { count: obsPackets.filter(p => p.timestamp > oneHourAgo).length };
     return { ...o, packetsLastHour: lastHour.count };
   });
   const _oResult = { observers: result, server_time: new Date().toISOString() };
@@ -1501,7 +1502,7 @@ app.get('/api/observers', (req, res) => {
 });
 
 app.get('/api/traces/:hash', (req, res) => {
-  const packets = db.db.prepare(`SELECT observer_id, timestamp, snr, rssi FROM packets WHERE hash = ? ORDER BY timestamp`).all(req.params.hash);
+  const packets = (pktStore.getSiblings(req.params.hash) || []).sort((a,b) => a.timestamp > b.timestamp ? 1 : -1);
   const traces = packets.map(p => ({ observer: p.observer_id, time: p.timestamp, snr: p.snr, rssi: p.rssi }));
   res.json({ traces });
 });
@@ -1528,7 +1529,7 @@ app.get('/api/analytics/subpaths', (req, res) => {
   const _c = cache.get(_ck); if (_c) return res.json(_c);
   const minLen = Math.max(2, Number(req.query.minLen) || 2);
   const maxLen = Number(req.query.maxLen) || 8;
-  const packets = db.db.prepare(`SELECT path_json FROM packets WHERE path_json IS NOT NULL AND path_json != '[]'`).all();
+  const packets = pktStore.filter(p => p.path_json && p.path_json !== '[]');
   const allNodes = db.db.prepare('SELECT public_key, name, lat, lon FROM nodes WHERE name IS NOT NULL').all();
 
   // Disambiguate per path with caching (same hop sequence = same result)
@@ -1589,7 +1590,7 @@ app.get('/api/analytics/subpath-detail', (req, res) => {
   const rawHops = (req.query.hops || '').split(',').filter(Boolean);
   if (rawHops.length < 2) return res.json({ error: 'Need at least 2 hops' });
 
-  const packets = db.db.prepare(`SELECT path_json, snr, rssi, timestamp, decoded_json, observer_name FROM packets WHERE path_json IS NOT NULL AND path_json != '[]'`).all();
+  const packets = pktStore.filter(p => p.path_json && p.path_json !== '[]');
   const allNodes = db.db.prepare('SELECT public_key, name, lat, lon FROM nodes WHERE name IS NOT NULL').all();
 
   // Disambiguate the requested hops
