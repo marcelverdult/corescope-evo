@@ -66,8 +66,9 @@ window.apiPerf = function() {
   })).sort((a, b) => b.totalMs - a.totalMs);
   console.table(rows);
   const hitRate = _apiPerf.calls ? Math.round(_apiPerf.cacheHits / _apiPerf.calls * 100) : 0;
-  console.log(`Cache: ${_apiPerf.cacheHits} hits / ${_apiPerf.calls} calls (${hitRate}% hit rate)`);
-  return { calls: _apiPerf.calls, avgMs: Math.round(_apiPerf.totalMs / (_apiPerf.calls - _apiPerf.cacheHits || 1)), cacheHits: _apiPerf.cacheHits, hitRate: hitRate + '%', endpoints: rows };
+  const misses = _apiPerf.calls - _apiPerf.cacheHits;
+  console.log(`Cache: ${_apiPerf.cacheHits} hits / ${misses} misses (${hitRate}% hit rate)`);
+  return { calls: _apiPerf.calls, avgMs: Math.round(_apiPerf.totalMs / (misses || 1)), cacheHits: _apiPerf.cacheHits, cacheMisses: misses, cacheHitRate: hitRate, endpoints: rows };
 };
 
 function timeAgo(iso) {

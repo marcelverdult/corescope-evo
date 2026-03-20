@@ -46,6 +46,19 @@ class TTLCache {
       if (key.startsWith(prefix)) this.store.delete(key);
     }
   }
+  // Debounced invalidation — wait for burst of packets to settle
+  debouncedInvalidateAll() {
+    if (this._debounceTimer) return; // already scheduled
+    this._debounceTimer = setTimeout(() => {
+      this._debounceTimer = null;
+      this.invalidate('analytics:');
+      this.invalidate('channels');
+      this.invalidate('node:');
+      this.invalidate('health:');
+      this.invalidate('observers');
+      this.invalidate('bulk-health');
+    }, 5000); // batch invalidations over 5s window
+  }
   clear() { this.store.clear(); }
   get size() { return this.store.size; }
 }
@@ -290,12 +303,7 @@ try {
 
 
     // Invalidate caches on new data
-    cache.invalidate('analytics:');
-    cache.invalidate('channels');
-    cache.invalidate('node:');
-    cache.invalidate('health:');
-    cache.invalidate('observers');
-    cache.invalidate('bulk-health');
+    cache.debouncedInvalidateAll();
 
         const broadcastData = { id: packetId, raw: msg.raw, decoded, snr: msg.SNR, rssi: msg.RSSI, hash: msg.hash, observer: observerId };
         broadcast({ type: 'packet', data: broadcastData });
@@ -634,12 +642,7 @@ app.post('/api/packets', (req, res) => {
 
 
     // Invalidate caches on new data
-    cache.invalidate('analytics:');
-    cache.invalidate('channels');
-    cache.invalidate('node:');
-    cache.invalidate('health:');
-    cache.invalidate('observers');
-    cache.invalidate('bulk-health');
+    cache.debouncedInvalidateAll();
 
     broadcast({ type: 'packet', data: { id: packetId, decoded } });
 
