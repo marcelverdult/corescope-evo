@@ -1118,13 +1118,8 @@ app.get('/api/analytics/channels', (req, res) => {
 
 app.get('/api/analytics/hash-sizes', (req, res) => {
   const _c = cache.get('analytics:hash-sizes'); if (_c) return res.json(_c);
-  // Get all packets with raw_hex and non-empty paths, extract hash_size from path_length byte
-  const packets = db.db.prepare(`
-    SELECT raw_hex, path_json, timestamp, payload_type, decoded_json
-    FROM packets
-    WHERE raw_hex IS NOT NULL AND path_json IS NOT NULL AND path_json != '[]'
-    ORDER BY timestamp DESC
-  `).all();
+  // Get all packets with raw_hex and non-empty paths from memory store
+  const packets = pktStore.filter(p => p.raw_hex && p.path_json && p.path_json !== '[]');
 
   const distribution = { 1: 0, 2: 0, 3: 0 };
   const byHour = {};     // hour bucket → { 1: n, 2: n, 3: n }
