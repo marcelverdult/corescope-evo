@@ -1729,7 +1729,20 @@ app.get('/api/nodes/:pubkey/health', (req, res) => {
 
   const todayStart = new Date(); todayStart.setUTCHours(0, 0, 0, 0);
   const todayISO = todayStart.toISOString();
-  const packets = pktStore.byNode.get(pubkey) || [];
+  
+  // Get all packets referencing this node by pubkey index + name text search
+  const indexed = pktStore.byNode.get(pubkey) || [];
+  const idSet = new Set(indexed.map(p => p.id));
+  const nodeName = node.name;
+  let packets;
+  if (nodeName) {
+    packets = pktStore.packets.filter(p =>
+      idSet.has(p.id) ||
+      (p.decoded_json && (p.decoded_json.includes(nodeName) || p.decoded_json.includes(pubkey)))
+    );
+  } else {
+    packets = indexed;
+  }
 
   // Observers
   const obsMap = {};
