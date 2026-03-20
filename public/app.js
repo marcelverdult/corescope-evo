@@ -228,8 +228,8 @@ function offWS(fn) { wsListeners = wsListeners.filter(f => f !== fn); }
 
 /* Global escapeHtml — used by multiple pages */
 function escapeHtml(s) {
-  if (!s) return '';
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  if (s == null) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 /* Global debounce */
