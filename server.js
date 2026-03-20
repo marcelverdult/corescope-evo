@@ -1730,19 +1730,8 @@ app.get('/api/nodes/:pubkey/health', (req, res) => {
   const todayStart = new Date(); todayStart.setUTCHours(0, 0, 0, 0);
   const todayISO = todayStart.toISOString();
   
-  // Get all packets referencing this node by pubkey index + name text search
-  const indexed = pktStore.byNode.get(pubkey) || [];
-  const idSet = new Set(indexed.map(p => p.id));
-  const nodeName = node.name;
-  let packets;
-  if (nodeName) {
-    packets = pktStore.packets.filter(p =>
-      idSet.has(p.id) ||
-      (p.decoded_json && (p.decoded_json.includes(nodeName) || p.decoded_json.includes(pubkey)))
-    );
-  } else {
-    packets = indexed;
-  }
+  // Single reusable lookup for all packets referencing this node
+  const packets = pktStore.findPacketsForNode(pubkey).packets;
 
   // Observers
   const obsMap = {};
@@ -1791,8 +1780,8 @@ app.get('/api/nodes/:pubkey/analytics', (req, res) => {
   const fromISO = new Date(now.getTime() - days * 86400000).toISOString();
   const toISO = now.toISOString();
 
-  // Read from in-memory index, filter by time range
-  const allPkts = pktStore.byNode.get(pubkey) || [];
+  // Read from in-memory index + name search, filter by time range
+  const allPkts = pktStore.findPacketsForNode(pubkey).packets;
   const packets = allPkts.filter(p => p.timestamp > fromISO);
 
   // Activity timeline

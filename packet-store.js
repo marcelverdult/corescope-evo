@@ -87,6 +87,37 @@ class PacketStore {
     } catch {}
   }
 
+  /**
+   * Find ALL packets referencing a node — by pubkey index + name + pubkey text search.
+   * Single source of truth for "get packets for node X".
+   * @param {string} nodeIdOrName - pubkey or friendly name
+   * @param {Array} [fromPackets] - packet array to filter (defaults to this.packets)
+   * @returns {{ packets: Array, pubkey: string, nodeName: string }}
+   */
+  findPacketsForNode(nodeIdOrName, fromPackets) {
+    let pubkey = nodeIdOrName;
+    let nodeName = nodeIdOrName;
+
+    // Resolve: if not a known pubkey, look up in nodes table
+    if (!this.byNode.has(nodeIdOrName)) {
+      try {
+        const row = this.db.prepare("SELECT public_key, name FROM nodes WHERE public_key = ? OR name = ? LIMIT 1").get(nodeIdOrName, nodeIdOrName);
+        if (row) { pubkey = row.public_key; nodeName = row.name || nodeIdOrName; }
+      } catch {}
+    }
+
+    // Combine: index hits + text search by both name and pubkey
+    const indexed = this.byNode.get(pubkey);
+    const idSet = indexed ? new Set(indexed.map(p => p.id)) : new Set();
+    const source = fromPackets || this.packets;
+    const packets = source.filter(p =>
+      idSet.has(p.id) ||
+      (p.decoded_json && (p.decoded_json.includes(nodeName) || p.decoded_json.includes(pubkey)))
+    );
+
+    return { packets, pubkey, nodeName };
+  }
+
   /** Remove oldest packets when over memory limit */
   _evict() {
     while (this.packets.length > this.maxPackets) {
@@ -134,21 +165,7 @@ class PacketStore {
     } else if (observer && !type && !route && !region && !hash && !since && !until && !node) {
       results = this.byObserver.get(observer) || [];
     } else if (node && !type && !route && !region && !observer && !hash && !since && !until) {
-      // Resolve name to pubkey, then use index + text search
-      let pubkey = node;
-      let nodeName = node;
-      if (!this.byNode.has(node)) {
-        try {
-          const row = this.db.prepare("SELECT public_key, name FROM nodes WHERE public_key = ? OR name = ? LIMIT 1").get(node, node);
-          if (row) { pubkey = row.public_key; nodeName = row.name || node; }
-        } catch {}
-      }
-      const indexed = this.byNode.get(pubkey);
-      const idSet = indexed ? new Set(indexed.map(p => p.id)) : new Set();
-      results = this.packets.filter(p =>
-        idSet.has(p.id) ||
-        (p.decoded_json && (p.decoded_json.includes(nodeName) || p.decoded_json.includes(pubkey)))
-      );
+      results = this.findPacketsForNode(node).packets;
     } else {
       // Apply filters sequentially
       if (type !== undefined) {
@@ -173,22 +190,7 @@ class PacketStore {
         results = results.filter(p => regionObservers.has(p.observer_id));
       }
       if (node) {
-        // Resolve name to pubkey if needed
-        let pubkey = node;
-        let nodeName = node;
-        if (!this.byNode.has(node)) {
-          try {
-            const row = this.db.prepare("SELECT public_key, name FROM nodes WHERE public_key = ? OR name = ? LIMIT 1").get(node, node);
-            if (row) { pubkey = row.public_key; nodeName = row.name || node; }
-          } catch {}
-        }
-        // Combine: byNode index hits + text search by both name and pubkey
-        const indexed = this.byNode.get(pubkey);
-        const idSet = indexed ? new Set(indexed.map(p => p.id)) : new Set();
-        results = results.filter(p =>
-          idSet.has(p.id) ||
-          (p.decoded_json && (p.decoded_json.includes(nodeName) || p.decoded_json.includes(pubkey)))
-        );
+        results = this.findPacketsForNode(node, results).packets;
       }
     }
 
