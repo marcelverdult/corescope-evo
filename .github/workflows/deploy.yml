@@ -24,6 +24,7 @@ jobs:
             --restart unless-stopped \
             -p 80:80 -p 443:443 -p 1883:1883 \
             -v $HOME/meshcore-data:/app/data \
+            -v $HOME/meshcore-config.json:/app/config.json:ro \
             -v $HOME/caddy-data:/data/caddy \
             -v $HOME/meshcore-analyzer/Caddyfile:/etc/caddy/Caddyfile \
             meshcore-analyzer
