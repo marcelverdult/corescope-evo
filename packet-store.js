@@ -159,8 +159,15 @@ class PacketStore {
         results = results.filter(p => regionObservers.has(p.observer_id));
       }
       if (node) {
-        // Check indexed results first, fall back to text search
-        const indexed = this.byNode.get(node);
+        // Resolve name to pubkey if needed
+        let pubkey = node;
+        if (!this.byNode.has(node)) {
+          try {
+            const row = this.db.prepare("SELECT public_key FROM nodes WHERE public_key = ? OR name = ? LIMIT 1").get(node, node);
+            if (row) pubkey = row.public_key;
+          } catch {}
+        }
+        const indexed = this.byNode.get(pubkey);
         if (indexed) {
           const idSet = new Set(indexed.map(p => p.id));
           results = results.filter(p => idSet.has(p.id));
@@ -306,7 +313,7 @@ class PacketStore {
     if (since) { where.push('timestamp > ?'); params.push(since); }
     if (until) { where.push('timestamp < ?'); params.push(until); }
     if (region) { where.push('observer_id IN (SELECT id FROM observers WHERE iata = ?)'); params.push(region); }
-    if (node) { where.push('decoded_json LIKE ?'); params.push(`%${node}%`); }
+    if (node) { try { const nr = this.db.prepare('SELECT public_key FROM nodes WHERE public_key = ? OR name = ? LIMIT 1').get(node, node); const pk = nr ? nr.public_key : node; where.push('(decoded_json LIKE ? OR id IN (SELECT packet_id FROM paths WHERE node_hash = ?))'); params.push('%' + pk + '%', pk.substring(0, 8)); } catch(e) { where.push('decoded_json LIKE ?'); params.push('%' + node + '%'); } }
     const w = where.length ? 'WHERE ' + where.join(' AND ') : '';
     const total = this.db.prepare(`SELECT COUNT(*) as c FROM packets ${w}`).get(...params).c;
     const packets = this.db.prepare(`SELECT * FROM packets ${w} ORDER BY timestamp ${order === 'ASC' ? 'ASC' : 'DESC'} LIMIT ? OFFSET ?`).all(...params, limit, offset);
@@ -323,7 +330,7 @@ class PacketStore {
     if (since) { where.push('timestamp > ?'); params.push(since); }
     if (until) { where.push('timestamp < ?'); params.push(until); }
     if (region) { where.push('observer_id IN (SELECT id FROM observers WHERE iata = ?)'); params.push(region); }
-    if (node) { where.push('decoded_json LIKE ?'); params.push(`%${node}%`); }
+    if (node) { try { const nr = this.db.prepare('SELECT public_key FROM nodes WHERE public_key = ? OR name = ? LIMIT 1').get(node, node); const pk = nr ? nr.public_key : node; where.push('(decoded_json LIKE ? OR id IN (SELECT packet_id FROM paths WHERE node_hash = ?))'); params.push('%' + pk + '%', pk.substring(0, 8)); } catch(e) { where.push('decoded_json LIKE ?'); params.push('%' + node + '%'); } }
     const w = where.length ? 'WHERE ' + where.join(' AND ') : '';
 
     const sql = `SELECT hash, COUNT(*) as count, COUNT(DISTINCT observer_id) as observer_count,
