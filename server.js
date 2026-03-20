@@ -1507,12 +1507,49 @@ app.get('/api/traces/:hash', (req, res) => {
 });
 
 app.get('/api/nodes/:pubkey/health', (req, res) => {
-  const _ck = 'health:' + req.params.pubkey;
+  const pubkey = req.params.pubkey;
+  const _ck = 'health:' + pubkey;
   const _c = cache.get(_ck); if (_c) return res.json(_c);
-  const health = db.getNodeHealth(req.params.pubkey);
-  if (!health) return res.status(404).json({ error: 'Not found' });
-  cache.set(_ck, health, TTL.nodeHealth);
-  res.json(health);
+
+  const node = db.getNode(pubkey);
+  if (!node) return res.status(404).json({ error: 'Not found' });
+
+  const todayStart = new Date(); todayStart.setUTCHours(0, 0, 0, 0);
+  const todayISO = todayStart.toISOString();
+  const packets = pktStore.byNode.get(pubkey) || [];
+
+  // Observers
+  const obsMap = {};
+  let snrSum = 0, snrN = 0, totalHops = 0, hopCount = 0, lastHeard = null, packetsToday = 0;
+  for (const p of packets) {
+    if (p.timestamp > todayISO) packetsToday++;
+    if (p.snr != null) { snrSum += p.snr; snrN++; }
+    if (!lastHeard || p.timestamp > lastHeard) lastHeard = p.timestamp;
+    if (p.path_json) {
+      try { const h = JSON.parse(p.path_json); if (Array.isArray(h)) { totalHops += h.length; hopCount++; } } catch {}
+    }
+    if (p.observer_id) {
+      if (!obsMap[p.observer_id]) obsMap[p.observer_id] = { observer_name: p.observer_name, snrSum: 0, snrN: 0, rssiSum: 0, rssiN: 0, packetCount: 0 };
+      const o = obsMap[p.observer_id]; o.packetCount++;
+      if (p.snr != null) { o.snrSum += p.snr; o.snrN++; }
+      if (p.rssi != null) { o.rssiSum += p.rssi; o.rssiN++; }
+    }
+  }
+
+  const observers = Object.entries(obsMap).map(([observer_id, o]) => ({
+    observer_id, observer_name: o.observer_name, packetCount: o.packetCount,
+    avgSnr: o.snrN ? o.snrSum / o.snrN : null, avgRssi: o.rssiN ? o.rssiSum / o.rssiN : null
+  })).sort((a, b) => b.packetCount - a.packetCount);
+
+  const recentPackets = packets.slice(-10).reverse();
+
+  const result = {
+    node: node.node || node, observers,
+    stats: { totalPackets: packets.length, packetsToday, avgSnr: snrN ? snrSum / snrN : null, avgHops: hopCount > 0 ? Math.round(totalHops / hopCount) : 0, lastHeard },
+    recentPackets
+  };
+  cache.set(_ck, result, TTL.nodeHealth);
+  res.json(result);
 });
 
 app.get('/api/nodes/:pubkey/analytics', (req, res) => {
