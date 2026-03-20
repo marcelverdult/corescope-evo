@@ -98,13 +98,11 @@ class PacketStore {
     let pubkey = nodeIdOrName;
     let nodeName = nodeIdOrName;
 
-    // Resolve: if not a known pubkey, look up in nodes table
-    if (!this.byNode.has(nodeIdOrName)) {
-      try {
-        const row = this.db.prepare("SELECT public_key, name FROM nodes WHERE public_key = ? OR name = ? LIMIT 1").get(nodeIdOrName, nodeIdOrName);
-        if (row) { pubkey = row.public_key; nodeName = row.name || nodeIdOrName; }
-      } catch {}
-    }
+    // Always resolve to get both pubkey and name
+    try {
+      const row = this.db.prepare("SELECT public_key, name FROM nodes WHERE public_key = ? OR name = ? LIMIT 1").get(nodeIdOrName, nodeIdOrName);
+      if (row) { pubkey = row.public_key; nodeName = row.name || nodeIdOrName; }
+    } catch {}
 
     // Combine: index hits + text search by both name and pubkey
     const indexed = this.byNode.get(pubkey);
