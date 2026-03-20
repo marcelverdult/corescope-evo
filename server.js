@@ -362,23 +362,42 @@ function autoLearnHopNodes(hops, now) {
 }
 
 // --- MQTT ---
-try {
-  const mqttClient = mqtt.connect(config.mqtt.broker, { reconnectPeriod: 5000 });
-  mqttClient.on('connect', () => {
-    console.log(`MQTT connected to ${config.mqtt.broker}`);
-    // Subscribe to both packet-logging format and companion bridge format
-    mqttClient.subscribe(config.mqtt.topic, (err) => {
-      if (err) console.error('MQTT subscribe error:', err);
-      else console.log(`MQTT subscribed to ${config.mqtt.topic}`);
-    });
-    mqttClient.subscribe('meshcore/#', (err) => {
-      if (err) console.error('MQTT subscribe error (bridge):', err);
-      else console.log('MQTT subscribed to meshcore/#');
-    });
+// Build list of MQTT sources: supports single config.mqtt (legacy) or config.mqttSources array
+const mqttSources = [];
+if (config.mqttSources && Array.isArray(config.mqttSources)) {
+  mqttSources.push(...config.mqttSources);
+} else if (config.mqtt && config.mqtt.broker) {
+  // Legacy single-broker config
+  mqttSources.push({
+    name: 'default',
+    broker: config.mqtt.broker,
+    topics: [config.mqtt.topic, 'meshcore/#'],
   });
-  mqttClient.on('error', () => {}); // MQTT errors are expected when broker is offline
-  mqttClient.on('offline', () => console.log('MQTT offline'));
-  mqttClient.on('message', (topic, message) => {
+}
+
+for (const source of mqttSources) {
+  try {
+    const opts = { reconnectPeriod: 5000 };
+    if (source.username) opts.username = source.username;
+    if (source.password) opts.password = source.password;
+    if (source.rejectUnauthorized === false) opts.rejectUnauthorized = false;
+
+    const client = mqtt.connect(source.broker, opts);
+    const tag = source.name || source.broker;
+
+    client.on('connect', () => {
+      console.log(`MQTT [${tag}] connected to ${source.broker}`);
+      const topics = Array.isArray(source.topics) ? source.topics : [source.topics || 'meshcore/#'];
+      for (const t of topics) {
+        client.subscribe(t, (err) => {
+          if (err) console.error(`MQTT [${tag}] subscribe error for ${t}:`, err);
+          else console.log(`MQTT [${tag}] subscribed to ${t}`);
+        });
+      }
+    });
+    client.on('error', (e) => console.error(`MQTT [${tag}] error:`, e.message));
+    client.on('offline', () => console.log(`MQTT [${tag}] offline`));
+    client.on('message', (topic, message) => {
     try {
       const msg = JSON.parse(message.toString());
       const parts = topic.split('/');
@@ -560,13 +579,14 @@ try {
 
     } catch (e) {
       if (topic !== 'meshcore/status' && topic !== 'meshcore/events/connection') {
-        console.error(`MQTT handler error [${topic}]:`, e.message);
+        console.error(`MQTT [${tag}] handler error [${topic}]:`, e.message);
         try { console.error('  payload:', message.toString().substring(0, 200)); } catch {}
       }
     }
   });
-} catch (e) {
-  console.error('MQTT connection failed (non-fatal):', e.message);
+  } catch (e) {
+    console.error(`MQTT [${source.name || source.broker}] connection failed (non-fatal):`, e.message);
+  }
 }
 
 // --- Express ---

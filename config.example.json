@@ -4,6 +4,21 @@
     "broker": "mqtt://localhost:1883",
     "topic": "meshcore/+/+/packets"
   },
+  "mqttSources": [
+    {
+      "name": "local",
+      "broker": "mqtt://localhost:1883",
+      "topics": ["meshcore/+/+/packets", "meshcore/#"]
+    },
+    {
+      "name": "lincomatic",
+      "broker": "mqtts://mqtt.lincomatic.com:8883",
+      "username": "your-username",
+      "password": "your-password",
+      "rejectUnauthorized": false,
+      "topics": ["meshcore/#"]
+    }
+  ],
   "channelKeys": {
     "public": "8b3387e9c5cdea6ac9e5edbaa115cd72",
     "#test": "9cd8fcf22a47333b591d96a2b848b73f",
