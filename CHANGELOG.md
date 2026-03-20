@@ -1,42 +1,45 @@
 # Changelog
 
-## v2.0.0 (2026-03-20)
+## v2.1.1 — Multi-Broker MQTT & Observer Detail (2026-03-20)
 
-85+ commits — analytics, mobile redesign, accessibility, 100+ bug fixes.
+### 🆕 New Features
 
-### ✨ New Features
-- Per-node analytics page (6 charts, stat cards, peer table, time range selector)
-- Global analytics — Nodes tab (network status, role breakdown, claimed nodes, leaderboards)
-- Live map VCR playback — rewind/replay/scrub 24h at up to 4× speed, retro LCD clock
-- Richer node detail — status badge, avg SNR/hops, observer table, QR codes, recent packets
-- Claimed (My Mesh) nodes — star your nodes, always sorted to top, auto-sync favorites
-- Packets "My Nodes" toggle — filter to only your mesh traffic
-- Bulk health API (`GET /api/nodes/bulk-health`)
-- Network status API (`GET /api/nodes/network-status`)
-- Live theme toggle — dark/light tiles swap instantly via MutationObserver
+- **Multi-Broker MQTT** — Connect to multiple MQTT brokers simultaneously via `mqttSources` config array. Each source gets its own connection, topics, credentials, TLS settings, and optional IATA region filter. Legacy `mqtt` config still works.
+- **IATA Region Filtering** — `mqttSources[].iataFilter` restricts accepted regions per source (e.g. only accept SJC/SFO/OAK packets from a shared feed).
+- **Observer Detail Pages** — Click any observer row for a full detail page with status, radio info, battery/uptime/noise floor, packet type donut chart, timeline, unique nodes chart, SNR distribution, and recent packets table.
+- **Observer Status Topic Parsing** — `meshcore/<region>/<id>/status` messages populate model, firmware, client_version, radio config, battery, uptime, and noise floor. 7 new columns in the observers table with auto-migration.
+- **Channel Key Auto-Derivation** — Hashtag channel keys (`#channel`) are automatically derived as `SHA256("#channelname")` first 16 bytes on startup. Only non-hashtag keys (like `public`) need manual config.
+- **Map Dark/Light Mode** — Map page now uses CartoDB dark/light tiles that swap automatically with the theme toggle (same as live page).
+- **Shareable URLs** — Copy Link button on packet detail, standalone packet page at `#/packet/ID`, deep links to channels and observer detail pages.
+- **Multi-Node Packet Filter** — "My Nodes" toggle in packets view now uses server-side `findPacketsForNode()` to find ALL packet types (messages, acks, traces), not just ADVERTs.
 
-### 📱 Mobile
-- Two-row VCR bar layout (controls+LCD / full-width timeline)
-- iOS safe area support (home indicator clearance)
-- Feed/legend hidden on mobile — just map + VCR + LCD
-- JS-driven viewport height for reliable orientation changes
-- Touch-friendly targets, horizontal scroll on tables
+### 🐛 Bug Fixes
 
-### ♿ Accessibility
-- ARIA tab patterns, focus management, keyboard navigation
-- Distinct SVG marker shapes per node role
-- Color-blind safe palettes, screen reader support
+- **Observer name resolution** — MQTT packets now pass `msg.origin` (friendly name) to both packet records and observer upserts. Previously only the status handler used it.
+- **Observer analytics ordering** — Fixed `recentPackets` returning oldest instead of newest (wrong slice direction). Sorted observer analytics packets explicitly.
+- **Spark bars visible** — Fixed `.data-table td { max-width: 0 }` crushing spark bar cells to zero width with inline style override.
+- **My Nodes filter field names** — Fixed `pubkey` → `pubKey`, `to`/`from` → `srcPubKey`/`destPubKey`/`srcHash`/`destHash`.
+- **Duplicate pin buttons** — Live page destroy now removes the nav pin button; init guards against duplicates.
+- **Packets page crash** — Fixed non-async `renderTableRows` using `await` (syntax error prevented entire page from loading).
+- **Node search all packet types** — Search by node name now returns messages, acks, and traces — not just ADVERTs.
+- **Node packet count accuracy** — `findPacketsForNode()` is now single source of truth for all node packet lookups.
+- **Health endpoint recentPackets** — Changed from `slice(-10).reverse()` to `slice(0, 20)` — 20 newest DESC instead of 10 oldest.
+- **RF analytics total packets** — Added `totalAllPackets` field so frontend shows both total and signal-filtered counts.
+- **Duplicate `const crypto` crash** — Removed duplicate `require('crypto')` that crashed prod for ~2 minutes.
+- **PII scrubbed from git history** — Removed real names and coordinates from seed data across all commits.
 
-### 🐛 Bug Fixes (100+)
-- Excel-like column resize — steal proportionally from all right columns
-- Panel drag live reflow
-- VCR scrub pagination, replay buffer management
-- Express route ordering (named before parameterized)
-- XSS escaping, WebSocket cleanup, memory leaks
-- Dark mode consistency, empty states, SRI hashes
-- Stray CSS fragment corrupting live.css
-- Geographic prefix disambiguation restored
+### 🏗️ Infrastructure
 
-## v1.0.0 (2026-03-19)
+- **Docker container deployed to Azure VM** — Live at `https://analyzer.00id.net` with automatic Let's Encrypt TLS via Caddy.
+- **`deploy.sh` fixed** — Config mount (`-v config.json:/app/config.json:ro`) was missing, causing every deploy to fall back to placeholder credentials. Added `|| true` to stop/rm to prevent chain failures.
+- **CI/CD via GitHub Actions** — Self-hosted runner on VM, auto-deploys on push to master.
 
-Initial release.
+---
+
+## v2.0.1 — Mobile Packets (2026-03-18)
+
+See [v2.0.1 release](https://github.com/Kpa-clawbot/meshcore-analyzer/releases/tag/v2.0.1).
+
+## v2.0.0 — Live Trace Map & VCR Playback (2026-03-17)
+
+See [v2.0.0 release](https://github.com/Kpa-clawbot/meshcore-analyzer/releases/tag/v2.0.0).

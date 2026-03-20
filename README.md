@@ -48,12 +48,16 @@ Full experience on your phone — proper touch controls, iOS safe area support, 
 - **Observer Status** — health monitoring, packet counts, uptime
 - **Hash Collision Matrix** — detect address collisions across the mesh
 - **Claimed Nodes** — star your nodes, always sorted to top, visual distinction
-- **Dark / Light Mode** — auto-detects system preference, instant toggle
+- **Dark / Light Mode** — auto-detects system preference, instant toggle, map tiles swap too
+- **Multi-Broker MQTT** — connect to multiple MQTT brokers simultaneously with per-source IATA filtering
+- **Observer Detail Pages** — click any observer for analytics, charts, status, radio info, recent packets
+- **Channel Key Auto-Derivation** — hashtag channels (`#channel`) keys derived automatically via SHA256
 - **Global Search** — search packets, nodes, and channels (Ctrl+K)
+- **Shareable URLs** — deep links to individual packets, channels, and observer detail pages
 - **Mobile Responsive** — proper two-row VCR bar, iOS safe area support, touch-friendly
 - **Accessible** — ARIA patterns, keyboard navigation, screen reader support, distinct marker shapes
 
-### ⚡ Performance (v2.1.0)
+### ⚡ Performance (v2.1.1)
 
 Two-layer caching architecture: in-memory packet store + TTL response cache. All packet reads served from RAM — SQLite is write-only. Heavy endpoints pre-warmed on startup.
 
@@ -148,6 +152,17 @@ Edit `config.json`:
     "broker": "mqtt://localhost:1883",
     "topic": "meshcore/+/+/packets"
   },
+  "mqttSources": [
+    {
+      "name": "remote-feed",
+      "broker": "mqtts://remote-broker:8883",
+      "topics": ["meshcore/+/+/packets", "meshcore/+/+/status"],
+      "username": "user",
+      "password": "pass",
+      "rejectUnauthorized": false,
+      "iataFilter": ["SJC", "SFO", "OAK"]
+    }
+  ],
   "channelKeys": {
     "public": "8b3387e9c5cdea6ac9e5edbaa115cd72"
   },
@@ -163,9 +178,16 @@ Edit `config.json`:
 | Field | Description |
 |-------|-------------|
 | `port` | HTTP server port (default: 3000) |
-| `mqtt.broker` | MQTT broker URL. Set to `""` to disable MQTT and use API-only mode |
+| `mqtt.broker` | Local MQTT broker URL. Set to `""` to disable |
 | `mqtt.topic` | MQTT topic pattern for packet ingestion |
-| `channelKeys` | Named channel decryption keys (hex). `public` is the default MeshCore public channel |
+| `mqttSources` | Array of external MQTT broker connections (optional) |
+| `mqttSources[].name` | Friendly name for logging |
+| `mqttSources[].broker` | Broker URL (`mqtt://` or `mqtts://` for TLS) |
+| `mqttSources[].topics` | Array of MQTT topic patterns to subscribe to |
+| `mqttSources[].username` / `password` | Broker credentials |
+| `mqttSources[].rejectUnauthorized` | Set `false` for self-signed TLS certs |
+| `mqttSources[].iataFilter` | Only accept packets from these IATA regions |
+| `channelKeys` | Named channel decryption keys (hex). Hashtag channels auto-derived via SHA256 |
 | `defaultRegion` | Default IATA region code for the UI |
 | `regions` | Map of IATA codes to human-readable region names |
 
@@ -255,6 +277,7 @@ meshcore-analyzer/
 │   ├── node-analytics.js # Per-node analytics with charts
 │   ├── traces.js        # Packet tracing
 │   ├── observers.js     # Observer status
+│   ├── observer-detail.js # Observer detail with analytics
 │   ├── home.js          # Dashboard home page
 │   └── perf.js          # Performance monitoring dashboard
 └── tools/
