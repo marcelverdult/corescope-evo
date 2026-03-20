@@ -221,6 +221,7 @@
             const existing = packets.find(g => g.hash === h);
             if (existing) {
               existing.count = (existing.count || 1) + 1;
+              existing.observation_count = (existing.observation_count || 1) + 1;
               existing.latest = p.timestamp > existing.latest ? p.timestamp : existing.latest;
               // Track unique observers
               if (p.observer_id && p.observer_id !== existing.observer_id) {
@@ -630,7 +631,7 @@
           <td class="col-type">${p.payload_type != null ? `<span class="badge badge-${groupTypeClass}">${groupTypeName}</span>` : '—'}</td>
           <td class="col-observer">${isSingle ? truncate(obsName(p.observer_id), 16) : truncate(obsName(p.observer_id), 10) + (p.observer_count > 1 ? ' +' + (p.observer_count - 1) : '')}</td>
           <td class="col-path"><span class="path-hops">${groupPathStr}</span></td>
-          <td class="col-rpt">${isSingle ? '' : p.count}</td>
+          <td class="col-rpt">${p.observation_count > 1 ? '<span class="badge badge-obs" title="Seen ' + p.observation_count + ' times">👁 ' + p.observation_count + '</span>' : (isSingle ? '' : p.count)}</td>
           <td class="col-details">${getDetailPreview((() => { try { return JSON.parse(p.decoded_json || '{}'); } catch { return {}; } })())}</td>
         </tr>`;
         // Child rows (loaded async when expanded)
@@ -1104,11 +1105,12 @@
       renderTableRows();
       return;
     }
-    // Load children for this hash
+    // Load children (observations) for this hash
     try {
-      const data = await api(`/packets?hash=${hash}&limit=20`);
+      const data = await api(`/packets?hash=${hash}&limit=1&expand=observations`);
+      const pkt = (data.packets || [])[0];
       const group = packets.find(p => p.hash === hash);
-      if (group) group._children = data.packets || [];
+      if (group && pkt) group._children = (pkt.observations || []).map(o => ({...pkt, ...o, _isObservation: true}));
       // Resolve any new hops from children
       const childHops = new Set();
       for (const c of (group?._children || [])) {

@@ -263,6 +263,11 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
   font-size: 10px; font-weight: 700; font-family: var(--mono);
   background: var(--nav-bg); color: #fff; letter-spacing: .5px;
 }
+.badge-obs {
+  display: inline-block; padding: 1px 6px; border-radius: 10px;
+  font-size: 10px; font-weight: 600;
+  background: #ede9fe; color: #6d28d9;
+}
 
 /* === Monospace === */
 .mono { font-family: var(--mono); font-size: 12px; }

@@ -71,6 +71,41 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_packets_payload_type ON packets(payload_type);
   CREATE INDEX IF NOT EXISTS idx_nodes_last_seen ON nodes(last_seen);
   CREATE INDEX IF NOT EXISTS idx_observers_last_seen ON observers(last_seen);
+
+  CREATE TABLE IF NOT EXISTS transmissions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    raw_hex TEXT NOT NULL,
+    hash TEXT NOT NULL UNIQUE,
+    first_seen TEXT NOT NULL,
+    route_type INTEGER,
+    payload_type INTEGER,
+    payload_version INTEGER,
+    decoded_json TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS observations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    transmission_id INTEGER NOT NULL REFERENCES transmissions(id),
+    hash TEXT NOT NULL,
+    observer_id TEXT,
+    observer_name TEXT,
+    direction TEXT,
+    snr REAL,
+    rssi REAL,
+    score INTEGER,
+    path_json TEXT,
+    timestamp TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_transmissions_hash ON transmissions(hash);
+  CREATE INDEX IF NOT EXISTS idx_transmissions_first_seen ON transmissions(first_seen);
+  CREATE INDEX IF NOT EXISTS idx_transmissions_payload_type ON transmissions(payload_type);
+  CREATE INDEX IF NOT EXISTS idx_observations_hash ON observations(hash);
+  CREATE INDEX IF NOT EXISTS idx_observations_transmission_id ON observations(transmission_id);
+  CREATE INDEX IF NOT EXISTS idx_observations_observer_id ON observations(observer_id);
+  CREATE INDEX IF NOT EXISTS idx_observations_timestamp ON observations(timestamp);
 `);
 
 // --- Migrations for existing DBs ---
@@ -144,6 +179,16 @@ const stmts = {
   countNodes: db.prepare(`SELECT COUNT(*) as count FROM nodes`),
   countObservers: db.prepare(`SELECT COUNT(*) as count FROM observers`),
   countRecentPackets: db.prepare(`SELECT COUNT(*) as count FROM packets WHERE timestamp > ?`),
+  getTransmissionByHash: db.prepare(`SELECT id, first_seen FROM transmissions WHERE hash = ?`),
+  insertTransmission: db.prepare(`
+    INSERT INTO transmissions (raw_hex, hash, first_seen, route_type, payload_type, payload_version, decoded_json)
+    VALUES (@raw_hex, @hash, @first_seen, @route_type, @payload_type, @payload_version, @decoded_json)
+  `),
+  updateTransmissionFirstSeen: db.prepare(`UPDATE transmissions SET first_seen = @first_seen WHERE id = @id`),
+  insertObservation: db.prepare(`
+    INSERT INTO observations (transmission_id, hash, observer_id, observer_name, direction, snr, rssi, score, path_json, timestamp)
+    VALUES (@transmission_id, @hash, @observer_id, @observer_name, @direction, @snr, @rssi, @score, @path_json, @timestamp)
+  `),
 };
 
 // --- Helper functions ---
@@ -166,6 +211,49 @@ function insertPacket(data) {
     decoded_json: data.decoded_json || null,
   };
   return stmts.insertPacket.run(d).lastInsertRowid;
+}
+
+function insertTransmission(data) {
+  const hash = data.hash;
+  if (!hash) return null; // Can't deduplicate without a hash
+
+  const timestamp = data.timestamp || new Date().toISOString();
+  let transmissionId;
+
+  const existing = stmts.getTransmissionByHash.get(hash);
+  if (existing) {
+    transmissionId = existing.id;
+    // Update first_seen if this observation is earlier
+    if (timestamp < existing.first_seen) {
+      stmts.updateTransmissionFirstSeen.run({ id: transmissionId, first_seen: timestamp });
+    }
+  } else {
+    const result = stmts.insertTransmission.run({
+      raw_hex: data.raw_hex || '',
+      hash,
+      first_seen: timestamp,
+      route_type: data.route_type ?? null,
+      payload_type: data.payload_type ?? null,
+      payload_version: data.payload_version ?? null,
+      decoded_json: data.decoded_json || null,
+    });
+    transmissionId = result.lastInsertRowid;
+  }
+
+  const obsResult = stmts.insertObservation.run({
+    transmission_id: transmissionId,
+    hash,
+    observer_id: data.observer_id || null,
+    observer_name: data.observer_name || null,
+    direction: data.direction || null,
+    snr: data.snr ?? null,
+    rssi: data.rssi ?? null,
+    score: data.score ?? null,
+    path_json: data.path_json || null,
+    timestamp,
+  });
+
+  return { transmissionId, observationId: obsResult.lastInsertRowid };
 }
 
 function insertPath(packetId, hops) {
@@ -276,8 +364,15 @@ function getObservers() {
 
 function getStats() {
   const oneHourAgo = new Date(Date.now() - 3600000).toISOString();
+  // Try to get transmission count from normalized schema
+  let totalTransmissions = null;
+  try {
+    totalTransmissions = db.prepare('SELECT COUNT(*) as count FROM transmissions').get().count;
+  } catch {}
   return {
     totalPackets: stmts.countPackets.get().count,
+    totalTransmissions,
+    totalObservations: stmts.countPackets.get().count, // legacy packets = observations
     totalNodes: stmts.countNodes.get().count,
     totalObservers: stmts.countObservers.get().count,
     packetsLastHour: stmts.countRecentPackets.get(oneHourAgo).count,
@@ -557,4 +652,4 @@ function getNodeAnalytics(pubkey, days) {
   };
 }
 
-module.exports = { db, insertPacket, insertPath, upsertNode, upsertObserver, updateObserverStatus, getPackets, getPacket, getNodes, getNode, getObservers, getStats, seed, searchNodes, getNodeHealth, getNodeAnalytics };
+module.exports = { db, insertPacket, insertTransmission, insertPath, upsertNode, upsertObserver, updateObserverStatus, getPackets, getPacket, getNodes, getNode, getObservers, getStats, seed, searchNodes, getNodeHealth, getNodeAnalytics };
