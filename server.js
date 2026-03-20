@@ -514,7 +514,7 @@ for (const source of mqttSources) {
         const observerId = parts[2] || null;
         const region = parts[1] || null;
 
-        const packetId = pktStore.insert({
+        const pktData = {
           raw_hex: msg.raw,
           timestamp: now,
           observer_id: observerId,
@@ -527,7 +527,9 @@ for (const source of mqttSources) {
           payload_version: decoded.header.payloadVersion,
           path_json: JSON.stringify(decoded.path.hops),
           decoded_json: JSON.stringify(decoded.payload),
-        });
+        };
+        const packetId = pktStore.insert(pktData);
+        try { db.insertTransmission(pktData); } catch (e) { console.error('[dual-write] transmission insert error:', e.message); }
 
         if (decoded.path.hops.length > 0) {
           db.insertPath(packetId, decoded.path.hops);
@@ -598,7 +600,7 @@ for (const source of mqttSources) {
           const role = advert.role || (advert.flags?.repeater ? 'repeater' : advert.flags?.room ? 'room' : 'companion');
           db.upsertNode({ public_key: pubKey, name, role, lat, lon, last_seen: now });
           
-          const packetId = pktStore.insert({
+          const advertPktData = {
             raw_hex: null,
             timestamp: now,
             observer_id: 'companion',
@@ -611,7 +613,9 @@ for (const source of mqttSources) {
             payload_version: 0,
             path_json: JSON.stringify([]),
             decoded_json: JSON.stringify(advert),
-          });
+          };
+          const packetId = pktStore.insert(advertPktData);
+          try { db.insertTransmission(advertPktData); } catch (e) { console.error('[dual-write] transmission insert error:', e.message); }
           broadcast({ type: 'packet', data: { id: packetId, decoded: { header: { payloadTypeName: 'ADVERT' }, payload: advert } } });
         }
         return;
@@ -629,7 +633,7 @@ for (const source of mqttSources) {
           const senderKey = `sender-${senderName.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
           db.upsertNode({ public_key: senderKey, name: senderName, role: 'companion', lat: null, lon: null, last_seen: now });
         }
-        const packetId = pktStore.insert({
+        const chPktData = {
           raw_hex: null,
           timestamp: now,
           observer_id: 'companion',
@@ -642,7 +646,9 @@ for (const source of mqttSources) {
           payload_version: 0,
           path_json: JSON.stringify([]),
           decoded_json: JSON.stringify(channelMsg),
-        });
+        };
+        const packetId = pktStore.insert(chPktData);
+        try { db.insertTransmission(chPktData); } catch (e) { console.error('[dual-write] transmission insert error:', e.message); }
         broadcast({ type: 'packet', data: { id: packetId, decoded: { header: { payloadTypeName: 'GRP_TXT' }, payload: channelMsg } } });
         broadcast({ type: 'message', data: { id: packetId, decoded: { header: { payloadTypeName: 'GRP_TXT' }, payload: channelMsg } } });
         return;
@@ -651,7 +657,7 @@ for (const source of mqttSources) {
       // Handle direct messages
       if (topic.startsWith('meshcore/message/direct/')) {
         const dm = msg.payload || msg;
-        const packetId = pktStore.insert({
+        const dmPktData = {
           raw_hex: null,
           timestamp: dm.timestamp || now,
           observer_id: 'companion',
@@ -663,7 +669,9 @@ for (const source of mqttSources) {
           payload_version: 0,
           path_json: JSON.stringify(dm.hops || []),
           decoded_json: JSON.stringify(dm),
-        });
+        };
+        const packetId = pktStore.insert(dmPktData);
+        try { db.insertTransmission(dmPktData); } catch (e) { console.error('[dual-write] transmission insert error:', e.message); }
         broadcast({ type: 'packet', data: { id: packetId, decoded: { header: { payloadTypeName: 'TXT_MSG' }, payload: dm } } });
         return;
       }
@@ -671,7 +679,7 @@ for (const source of mqttSources) {
       // Handle traceroute
       if (topic.startsWith('meshcore/traceroute/')) {
         const trace = msg.payload || msg;
-        const packetId = pktStore.insert({
+        const tracePktData = {
           raw_hex: null,
           timestamp: now,
           observer_id: 'companion',
@@ -683,7 +691,9 @@ for (const source of mqttSources) {
           payload_version: 0,
           path_json: JSON.stringify(trace.hops || trace.path || []),
           decoded_json: JSON.stringify(trace),
-        });
+        };
+        const packetId = pktStore.insert(tracePktData);
+        try { db.insertTransmission(tracePktData); } catch (e) { console.error('[dual-write] transmission insert error:', e.message); }
         broadcast({ type: 'packet', data: { id: packetId, decoded: { header: { payloadTypeName: 'TRACE' }, payload: trace } } });
         return;
       }
@@ -860,7 +870,7 @@ app.post('/api/packets', (req, res) => {
     const decoded = decoder.decodePacket(hex, channelKeys);
     const now = new Date().toISOString();
 
-    const packetId = pktStore.insert({
+    const apiPktData = {
       raw_hex: hex.toUpperCase(),
       timestamp: now,
       observer_id: observer || null,
@@ -872,7 +882,9 @@ app.post('/api/packets', (req, res) => {
       payload_version: decoded.header.payloadVersion,
       path_json: JSON.stringify(decoded.path.hops),
       decoded_json: JSON.stringify(decoded.payload),
-    });
+    };
+    const packetId = pktStore.insert(apiPktData);
+    try { db.insertTransmission(apiPktData); } catch (e) { console.error('[dual-write] transmission insert error:', e.message); }
 
     if (decoded.path.hops.length > 0) {
       db.insertPath(packetId, decoded.path.hops);

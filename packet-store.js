@@ -23,6 +23,7 @@ class PacketStore {
     this.byHash = new Map();       // hash → [packet, ...]
     this.byObserver = new Map();   // observer_id → [packet, ...]
     this.byNode = new Map();       // pubkey → [packet, ...]
+    this.byTransmission = new Map(); // hash → {id, hash, first_seen, payload_type, decoded_json, observations: []}
 
     this.loaded = false;
     this.stats = { totalLoaded: 0, evicted: 0, inserts: 0, queries: 0 };
@@ -69,6 +70,33 @@ class PacketStore {
 
     // Index by node pubkeys mentioned in decoded_json
     this._indexByNode(pkt);
+
+    // Index by transmission (dedup view)
+    if (pkt.hash) {
+      if (!this.byTransmission.has(pkt.hash)) {
+        this.byTransmission.set(pkt.hash, {
+          id: pkt.id,
+          hash: pkt.hash,
+          first_seen: pkt.timestamp,
+          payload_type: pkt.payload_type,
+          decoded_json: pkt.decoded_json,
+          observations: [],
+        });
+      }
+      const tx = this.byTransmission.get(pkt.hash);
+      if (pkt.timestamp < tx.first_seen) tx.first_seen = pkt.timestamp;
+      tx.observations.push({
+        id: pkt.id,
+        observer_id: pkt.observer_id,
+        observer_name: pkt.observer_name,
+        direction: pkt.direction,
+        snr: pkt.snr,
+        rssi: pkt.rssi,
+        score: pkt.score,
+        path_json: pkt.path_json,
+        timestamp: pkt.timestamp,
+      });
+    }
   }
 
   /** Extract node pubkeys/names from decoded_json and index */
@@ -311,6 +339,7 @@ class PacketStore {
         byHash: this.byHash.size,
         byObserver: this.byObserver.size,
         byNode: this.byNode.size,
+        byTransmission: this.byTransmission.size,
       }
     };
   }
