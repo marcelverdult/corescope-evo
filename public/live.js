@@ -609,12 +609,7 @@
             <li><span class="live-dot" style="background:#ec4899" aria-hidden="true"></span> Trace — Route trace</li>
           </ul>
           <h3 class="legend-title" style="margin-top:8px">NODE ROLES</h3>
-          <ul class="legend-list">
-            <li><span class="live-dot" style="background:#3b82f6" aria-hidden="true"></span> Repeater</li>
-            <li><span class="live-dot" style="background:#06b6d4" aria-hidden="true"></span> Companion</li>
-            <li><span class="live-dot" style="background:#a855f7" aria-hidden="true"></span> Room</li>
-            <li><span class="live-dot" style="background:#f59e0b" aria-hidden="true"></span> Sensor</li>
-          </ul>
+          <ul class="legend-list" id="roleLegendList"></ul>
         </div>
 
         <!-- VCR Bar -->
@@ -742,6 +737,16 @@
         legendToggleBtn.setAttribute('aria-label', isVisible ? 'Hide legend' : 'Show legend');
         legendToggleBtn.textContent = isVisible ? '✕' : '🎨';
       });
+    }
+
+    // Populate role legend from shared roles.js
+    const roleLegendList = document.getElementById('roleLegendList');
+    if (roleLegendList) {
+      for (const role of (window.ROLE_SORT || ['repeater', 'companion', 'room', 'sensor', 'observer'])) {
+        const li = document.createElement('li');
+        li.innerHTML = `<span class="live-dot" style="background:${ROLE_COLORS[role] || '#6b7280'}" aria-hidden="true"></span> ${(ROLE_LABELS[role] || role).replace(/s$/, '')}`;
+        roleLegendList.appendChild(li);
+      }
     }
 
     // Feed panel resize handle (#27)
