@@ -1756,7 +1756,7 @@ app.get('/api/nodes/:pubkey/health', (req, res) => {
     avgSnr: o.snrN ? o.snrSum / o.snrN : null, avgRssi: o.rssiN ? o.rssiSum / o.rssiN : null
   })).sort((a, b) => b.packetCount - a.packetCount);
 
-  const recentPackets = packets.slice(-10).reverse();
+  const recentPackets = packets.slice(0, 20);
 
   const result = {
     node: node.node || node, observers,
