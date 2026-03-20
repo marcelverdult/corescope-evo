@@ -75,7 +75,7 @@ console.log(`Total packets: ${totalPackets}`);
 
 // --- Group by hash and migrate ---
 const insertTransmission = db.prepare(`
-  INSERT INTO transmissions (raw_hex, hash, first_seen, route_type, payload_type, payload_version, decoded_json)
+  INSERT OR IGNORE INTO transmissions (raw_hex, hash, first_seen, route_type, payload_type, payload_version, decoded_json)
   VALUES (?, ?, ?, ?, ?, ?, ?)
 `);
 
@@ -87,6 +87,8 @@ const insertObservation = db.prepare(`
 const hashToTransmissionId = new Map();
 let transmissionCount = 0;
 
+const lookupTransmission = db.prepare('SELECT id FROM transmissions WHERE hash = ?');
+
 const migrate = db.transaction(() => {
   for (const pkt of packets) {
     let txId = hashToTransmissionId.get(pkt.hash);
@@ -95,7 +97,12 @@ const migrate = db.transaction(() => {
         pkt.raw_hex, pkt.hash, pkt.timestamp,
         pkt.route_type, pkt.payload_type, pkt.payload_version, pkt.decoded_json
       );
-      txId = result.lastInsertRowid;
+      if (result.changes > 0) {
+        txId = result.lastInsertRowid;
+      } else {
+        // Already inserted by dual-write, look up existing
+        txId = lookupTransmission.get(pkt.hash).id;
+      }
       hashToTransmissionId.set(pkt.hash, txId);
       transmissionCount++;
     }
