@@ -817,7 +817,7 @@
     const copyLinkBtn = panel.querySelector('.copy-link-btn');
     if (copyLinkBtn) {
       copyLinkBtn.addEventListener('click', () => {
-        const url = `${location.origin}/#/packets?id=${copyLinkBtn.dataset.packetId}`;
+        const url = `${location.origin}/#/packets/id/${copyLinkBtn.dataset.packetId}`;
         navigator.clipboard.writeText(url).then(() => {
           copyLinkBtn.textContent = '✅ Copied!';
           setTimeout(() => { copyLinkBtn.textContent = '🔗 Copy Link'; }, 1500);
