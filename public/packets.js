@@ -577,7 +577,7 @@
     makeColumnsResizable('#pktTable', 'meshcore-pkt-col-widths');
   }
 
-  function renderTableRows() {
+  async function renderTableRows() {
     const tbody = document.getElementById('pktBody');
     if (!tbody) return;
 
