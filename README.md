@@ -124,8 +124,6 @@ docker run -d \
 
 ### Manual Install
 
-### Manual Install
-
 #### Prerequisites
 
 - **Node.js** 18+ (tested with 22.x)
@@ -229,17 +227,26 @@ Observer Node → USB → meshcoretomqtt → MQTT Broker → Analyzer Server →
 
 ```
 meshcore-analyzer/
-├── config.json          # MQTT, channel keys, regions
+├── Dockerfile           # Single-container build (Node + Mosquitto + Caddy)
+├── .dockerignore
+├── config.example.json  # Example config (copy to config.json)
+├── config.json          # MQTT, channel keys, regions (gitignored)
 ├── server.js            # Express + WebSocket + MQTT + REST API
 ├── decoder.js           # Custom MeshCore packet decoder
 ├── db.js                # SQLite schema + queries
+├── packet-store.js      # In-memory packet store (ring buffer, indexed)
+├── docker/
+│   ├── supervisord.conf # Process manager config
+│   ├── mosquitto.conf   # MQTT broker config
+│   ├── Caddyfile        # Default Caddy config (localhost)
+│   └── entrypoint.sh    # Container entrypoint
 ├── data/
 │   └── meshcore.db      # Packet database (auto-created)
 ├── public/
 │   ├── index.html       # SPA shell
 │   ├── style.css        # Theme (light/dark)
 │   ├── app.js           # Router, WebSocket, utilities
-│   ├── packets.js       # Packet feed + byte breakdown
+│   ├── packets.js       # Packet feed + byte breakdown + detail page
 │   ├── map.js           # Leaflet map with route visualization
 │   ├── live.js          # Live trace page with VCR playback
 │   ├── channels.js      # Channel chat
@@ -247,7 +254,9 @@ meshcore-analyzer/
 │   ├── analytics.js     # Global analytics dashboard
 │   ├── node-analytics.js # Per-node analytics with charts
 │   ├── traces.js        # Packet tracing
-│   └── observers.js     # Observer status
+│   ├── observers.js     # Observer status
+│   ├── home.js          # Dashboard home page
+│   └── perf.js          # Performance monitoring dashboard
 └── tools/
     ├── generate-packets.js  # Synthetic packet generator
     ├── e2e-test.js          # End-to-end API tests
