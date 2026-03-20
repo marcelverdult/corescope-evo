@@ -8,7 +8,10 @@
     {
       "name": "local",
       "broker": "mqtt://localhost:1883",
-      "topics": ["meshcore/+/+/packets", "meshcore/#"]
+      "topics": [
+        "meshcore/+/+/packets",
+        "meshcore/#"
+      ]
     },
     {
       "name": "lincomatic",
@@ -16,8 +19,16 @@
       "username": "your-username",
       "password": "your-password",
       "rejectUnauthorized": false,
-      "topics": ["meshcore/+/+/packets", "meshcore/+/+/status"],
-      "iataFilter": ["SJC", "SFO", "OAK"]
+      "topics": [
+        "meshcore/SJC/#",
+        "meshcore/SFO/#",
+        "meshcore/OAK/#"
+      ],
+      "iataFilter": [
+        "SJC",
+        "SFO",
+        "OAK"
+      ]
     }
   ],
   "channelKeys": {
