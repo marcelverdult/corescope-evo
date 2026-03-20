@@ -100,6 +100,26 @@
   background: color-mix(in srgb, var(--text) 14%, transparent);
 }
 
+/* ---- Node Detail Panel ---- */
+.live-node-detail {
+  top: 60px;
+  right: 12px;
+  width: 320px;
+  max-height: calc(100vh - 140px);
+  overflow-y: auto;
+  background: color-mix(in srgb, var(--surface-1) 95%, transparent);
+  backdrop-filter: blur(12px);
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+.live-node-detail.hidden {
+  transform: translateX(340px);
+  opacity: 0;
+  pointer-events: none;
+}
+
 /* ---- Feed ---- */
 .live-feed {
   bottom: 12px;

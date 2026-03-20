@@ -598,6 +598,10 @@
           <button class="feed-hide-btn" id="feedHideBtn" title="Hide feed">✕</button>
         </div>
         <button class="feed-show-btn hidden" id="feedShowBtn" title="Show feed">📋</button>
+        <div class="live-overlay live-node-detail hidden" id="liveNodeDetail">
+          <button class="feed-hide-btn" id="nodeDetailClose" title="Close">✕</button>
+          <div id="nodeDetailContent"></div>
+        </div>
         <button class="legend-toggle-btn hidden" id="legendToggleBtn" aria-label="Show legend" title="Show legend">🎨</button>
         <div class="live-overlay live-legend" id="liveLegend" role="region" aria-label="Map legend">
           <h3 class="legend-title">PACKET TYPES</h3>
@@ -748,6 +752,13 @@
         roleLegendList.appendChild(li);
       }
     }
+
+    // Node detail panel
+    const nodeDetailPanel = document.getElementById('liveNodeDetail');
+    const nodeDetailContent = document.getElementById('nodeDetailContent');
+    document.getElementById('nodeDetailClose').addEventListener('click', () => {
+      nodeDetailPanel.classList.add('hidden');
+    });
 
     // Feed panel resize handle (#27)
     const savedFeedWidth = localStorage.getItem('live-feed-width');
@@ -966,6 +977,80 @@
     }, 2000);
   }
 
+  async function showNodeDetail(pubkey) {
+    const panel = document.getElementById('liveNodeDetail');
+    const content = document.getElementById('nodeDetailContent');
+    panel.classList.remove('hidden');
+    content.innerHTML = '<div style="padding:20px;color:var(--text-muted)">Loading…</div>';
+    try {
+      const [data, healthData] = await Promise.all([
+        api('/nodes/' + encodeURIComponent(pubkey), { ttl: 30 }),
+        api('/nodes/' + encodeURIComponent(pubkey) + '/health', { ttl: 30 }).catch(() => null)
+      ]);
+      const n = data.node;
+      const h = healthData || {};
+      const stats = h.stats || {};
+      const observers = h.observers || [];
+      const recent = h.recentPackets || [];
+      const roleColor = ROLE_COLORS[n.role] || '#6b7280';
+      const roleLabel = (ROLE_LABELS[n.role] || n.role || 'unknown').replace(/s$/, '');
+      const hasLoc = n.lat != null && n.lon != null;
+      const lastSeen = n.last_seen ? timeAgo(n.last_seen) : '—';
+      const thresholds = window.getHealthThresholds ? getHealthThresholds(n.role) : { degradedMs: 3600000, silentMs: 86400000 };
+      const ageMs = n.last_seen ? Date.now() - new Date(n.last_seen).getTime() : Infinity;
+      const statusDot = ageMs < thresholds.degradedMs ? 'health-green' : ageMs < thresholds.silentMs ? 'health-yellow' : 'health-red';
+      const statusLabel = ageMs < thresholds.degradedMs ? 'Online' : ageMs < thresholds.silentMs ? 'Degraded' : 'Offline';
+
+      let html = `
+        <div style="padding:16px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+            <span class="${statusDot}" style="font-size:18px">●</span>
+            <h3 style="margin:0;font-size:16px;font-weight:700;">${esc(n.name || 'Unknown')}</h3>
+          </div>
+          <div style="margin-bottom:12px;">
+            <span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:600;background:${roleColor};color:#fff;">${roleLabel.toUpperCase()}</span>
+            <span style="color:var(--text-muted);font-size:12px;margin-left:8px;">${statusLabel}</span>
+          </div>
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">
+            <code style="font-size:10px;word-break:break-all;">${esc(n.public_key)}</code>
+          </div>
+          <table style="font-size:12px;width:100%;border-collapse:collapse;">
+            <tr><td style="color:var(--text-muted);padding:4px 8px 4px 0;">Last Seen</td><td>${lastSeen}</td></tr>
+            <tr><td style="color:var(--text-muted);padding:4px 8px 4px 0;">Adverts</td><td>${n.advert_count || 0}</td></tr>
+            ${hasLoc ? `<tr><td style="color:var(--text-muted);padding:4px 8px 4px 0;">Location</td><td>${n.lat.toFixed(5)}, ${n.lon.toFixed(5)}</td></tr>` : ''}
+            ${stats.avgSnr != null ? `<tr><td style="color:var(--text-muted);padding:4px 8px 4px 0;">Avg SNR</td><td>${stats.avgSnr.toFixed(1)} dB</td></tr>` : ''}
+            ${stats.avgHops != null ? `<tr><td style="color:var(--text-muted);padding:4px 8px 4px 0;">Avg Hops</td><td>${stats.avgHops.toFixed(1)}</td></tr>` : ''}
+            ${stats.totalPackets ? `<tr><td style="color:var(--text-muted);padding:4px 8px 4px 0;">Total Packets</td><td>${stats.totalPackets}</td></tr>` : ''}
+          </table>`;
+
+      if (observers.length) {
+        html += `<h4 style="font-size:12px;margin:12px 0 6px;color:var(--text-muted);">Heard By</h4>
+          <div style="font-size:11px;">` +
+          observers.map(o => `<div style="padding:2px 0;">${esc(o.observer_name || o.observer_id.slice(0, 12))} — ${o.count} pkts</div>`).join('') +
+          '</div>';
+      }
+
+      if (recent.length) {
+        html += `<h4 style="font-size:12px;margin:12px 0 6px;color:var(--text-muted);">Recent Packets</h4>
+          <div style="font-size:11px;max-height:200px;overflow-y:auto;">` +
+          recent.slice(0, 10).map(p => `<div style="padding:2px 0;display:flex;justify-content:space-between;">
+            <span>${esc(p.payload_type || '?')}</span>
+            <span style="color:var(--text-muted)">${p.timestamp ? timeAgo(p.timestamp) : '—'}</span>
+          </div>`).join('') +
+          '</div>';
+      }
+
+      html += `<div style="margin-top:12px;display:flex;gap:8px;">
+        <a href="#/nodes?selected=${encodeURIComponent(n.public_key)}" style="font-size:12px;color:var(--accent);">Full Detail →</a>
+        <a href="#/nodes/${encodeURIComponent(n.public_key)}/analytics" style="font-size:12px;color:var(--accent);">📊 Analytics</a>
+      </div></div>`;
+
+      content.innerHTML = html;
+    } catch (e) {
+      content.innerHTML = `<div style="padding:20px;color:var(--text-muted);">Error: ${e.message}</div>`;
+    }
+  }
+
   async function loadNodes(beforeTs) {
     try {
       const url = beforeTs
@@ -1013,6 +1098,8 @@
     marker.bindTooltip(n.name || n.public_key.slice(0, 8), {
       permanent: false, direction: 'top', offset: [0, -10], className: 'live-tooltip'
     });
+
+    marker.on('click', () => showNodeDetail(n.public_key));
 
     marker._glowMarker = glow;
     marker._baseColor = color;
