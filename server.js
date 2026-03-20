@@ -671,8 +671,27 @@ app.get('/api/stats', (req, res) => {
 });
 
 app.get('/api/packets', (req, res) => {
-  const { limit = 50, offset = 0, type, route, region, observer, hash, since, until, groupByHash, node } = req.query;
+  const { limit = 50, offset = 0, type, route, region, observer, hash, since, until, groupByHash, node, nodes } = req.query;
   const order = req.query.order === 'asc' ? 'ASC' : 'DESC';
+
+  // Multi-node filter: comma-separated pubkeys
+  if (nodes) {
+    const pubkeys = nodes.split(',').map(s => s.trim()).filter(Boolean);
+    const allPackets = new Map();
+    for (const pk of pubkeys) {
+      const { packets: found } = pktStore.findPacketsForNode(pk);
+      for (const p of found) allPackets.set(p.id, p);
+    }
+    let results = [...allPackets.values()].sort((a, b) => order === 'DESC' ? b.timestamp.localeCompare(a.timestamp) : a.timestamp.localeCompare(b.timestamp));
+    // Apply additional filters
+    if (type !== undefined) results = results.filter(p => String(p.payload_type) === String(type));
+    if (region) results = results.filter(p => (p.observer_id || '').includes(region) || (p.decoded_json || '').includes(region));
+    if (since) results = results.filter(p => p.timestamp >= since);
+    if (until) results = results.filter(p => p.timestamp <= until);
+    const total = results.length;
+    const paged = results.slice(Number(offset), Number(offset) + Number(limit));
+    return res.json({ packets: paged, total, limit: Number(limit), offset: Number(offset) });
+  }
 
   if (groupByHash === 'true') {
     return res.json(pktStore.queryGrouped({ limit, offset, type, route, region, observer, hash, since, until, node }));

@@ -587,25 +587,21 @@
     const groupBtn = document.getElementById('fGroup');
     if (groupBtn) groupBtn.classList.toggle('active', groupByHash);
 
-    // Filter to claimed/favorited nodes if toggle is on
+    // Filter to claimed/favorited nodes if toggle is on — use server-side multi-node lookup
     let displayPackets = packets;
     if (filters.myNodes) {
       const myNodes = JSON.parse(localStorage.getItem('meshcore-my-nodes') || '[]');
-      const myKeys = new Set(myNodes.map(n => n.pubkey));
+      const myKeys = myNodes.map(n => n.pubkey).filter(Boolean);
       const favs = getFavorites();
-      const allKeys = new Set([...myKeys, ...favs]);
-      displayPackets = packets.filter(p => {
+      const allKeys = [...new Set([...myKeys, ...favs])];
+      if (allKeys.length > 0) {
         try {
-          const d = JSON.parse(p.decoded_json || '{}');
-          const pathHops = JSON.parse(p.path_json || '[]');
-          return (d.pubKey && allKeys.has(d.pubKey)) ||
-                 (d.srcPubKey && allKeys.has(d.srcPubKey)) ||
-                 (d.destPubKey && allKeys.has(d.destPubKey)) ||
-                 (d.srcHash && allKeys.has(d.srcHash)) ||
-                 (d.destHash && allKeys.has(d.destHash)) ||
-                 pathHops.some(h => allKeys.has(h));
-        } catch { return false; }
-      });
+          const myData = await api('/packets?nodes=' + allKeys.join(',') + '&limit=500');
+          displayPackets = myData.packets || [];
+        } catch { displayPackets = []; }
+      } else {
+        displayPackets = [];
+      }
     }
 
     if (!displayPackets.length) {
