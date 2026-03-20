@@ -8,7 +8,7 @@
   let clusterGroup = null;
   let nodes = [];
   let observers = [];
-  let filters = { repeater: true, companion: true, room: true, sensor: true, lastHeard: '30d', mqttOnly: false, neighbors: false, clusters: false };
+  let filters = { repeater: true, companion: true, room: true, sensor: true, observer: true, lastHeard: '30d', neighbors: false, clusters: false };
   let wsHandler = null;
   let heatLayer = null;
   let userHasMoved = false;
@@ -23,10 +23,11 @@
     companion: { color: '#2563eb', shape: 'circle',   radius: 8,  weight: 2 },  // blue circle
     room:      { color: '#16a34a', shape: 'square',   radius: 9,  weight: 2 },  // green square
     sensor:    { color: '#d97706', shape: 'triangle', radius: 8,  weight: 2 },  // amber triangle
+    observer:  { color: '#8b5cf6', shape: 'star',     radius: 11, weight: 2 },  // purple star
   };
 
-  const ROLE_LABELS = { repeater: 'Repeaters', companion: 'Companions', room: 'Room Servers', sensor: 'Sensors' };
-  const ROLE_COLORS = { repeater: '#dc2626', companion: '#2563eb', room: '#16a34a', sensor: '#d97706' };
+  const ROLE_LABELS = { repeater: 'Repeaters', companion: 'Companions', room: 'Room Servers', sensor: 'Sensors', observer: 'Observers' };
+  const ROLE_COLORS = { repeater: '#dc2626', companion: '#2563eb', room: '#16a34a', sensor: '#d97706', observer: '#8b5cf6' };
 
   function makeMarkerIcon(role) {
     const s = ROLE_STYLE[role] || ROLE_STYLE.companion;
@@ -43,6 +44,19 @@
       case 'triangle':
         path = `<polygon points="${c},2 ${size-2},${size-2} 2,${size-2}" fill="${s.color}" stroke="#fff" stroke-width="2"/>`;
         break;
+      case 'star': {
+        // 5-pointed star
+        const cx = c, cy = c, outer = c - 1, inner = outer * 0.4;
+        let pts = '';
+        for (let i = 0; i < 5; i++) {
+          const aOuter = (i * 72 - 90) * Math.PI / 180;
+          const aInner = ((i * 72) + 36 - 90) * Math.PI / 180;
+          pts += `${cx + outer * Math.cos(aOuter)},${cy + outer * Math.sin(aOuter)} `;
+          pts += `${cx + inner * Math.cos(aInner)},${cy + inner * Math.sin(aInner)} `;
+        }
+        path = `<polygon points="${pts.trim()}" fill="${s.color}" stroke="#fff" stroke-width="1.5"/>`;
+        break;
+      }
       default: // circle
         path = `<circle cx="${c}" cy="${c}" r="${c-2}" fill="${s.color}" stroke="#fff" stroke-width="2"/>`;
     }
@@ -74,7 +88,6 @@
           </fieldset>
           <fieldset class="mc-section">
             <legend class="mc-label">Filters</legend>
-            <label for="mcMqtt"><input type="checkbox" id="mcMqtt"> MQTT Connected Only</label>
             <label for="mcNeighbors"><input type="checkbox" id="mcNeighbors"> Show direct neighbors</label>
           </fieldset>
           <fieldset class="mc-section">
@@ -152,7 +165,6 @@
     // Bind controls
     document.getElementById('mcClusters').addEventListener('change', e => { filters.clusters = e.target.checked; renderMarkers(); });
     document.getElementById('mcHeatmap').addEventListener('change', e => { toggleHeatmap(e.target.checked); });
-    document.getElementById('mcMqtt').addEventListener('change', e => { filters.mqttOnly = e.target.checked; renderMarkers(); });
     document.getElementById('mcNeighbors').addEventListener('change', e => { filters.neighbors = e.target.checked; renderMarkers(); });
     document.getElementById('mcLastHeard').addEventListener('change', e => { filters.lastHeard = e.target.value; loadNodes(); });
 
@@ -258,11 +270,12 @@
     try {
       const data = await api(`/nodes?limit=10000&lastHeard=${filters.lastHeard}`, { ttl: CLIENT_TTL.nodeList });
       nodes = data.nodes || [];
-      buildRoleChecks(data.counts || {});
 
-      // Load observers for jump buttons
+      // Load observers for jump buttons + map markers
       const obsData = await api('/observers', { ttl: CLIENT_TTL.observers });
       observers = obsData.observers || [];
+
+      buildRoleChecks(data.counts || {});
       buildJumpButtons();
 
       renderMarkers();
@@ -277,12 +290,14 @@
     const el = document.getElementById('mcRoleChecks');
     if (!el) return;
     el.innerHTML = '';
-    for (const role of ['repeater', 'companion', 'room', 'sensor']) {
-      const count = counts[role + 's'] || 0;
+    const obsCount = observers.filter(o => o.lat && o.lon).length;
+    const roles = ['repeater', 'companion', 'room', 'sensor', 'observer'];
+    const shapeMap = { repeater: '◆', companion: '●', room: '■', sensor: '▲', observer: '★' };
+    for (const role of roles) {
+      const count = role === 'observer' ? obsCount : (counts[role + 's'] || 0);
       const cbId = 'mcRole_' + role;
       const lbl = document.createElement('label');
       lbl.setAttribute('for', cbId);
-      const shapeMap = { repeater: '◆', companion: '●', room: '■', sensor: '▲' };
       const shape = shapeMap[role] || '●';
       lbl.innerHTML = `<input type="checkbox" id="${cbId}" data-role="${role}" ${filters[role] ? 'checked' : ''}> <span style="color:${ROLE_COLORS[role]};font-weight:600;" aria-hidden="true">${shape}</span> ${ROLE_LABELS[role]} <span style="color:var(--text-muted)">(${count})</span>`;
       lbl.querySelector('input').addEventListener('change', e => {
@@ -358,6 +373,44 @@
       marker.bindPopup(buildPopup(node), { maxWidth: 280 });
       markerLayer.addLayer(marker);
     }
+
+    // Add observer markers
+    if (filters.observer) {
+      for (const obs of observers) {
+        if (!obs.lat || !obs.lon) continue;
+        const icon = makeMarkerIcon('observer');
+        const marker = L.marker([obs.lat, obs.lon], {
+          icon,
+          alt: `${obs.name || obs.id} (observer)`,
+        });
+        marker.bindPopup(buildObserverPopup(obs), { maxWidth: 280 });
+        markerLayer.addLayer(marker);
+      }
+    }
+  }
+
+  function buildObserverPopup(obs) {
+    const name = safeEsc(obs.name || obs.id || 'Unknown');
+    const iata = obs.iata ? `<span class="badge-region">${safeEsc(obs.iata)}</span>` : '';
+    const lastSeen = obs.last_seen ? timeAgo(obs.last_seen) : '—';
+    const packets = (obs.packet_count || 0).toLocaleString();
+    const loc = `${obs.lat.toFixed(5)}, ${obs.lon.toFixed(5)}`;
+    const roleBadge = `<span style="display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;background:${ROLE_COLORS.observer};color:#fff;">OBSERVER</span>`;
+
+    return `
+      <div class="map-popup" style="font-family:var(--font);min-width:180px;">
+        <h3 style="font-weight:700;font-size:14px;margin:0 0 4px;">${name}</h3>
+        ${roleBadge} ${iata}
+        <dl style="margin-top:8px;font-size:12px;">
+          <dt style="color:var(--text-muted);float:left;clear:left;width:80px;padding:2px 0;">Location</dt>
+          <dd style="margin-left:88px;padding:2px 0;">${loc}</dd>
+          <dt style="color:var(--text-muted);float:left;clear:left;width:80px;padding:2px 0;">Last Seen</dt>
+          <dd style="margin-left:88px;padding:2px 0;">${lastSeen}</dd>
+          <dt style="color:var(--text-muted);float:left;clear:left;width:80px;padding:2px 0;">Packets</dt>
+          <dd style="margin-left:88px;padding:2px 0;">${packets}</dd>
+        </dl>
+        <a href="#/observers/${encodeURIComponent(obs.id || obs.observer_id)}" style="display:block;margin-top:8px;font-size:12px;color:var(--accent);">View Detail →</a>
+      </div>`;
   }
 
   function buildPopup(node) {
