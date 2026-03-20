@@ -187,12 +187,6 @@
         .map(m => m.data.packet);
       if (!newPkts.length) return;
 
-      if (groupByHash) {
-        // In grouped mode, new packets affect group counts — must re-fetch
-        loadPackets();
-        return;
-      }
-
       // Check if new packets pass current filters
       const filtered = newPkts.filter(p => {
         if (filters.type !== undefined && filters.type !== '' && p.payload_type !== Number(filters.type)) return false;
@@ -207,14 +201,58 @@
       });
       if (!filtered.length) return;
 
-      // Resolve any new hops, then prepend and re-render
+      // Resolve any new hops, then update and re-render
       const newHops = new Set();
       for (const p of filtered) {
         try { JSON.parse(p.path_json || '[]').forEach(h => { if (!(h in hopNameCache)) newHops.add(h); }); } catch {}
       }
       (newHops.size ? resolveHops([...newHops]) : Promise.resolve()).then(() => {
-        // Prepend new packets, cap at 200 to avoid unbounded growth
-        packets = filtered.concat(packets).slice(0, 200);
+        if (groupByHash) {
+          // Update existing groups or create new ones
+          for (const p of filtered) {
+            const h = p.hash;
+            const existing = packets.find(g => g.hash === h);
+            if (existing) {
+              existing.count = (existing.count || 1) + 1;
+              existing.latest = p.timestamp > existing.latest ? p.timestamp : existing.latest;
+              // Track unique observers
+              if (p.observer_id && p.observer_id !== existing.observer_id) {
+                existing.observer_count = (existing.observer_count || 1) + 1;
+              }
+              // Keep longest path
+              if (p.path_json && (!existing.path_json || p.path_json.length > existing.path_json.length)) {
+                existing.path_json = p.path_json;
+                existing.raw_hex = p.raw_hex;
+              }
+              // Update decoded_json to latest
+              if (p.decoded_json) existing.decoded_json = p.decoded_json;
+              // Update expanded children if this group is expanded
+              if (expandedHashes.has(h) && existing._children) {
+                existing._children.unshift(p);
+              }
+            } else {
+              // New group
+              packets.unshift({
+                hash: h,
+                count: 1,
+                observer_count: 1,
+                latest: p.timestamp,
+                observer_id: p.observer_id,
+                observer_name: p.observer_name,
+                path_json: p.path_json,
+                payload_type: p.payload_type,
+                raw_hex: p.raw_hex,
+                decoded_json: p.decoded_json,
+              });
+            }
+          }
+          // Re-sort by latest DESC, cap size
+          packets.sort((a, b) => (b.latest || '').localeCompare(a.latest || ''));
+          packets = packets.slice(0, 200);
+        } else {
+          // Flat mode: prepend
+          packets = filtered.concat(packets).slice(0, 200);
+        }
         totalCount += filtered.length;
         renderTableRows();
       });
