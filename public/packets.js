@@ -276,11 +276,7 @@
               if (p.observer_id && p.observer_id !== existing.observer_id) {
                 existing.observer_count = (existing.observer_count || 1) + 1;
               }
-              // Keep longest path
-              if (p.path_json && (!existing.path_json || p.path_json.length > existing.path_json.length)) {
-                existing.path_json = p.path_json;
-                existing.raw_hex = p.raw_hex;
-              }
+              // Don't update path — header always shows first observer's path
               // Update decoded_json to latest
               if (p.decoded_json) existing.decoded_json = p.decoded_json;
               // Update expanded children if this group is expanded
