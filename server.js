@@ -1643,6 +1643,163 @@ app.get('/api/analytics/channels', (req, res) => {
   res.json(_chanResult);
 });
 
+app.get('/api/analytics/distance', (req, res) => {
+  const { region } = req.query;
+  const regionObsIds = getObserverIdsForRegions(region);
+  const _ck = 'analytics:distance' + (region ? ':' + region : '');
+  const _c = cache.get(_ck); if (_c) return res.json(_c);
+
+  const arrMin = arr => { let m = Infinity; for (const v of arr) if (v < m) m = v; return m === Infinity ? 0 : m; };
+  const arrMax = arr => { let m = -Infinity; for (const v of arr) if (v > m) m = v; return m === -Infinity ? 0 : m; };
+  const median = arr => { if (!arr.length) return 0; const s = [...arr].sort((a,b)=>a-b); return s[Math.floor(s.length/2)]; };
+
+  function haversine(lat1, lon1, lat2, lon2) {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  }
+
+  const allNodes = db.db.prepare('SELECT public_key, name, lat, lon, role FROM nodes WHERE name IS NOT NULL').all();
+  const nodeByPk = new Map(allNodes.map(n => [n.public_key, n]));
+
+  // Build prefix lookup for hop resolution
+  const resolveHop = (hop) => {
+    const h = hop.toLowerCase();
+    const candidates = allNodes.filter(n => n.public_key.toLowerCase().startsWith(h));
+    if (candidates.length === 1) return candidates[0];
+    if (candidates.length > 1) {
+      // prefer ones with valid GPS
+      const withLoc = candidates.filter(c => c.lat && c.lon && !(c.lat === 0 && c.lon === 0));
+      return withLoc.length ? withLoc[0] : candidates[0];
+    }
+    return null;
+  };
+
+  const validGps = n => n && n.lat != null && n.lon != null && !(n.lat === 0 && n.lon === 0);
+  const isRepeater = n => n && n.role && n.role.toLowerCase().includes('repeater');
+
+  const packets = pktStore.filter(p => p.path_json && p.path_json !== '[]' && (!regionObsIds || regionObsIds.has(p.observer_id)));
+
+  // Collect hops with distances
+  const allHops = [];       // { from, to, dist, type, snr, hash, timestamp }
+  const pathTotals = [];    // { hash, totalDist, hopCount, timestamp, hops: [{from,to,dist}] }
+  const catDists = { 'R↔R': [], 'C↔R': [], 'C↔C': [] };
+  const distByHour = {};    // hourBucket → [distances]
+
+  for (const p of packets) {
+    let hops;
+    try { hops = JSON.parse(p.path_json); } catch { continue; }
+    if (!hops.length) continue;
+
+    // Resolve all hops to nodes
+    const resolved = hops.map(h => resolveHop(h));
+
+    // Also try to resolve sender from decoded_json
+    let senderNode = null;
+    if (p.decoded_json) {
+      try {
+        const dec = typeof p.decoded_json === 'string' ? JSON.parse(p.decoded_json) : p.decoded_json;
+        if (dec.pubKey) senderNode = nodeByPk.get(dec.pubKey) || null;
+      } catch {}
+    }
+
+    // Build chain: sender → hop0 → hop1 → ... → observer
+    // For distance we only measure consecutive hops where both have valid GPS
+    const chain = [];
+    if (senderNode && validGps(senderNode)) chain.push(senderNode);
+    for (const r of resolved) {
+      if (r && validGps(r)) chain.push(r);
+    }
+
+    if (chain.length < 2) continue;
+
+    const hourBucket = p.timestamp ? new Date(p.timestamp).toISOString().slice(0, 13) : null;
+    let pathDist = 0;
+    const pathHops = [];
+
+    for (let i = 0; i < chain.length - 1; i++) {
+      const a = chain[i], b = chain[i + 1];
+      const dist = haversine(a.lat, a.lon, b.lat, b.lon);
+      if (dist > 1000) continue; // sanity: skip > 1000km (likely bad GPS)
+
+      const aRep = isRepeater(a), bRep = isRepeater(b);
+      let type;
+      if (aRep && bRep) type = 'R↔R';
+      else if (!aRep && !bRep) type = 'C↔C';
+      else type = 'C↔R';
+
+      const hop = { fromName: a.name, fromPk: a.public_key, toName: b.name, toPk: b.public_key, dist: Math.round(dist * 100) / 100, type, snr: p.snr || null, hash: p.hash, timestamp: p.timestamp };
+      allHops.push(hop);
+      catDists[type].push(dist);
+      pathDist += dist;
+      pathHops.push({ fromName: a.name, toName: b.name, dist: hop.dist });
+
+      if (hourBucket) {
+        if (!distByHour[hourBucket]) distByHour[hourBucket] = [];
+        distByHour[hourBucket].push(dist);
+      }
+    }
+
+    if (pathHops.length > 0) {
+      pathTotals.push({ hash: p.hash, totalDist: Math.round(pathDist * 100) / 100, hopCount: pathHops.length, timestamp: p.timestamp, hops: pathHops });
+    }
+  }
+
+  // Top longest hops
+  allHops.sort((a, b) => b.dist - a.dist);
+  const topHops = allHops.slice(0, 50);
+
+  // Top longest paths
+  pathTotals.sort((a, b) => b.totalDist - a.totalDist);
+  const topPaths = pathTotals.slice(0, 20);
+
+  // Category stats
+  const catStats = {};
+  for (const [cat, dists] of Object.entries(catDists)) {
+    if (!dists.length) { catStats[cat] = { count: 0, avg: 0, median: 0, min: 0, max: 0 }; continue; }
+    const avg = dists.reduce((s, v) => s + v, 0) / dists.length;
+    catStats[cat] = { count: dists.length, avg: Math.round(avg * 100) / 100, median: Math.round(median(dists) * 100) / 100, min: Math.round(arrMin(dists) * 100) / 100, max: Math.round(arrMax(dists) * 100) / 100 };
+  }
+
+  // Histogram of all hop distances
+  const allDists = allHops.map(h => h.dist);
+  let distHistogram = [];
+  if (allDists.length) {
+    const hMin = arrMin(allDists), hMax = arrMax(allDists);
+    const binCount = 25;
+    const binW = (hMax - hMin) / binCount || 1;
+    const bins = new Array(binCount).fill(0);
+    for (const d of allDists) {
+      const idx = Math.min(Math.floor((d - hMin) / binW), binCount - 1);
+      bins[idx]++;
+    }
+    distHistogram = { bins: bins.map((count, i) => ({ x: Math.round((hMin + i * binW) * 10) / 10, w: Math.round(binW * 10) / 10, count })), min: hMin, max: hMax };
+  }
+
+  // Distance over time
+  const timeEntries = Object.entries(distByHour).sort((a, b) => a[0].localeCompare(b[0]));
+  const distOverTime = timeEntries.map(([hour, dists]) => ({
+    hour,
+    avg: Math.round((dists.reduce((s, v) => s + v, 0) / dists.length) * 100) / 100,
+    count: dists.length
+  }));
+
+  // Summary
+  const totalDists = allHops.map(h => h.dist);
+  const summary = {
+    totalHops: allHops.length,
+    totalPaths: pathTotals.length,
+    avgDist: totalDists.length ? Math.round((totalDists.reduce((s, v) => s + v, 0) / totalDists.length) * 100) / 100 : 0,
+    maxDist: totalDists.length ? Math.round(arrMax(totalDists) * 100) / 100 : 0,
+  };
+
+  const _distResult = { summary, topHops, topPaths, catStats, distHistogram, distOverTime };
+  cache.set(_ck, _distResult, TTL.analyticsTopology);
+  res.json(_distResult);
+});
+
 app.get('/api/analytics/hash-sizes', (req, res) => {
   const { region } = req.query;
   const regionObsIds = getObserverIdsForRegions(region);

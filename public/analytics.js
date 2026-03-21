@@ -76,6 +76,7 @@
             <button class="tab-btn" data-tab="collisions">Hash Collisions</button>
             <button class="tab-btn" data-tab="subpaths">Route Patterns</button>
             <button class="tab-btn" data-tab="nodes">Nodes</button>
+            <button class="tab-btn" data-tab="distance">Distance</button>
           </div>
         </div>
         <div id="analyticsContent" class="analytics-content">
@@ -148,6 +149,7 @@
       case 'collisions': await renderCollisionTab(el, d.hashData); break;
       case 'subpaths': await renderSubpaths(el); break;
       case 'nodes': await renderNodesTab(el); break;
+      case 'distance': await renderDistanceTab(el); break;
     }
     // Auto-apply column resizing to all analytics tables
     requestAnimationFrame(() => {
@@ -1309,6 +1311,71 @@
         </div>`;
     } catch (e) {
       el.innerHTML = `<div style="padding:40px;text-align:center;color:#ff6b6b">Failed to load node analytics: ${esc(e.message)}</div>`;
+    }
+  }
+
+  async function renderDistanceTab(el) {
+    try {
+      const rqs = RegionFilter.regionQueryString();
+      const sep = rqs ? '?' + rqs.slice(1) : '';
+      const data = await api('/analytics/distance' + sep, { ttl: CLIENT_TTL.analyticsRF });
+      const s = data.summary;
+      let html = `<div class="analytics-grid">
+        <div class="stat-card"><div class="stat-value">${s.totalHops.toLocaleString()}</div><div class="stat-label">Total Hops Analyzed</div></div>
+        <div class="stat-card"><div class="stat-value">${s.totalPaths.toLocaleString()}</div><div class="stat-label">Paths Analyzed</div></div>
+        <div class="stat-card"><div class="stat-value">${s.avgDist} km</div><div class="stat-label">Avg Hop Distance</div></div>
+        <div class="stat-card"><div class="stat-value">${s.maxDist} km</div><div class="stat-label">Max Hop Distance</div></div>
+      </div>`;
+
+      // Category stats
+      const cats = data.catStats;
+      html += `<div class="analytics-section"><h3>Distance by Link Type</h3><table class="data-table"><thead><tr><th>Type</th><th>Count</th><th>Avg (km)</th><th>Median (km)</th><th>Min (km)</th><th>Max (km)</th></tr></thead><tbody>`;
+      for (const [cat, st] of Object.entries(cats)) {
+        if (!st.count) continue;
+        html += `<tr><td><strong>${esc(cat)}</strong></td><td>${st.count.toLocaleString()}</td><td>${st.avg}</td><td>${st.median}</td><td>${st.min}</td><td>${st.max}</td></tr>`;
+      }
+      html += `</tbody></table></div>`;
+
+      // Histogram
+      if (data.distHistogram && data.distHistogram.bins) {
+        const h = histogram(null, 0, '#22c55e');
+        // Use pre-computed histogram
+        const buckets = data.distHistogram.bins.map(b => b.count);
+        const labels = data.distHistogram.bins.map(b => b.x.toFixed(1));
+        html += `<div class="analytics-section"><h3>Hop Distance Distribution</h3>${barChart(buckets, labels, '#22c55e')}</div>`;
+      }
+
+      // Distance over time
+      if (data.distOverTime && data.distOverTime.length > 1) {
+        html += `<div class="analytics-section"><h3>Average Distance Over Time</h3>${sparkSvg(data.distOverTime.map(d => d.avg), 'var(--accent)', 800, 120)}</div>`;
+      }
+
+      // Top hops leaderboard
+      html += `<div class="analytics-section"><h3>🏆 Top 20 Longest Hops</h3><table class="data-table"><thead><tr><th>#</th><th>From</th><th>To</th><th>Distance (km)</th><th>Type</th><th>SNR</th><th>Packet</th></tr></thead><tbody>`;
+      const top20 = data.topHops.slice(0, 20);
+      top20.forEach((h, i) => {
+        const fromLink = h.fromPk ? `<a href="#/nodes/${encodeURIComponent(h.fromPk)}/analytics" class="analytics-link">${esc(h.fromName)}</a>` : esc(h.fromName || '?');
+        const toLink = h.toPk ? `<a href="#/nodes/${encodeURIComponent(h.toPk)}/analytics" class="analytics-link">${esc(h.toName)}</a>` : esc(h.toName || '?');
+        const snr = h.snr != null ? h.snr + ' dB' : '<span class="text-muted">—</span>';
+        const pktLink = h.hash ? `<a href="#/packet/${encodeURIComponent(h.hash)}" class="analytics-link mono" style="font-size:0.85em">${esc(h.hash.slice(0, 12))}…</a>` : '—';
+        html += `<tr><td>${i+1}</td><td>${fromLink}</td><td>${toLink}</td><td><strong>${h.dist}</strong></td><td>${esc(h.type)}</td><td>${snr}</td><td>${pktLink}</td></tr>`;
+      });
+      html += `</tbody></table></div>`;
+
+      // Top paths
+      if (data.topPaths.length) {
+        html += `<div class="analytics-section"><h3>🛤️ Top 10 Longest Multi-Hop Paths</h3><table class="data-table"><thead><tr><th>#</th><th>Total Distance (km)</th><th>Hops</th><th>Route</th><th>Packet</th></tr></thead><tbody>`;
+        data.topPaths.slice(0, 10).forEach((p, i) => {
+          const route = p.hops.map(h => esc(h.fromName)).concat(esc(p.hops[p.hops.length-1].toName)).join(' → ');
+          const pktLink = p.hash ? `<a href="#/packet/${encodeURIComponent(p.hash)}" class="analytics-link mono" style="font-size:0.85em">${esc(p.hash.slice(0, 12))}…</a>` : '—';
+          html += `<tr><td>${i+1}</td><td><strong>${p.totalDist}</strong></td><td>${p.hopCount}</td><td style="font-size:0.9em">${route}</td><td>${pktLink}</td></tr>`;
+        });
+        html += `</tbody></table></div>`;
+      }
+
+      el.innerHTML = html;
+    } catch (e) {
+      el.innerHTML = `<div style="padding:40px;text-align:center;color:#ff6b6b">Failed to load distance analytics: ${esc(e.message)}</div>`;
     }
   }
 
