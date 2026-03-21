@@ -717,10 +717,11 @@
 
   function getDetailPreview(decoded) {
     if (!decoded) return '';
-    // Channel messages (GRP_TXT) — show the message text
+    // Channel messages (GRP_TXT) — show channel name and message text
     if (decoded.type === 'CHAN' && decoded.text) {
+      const ch = decoded.channel ? `<span class="chan-tag">${escapeHtml(decoded.channel)}</span> ` : '';
       const t = decoded.text.length > 80 ? decoded.text.slice(0, 80) + '…' : decoded.text;
-      return `💬 ${escapeHtml(t)}`;
+      return `${ch}💬 ${escapeHtml(t)}`;
     }
     // Advertisements — show node name and role
     if (decoded.type === 'ADVERT' && decoded.name) {
