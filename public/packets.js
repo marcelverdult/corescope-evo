@@ -581,6 +581,16 @@
           if (hash) selectPacket(null, hash);
           else selectPacket(Number(value));
         }
+        else if (action === 'select-observation') {
+          const parentHash = row.dataset.parentHash;
+          const group = packets.find(p => p.hash === parentHash);
+          const child = group?._children?.find(c => String(c.id) === String(value));
+          if (child) {
+            const parentData = group._fetchedData;
+            const obsPacket = parentData ? {...parentData.packet, observer_id: child.observer_id, observer_name: child.observer_name, snr: child.snr, rssi: child.rssi, path_json: child.path_json, timestamp: child.timestamp, first_seen: child.timestamp} : child;
+            selectPacket(child.id, parentHash, {packet: obsPacket, breakdown: parentData?.breakdown, observations: parentData?.observations});
+          }
+        }
         else if (action === 'select-hash') pktSelectHash(value);
         else if (action === 'toggle-select') { pktToggleGroup(value); pktSelectHash(value); }
       };
@@ -671,7 +681,7 @@
             let childPath = [];
             try { childPath = JSON.parse(c.path_json || '[]'); } catch {}
             const childPathStr = renderPath(childPath);
-            html += `<tr class="group-child" data-id="${c.id}" data-hash="${c.hash || ''}" data-action="select" data-value="${c.id}" tabindex="0" role="row">
+            html += `<tr class="group-child" data-id="${c.id}" data-hash="${c.hash || ''}" data-action="select-observation" data-value="${c.id}" data-parent-hash="${p.hash}" tabindex="0" role="row">
               <td></td><td class="col-region">${childRegion ? `<span class="badge-region">${childRegion}</span>` : '—'}</td>
               <td class="col-time">${timeAgo(c.timestamp)}</td>
               <td class="mono col-hash">${truncate(c.hash || '', 8)}</td>
@@ -1217,6 +1227,7 @@
       const group = packets.find(p => p.hash === hash);
       if (group && data.observations) {
         group._children = data.observations.map(o => ({...pkt, ...o, _isObservation: true}));
+        group._fetchedData = data;
         // Sort: group by observer, earliest-observer first, then by time within each observer
         const earliest = {};
         for (const c of group._children) {
