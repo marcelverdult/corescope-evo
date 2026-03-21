@@ -2968,10 +2968,13 @@ server.listen(listenPort, () => {
     const port = listenPort;
     const warmClient = isHttps ? https : http;
     const warmEndpoints = [
+      '/api/observers',
+      '/api/nodes?limit=10000&lastHeard=259200',
       '/api/analytics/rf',
       '/api/analytics/topology',
       '/api/analytics/channels',
       '/api/analytics/hash-sizes',
+      '/api/analytics/distance',
       '/api/nodes/bulk-health?limit=50',
     ];
     let warmed = 0;
