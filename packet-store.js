@@ -383,8 +383,12 @@ class PacketStore {
         decoded_json: row.decoded_json,
         route_type: row.route_type,
       };
-      tx.observations.push(obs);
-      tx.observation_count++;
+      // Dedup: skip if same observer + same path already recorded for this transmission
+      const isDupe = tx.observations.some(o => o.observer_id === obs.observer_id && (o.path_json || '') === (obs.path_json || ''));
+      if (!isDupe) {
+        tx.observations.push(obs);
+        tx.observation_count++;
+      }
 
       // Update transmission's display fields if this is first observation
       if (tx.observations.length === 1) {
