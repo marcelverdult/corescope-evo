@@ -919,7 +919,7 @@ button.ch-item.selected { background: var(--selected-bg); }
   border: 1px solid var(--border); border-radius: 6px; background: var(--surface-1);
   color: var(--text);
 }
-.byop-input:focus { border-color: var(--accent); outline: none; }
+.byop-input:focus { border-color: var(--accent); outline: 2px solid var(--accent); outline-offset: 1px; }
 .byop-err { color: #ef4444; font-size: .85rem; }
 .byop-decoded { margin-top: 8px; }
 .byop-section { margin-bottom: 14px; }

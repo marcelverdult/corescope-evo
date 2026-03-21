@@ -370,7 +370,7 @@
         <h2>Latest Packets <span class="count">(${totalCount})</span></h2>
         <div>
           <button class="btn-icon" data-action="pkt-refresh" title="Refresh">🔄</button>
-          <button class="btn-icon" data-action="pkt-byop" title="Bring Your Own Packet">📦 BYOP</button>
+          <button class="btn-icon" data-action="pkt-byop" title="Bring Your Own Packet" aria-label="Bring Your Own Packet - paste raw packet hex for analysis" aria-haspopup="dialog">📦 BYOP</button>
         </div>
       </div>
       <div class="filter-bar" id="pktFilters">
@@ -1066,11 +1066,11 @@
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.innerHTML = '<div class="modal byop-modal" role="dialog" aria-label="Decode a Packet" aria-modal="true">'
-      + '<div class="byop-header"><h3>📦 Decode a Packet</h3><button class="btn-icon byop-x" title="Close">✕</button></div>'
+      + '<div class="byop-header"><h3>📦 Decode a Packet</h3><button class="btn-icon byop-x" title="Close" aria-label="Close dialog">✕</button></div>'
       + '<p class="text-muted" style="margin:0 0 12px;font-size:.85rem">Paste raw hex bytes from your radio or MQTT feed:</p>'
-      + '<textarea id="byopHex" class="byop-input" placeholder="e.g. 15C31A8D4674FEAE37..." spellcheck="false"></textarea>'
+      + '<textarea id="byopHex" class="byop-input" aria-label="Packet hex data" placeholder="e.g. 15C31A8D4674FEAE37..." spellcheck="false"></textarea>'
       + '<button class="btn-primary byop-go" id="byopDecode" style="width:100%;margin:8px 0">Decode</button>'
-      + '<div id="byopResult"></div>'
+      + '<div id="byopResult" role="status" aria-live="polite"></div>'
       + '</div>';
     document.body.appendChild(overlay);
 
@@ -1113,7 +1113,7 @@
       const hex = textarea.value.trim().replace(/[\s\n]/g, '');
       const result = document.getElementById('byopResult');
       if (!hex) { result.innerHTML = '<p class="text-muted">Enter hex data</p>'; return; }
-      if (!/^[0-9a-fA-F]+$/.test(hex)) { result.innerHTML = '<p class="byop-err">Invalid hex — only 0-9 and A-F allowed</p>'; return; }
+      if (!/^[0-9a-fA-F]+$/.test(hex)) { result.innerHTML = '<p class="byop-err" role="alert">Invalid hex — only 0-9 and A-F allowed</p>'; return; }
       result.innerHTML = '<p class="text-muted">Decoding...</p>';
       try {
         const res = await fetch('/api/decode', {
@@ -1124,7 +1124,7 @@
         if (data.error) throw new Error(data.error);
         result.innerHTML = renderDecodedPacket(data.decoded, hex);
       } catch (e) {
-        result.innerHTML = '<p class="byop-err">❌ ' + e.message + '</p>';
+        result.innerHTML = '<p class="byop-err" role="alert">❌ ' + e.message + '</p>';
       }
     }
   }
