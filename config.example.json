@@ -1,5 +1,6 @@
 {
   "port": 3000,
+  "apiKey": "your-secret-api-key-here",
   "https": {
     "cert": "/path/to/cert.pem",
     "key": "/path/to/key.pem"

@@ -29,6 +29,15 @@ const MAX_HOP_DIST_SERVER = config.maxHopDist || 1.8;
 const crypto = require('crypto');
 const PacketStore = require('./packet-store');
 
+// API key middleware for write endpoints
+const API_KEY = config.apiKey || null;
+function requireApiKey(req, res, next) {
+  if (!API_KEY) return next(); // no key configured = open (dev mode)
+  const provided = req.headers['x-api-key'] || req.query.apiKey;
+  if (provided === API_KEY) return next();
+  return res.status(401).json({ error: 'Invalid or missing API key' });
+}
+
 // Compute a content hash from raw hex: header byte + payload (skipping path hops)
 // This correctly groups retransmissions of the same packet (same content, different paths)
 function computeContentHash(rawHex) {
@@ -317,7 +326,7 @@ app.get('/api/perf', (req, res) => {
   });
 });
 
-app.post('/api/perf/reset', (req, res) => { perfStats.reset(); res.json({ ok: true }); });
+app.post('/api/perf/reset', requireApiKey, (req, res) => { perfStats.reset(); res.json({ ok: true }); });
 
 // --- Event Loop Lag Monitoring ---
 let evtLoopLag = 0, evtLoopMax = 0, evtLoopSamples = [];
@@ -965,7 +974,7 @@ app.post('/api/decode', (req, res) => {
   }
 });
 
-app.post('/api/packets', (req, res) => {
+app.post('/api/packets', requireApiKey, (req, res) => {
   try {
     const { hex, observer, snr, rssi, region, hash } = req.body;
     if (!hex) return res.status(400).json({ error: 'hex is required' });
