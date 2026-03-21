@@ -93,16 +93,25 @@
     }, { passive: false });
   }
 
-  // Resolve hop hex prefixes to node names (cached)
+  // Ensure HopResolver is initialized with the nodes list
+  async function ensureHopResolver() {
+    if (!HopResolver.ready()) {
+      try {
+        const data = await api('/nodes?limit=2000', { ttl: 60000 });
+        HopResolver.init(data.nodes || []);
+      } catch {}
+    }
+  }
+
+  // Resolve hop hex prefixes to node names (cached, client-side)
   async function resolveHops(hops) {
     const unknown = hops.filter(h => !(h in hopNameCache));
     if (unknown.length) {
-      try {
-        const data = await api('/resolve-hops?hops=' + unknown.join(','));
-        Object.assign(hopNameCache, data.resolved || {});
-        // Cache misses as null so we don't re-query
-        unknown.forEach(h => { if (!(h in hopNameCache)) hopNameCache[h] = null; });
-      } catch {}
+      await ensureHopResolver();
+      const resolved = HopResolver.resolve(unknown);
+      Object.assign(hopNameCache, resolved || {});
+      // Cache misses as null so we don't re-query
+      unknown.forEach(h => { if (!(h in hopNameCache)) hopNameCache[h] = null; });
     }
   }
 
@@ -924,15 +933,18 @@
     if (routeBtn && pathHops.length) {
       routeBtn.addEventListener('click', async () => {
         try {
-          const obsId = obsName(pkt.observer_id);
-          const observerParam = obsId ? '&observer=' + encodeURIComponent(obsId) : '';
           // Anchor disambiguation from sender's location if known (e.g. ADVERT lat/lon)
           const senderLat = decoded.lat || decoded.latitude;
           const senderLon = decoded.lon || decoded.longitude;
-          const originParam = (senderLat != null && senderLon != null) ? `&originLat=${senderLat}&originLon=${senderLon}` : '';
-          const resp = await fetch('/api/resolve-hops?hops=' + encodeURIComponent(pathHops.join(',')) + observerParam + originParam);
-          const data = await resp.json();
-          // Pass full pubkeys (server-disambiguated) to map, falling back to short prefix
+          // Resolve observer position for backward-pass anchor
+          let obsLat = null, obsLon = null;
+          const obsId = obsName(pkt.observer_id);
+          if (obsId && HopResolver.ready()) {
+            // Try to find observer in nodes list by name — best effort
+          }
+          await ensureHopResolver();
+          const data = { resolved: HopResolver.resolve(pathHops, senderLat || null, senderLon || null, obsLat, obsLon) };
+          // Pass full pubkeys (client-disambiguated) to map, falling back to short prefix
           const resolvedKeys = pathHops.map(h => {
             const r = data.resolved?.[h];
             return r?.pubkey || h;
