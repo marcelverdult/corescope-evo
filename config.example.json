@@ -48,6 +48,11 @@
     "#bookclub": "b803ab3fbb867737ab5b7d32914d7e67",
     "#shtf": "9321638017bd7f42ca4468726cd06893"
   },
+  "hashChannels": [
+    "#LongFast",
+    "#MediumSlow",
+    "#ShortFast"
+  ],
   "defaultRegion": "SJC",
   "regions": {
     "SJC": "San Jose, US",
