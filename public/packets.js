@@ -136,8 +136,17 @@
   let directPacketHash = null;
   let initGeneration = 0;
 
+  let directObsId = null;
+
   async function init(app, routeParam) {
     const gen = ++initGeneration;
+    // Parse ?obs=OBSERVER_ID from routeParam
+    if (routeParam && routeParam.includes('?')) {
+      const qIdx = routeParam.indexOf('?');
+      const qs = new URLSearchParams(routeParam.substring(qIdx));
+      directObsId = qs.get('obs');
+      routeParam = routeParam.substring(0, qIdx);
+    }
     // Detect route param type: "id/123" for direct packet, short hex for hash, long hex for node
     if (routeParam) {
       if (routeParam.startsWith('id/')) {
@@ -163,11 +172,27 @@
     // Auto-select packet detail when arriving via hash URL
     if (directPacketHash) {
       const h = directPacketHash;
+      const obsTarget = directObsId;
       directPacketHash = null;
+      directObsId = null;
       try {
         const data = await api(`/packets/${h}`);
         if (gen === initGeneration && data?.packet) {
-          selectPacket(data.packet.id, h);
+          if (obsTarget && data.observations) {
+            // Find the matching observation and select it
+            const obs = data.observations.find(o => String(o.observer_id) === String(obsTarget));
+            if (obs) {
+              // Expand the group so the observation row is visible
+              expandedHashes.add(h);
+              // Build the obs-specific packet view
+              const obsPacket = {...data.packet, observer_id: obs.observer_id, observer_name: obs.observer_name, snr: obs.snr, rssi: obs.rssi, path_json: obs.path_json, timestamp: obs.timestamp, first_seen: obs.timestamp};
+              selectPacket(obs.id || data.packet.id, h, {packet: obsPacket, breakdown: data.breakdown, observations: data.observations}, obs.observer_id);
+            } else {
+              selectPacket(data.packet.id, h, data);
+            }
+          } else {
+            selectPacket(data.packet.id, h, data);
+          }
         }
       } catch {}
     }
@@ -588,7 +613,7 @@
           if (child) {
             const parentData = group._fetchedData;
             const obsPacket = parentData ? {...parentData.packet, observer_id: child.observer_id, observer_name: child.observer_name, snr: child.snr, rssi: child.rssi, path_json: child.path_json, timestamp: child.timestamp, first_seen: child.timestamp} : child;
-            selectPacket(child.id, parentHash, {packet: obsPacket, breakdown: parentData?.breakdown, observations: parentData?.observations});
+            selectPacket(child.id, parentHash, {packet: obsPacket, breakdown: parentData?.breakdown, observations: parentData?.observations}, child.observer_id);
           }
         }
         else if (action === 'select-hash') pktSelectHash(value);
@@ -753,12 +778,16 @@
     return '';
   }
 
-  async function selectPacket(id, hash, prefetchedData) {
+  let selectedObserverId = null;
+
+  async function selectPacket(id, hash, prefetchedData, obsId) {
     selectedId = id;
+    selectedObserverId = obsId || null;
+    const obsParam = selectedObserverId ? `?obs=${selectedObserverId}` : '';
     if (hash) {
-      history.replaceState(null, '', `#/packets/${hash}`);
+      history.replaceState(null, '', `#/packets/${hash}${obsParam}`);
     } else {
-      history.replaceState(null, '', `#/packets/${id}`);
+      history.replaceState(null, '', `#/packets/${id}${obsParam}`);
     }
     renderTableRows();
     const isMobileNow = window.innerWidth <= 640;
@@ -895,7 +924,8 @@
     if (copyLinkBtn) {
       copyLinkBtn.addEventListener('click', () => {
         const pktHash = copyLinkBtn.dataset.packetHash;
-        const url = pktHash ? `${location.origin}/#/packets/${pktHash}` : `${location.origin}/#/packets/${copyLinkBtn.dataset.packetId}`;
+        const obsParam = selectedObserverId ? `?obs=${selectedObserverId}` : '';
+        const url = pktHash ? `${location.origin}/#/packets/${pktHash}${obsParam}` : `${location.origin}/#/packets/${copyLinkBtn.dataset.packetId}${obsParam}`;
         navigator.clipboard.writeText(url).then(() => {
           copyLinkBtn.textContent = '✅ Copied!';
           setTimeout(() => { copyLinkBtn.textContent = '🔗 Copy Link'; }, 1500);
