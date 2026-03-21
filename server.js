@@ -3008,8 +3008,9 @@ server.listen(listenPort, () => {
       if (isHttps) requestOptions.rejectUnauthorized = false;
       warmClient.get(requestOptions, (res) => {
         res.resume();
-        res.on('end', () => setImmediate(warmNext)); // yield to event loop between warm requests
-      }).on('error', () => setImmediate(warmNext));
+        // 200ms gap between warm requests — lets pending client requests drain
+        res.on('end', () => setTimeout(warmNext, 200));
+      }).on('error', () => setTimeout(warmNext, 200));
     };
     // Stagger: warm analytics after subpaths are done (sequential to avoid blocking)
     warmNext();
