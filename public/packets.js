@@ -492,6 +492,12 @@
       for (const p of packets) {
         if (p._children) sortGroupChildren(p);
       }
+      // Resolve any new hops from updated header paths
+      const newHops = new Set();
+      for (const p of packets) {
+        try { JSON.parse(p.path_json || '[]').forEach(h => { if (!(h in hopNameCache)) newHops.add(h); }); } catch {}
+      }
+      if (newHops.size) await resolveHops([...newHops]);
       renderTableRows();
     });
 
