@@ -417,8 +417,10 @@
         <button class="btn" id="fMyNodes" title="Show only packets from claimed/favorited nodes">★ My Nodes</button>
         <select id="fObsSort" aria-label="Observation sort order" title="Sort order for expanded observations">
           <option value="observer">Sort: Observer</option>
-          <option value="path">Sort: Path length</option>
-          <option value="chrono">Sort: Chronological</option>
+          <option value="path-asc">Sort: Path ↑ (shortest)</option>
+          <option value="path-desc">Sort: Path ↓ (longest)</option>
+          <option value="chrono-asc">Sort: Time ↑ (earliest)</option>
+          <option value="chrono-desc">Sort: Time ↓ (latest)</option>
         </select>
         <div class="col-toggle-wrap">
           <button class="col-toggle-btn" id="colToggleBtn">Columns ▾</button>
@@ -1259,8 +1261,10 @@
 
   // Observation sort modes
   const SORT_OBSERVER = 'observer';
-  const SORT_PATH_LENGTH = 'path';
-  const SORT_CHRONO = 'chrono';
+  const SORT_PATH_ASC = 'path-asc';
+  const SORT_PATH_DESC = 'path-desc';
+  const SORT_CHRONO_ASC = 'chrono-asc';
+  const SORT_CHRONO_DESC = 'chrono-desc';
   let obsSortMode = localStorage.getItem('meshcore-obs-sort') || SORT_OBSERVER;
 
   function getPathHopCount(c) {
@@ -1268,18 +1272,20 @@
   }
 
   function sortGroupChildren(group) {
-    if (!group || !group._children) return;
+    if (!group || !group._children || !group._children.length) return;
     const mode = obsSortMode;
 
-    if (mode === SORT_CHRONO) {
+    if (mode === SORT_CHRONO_ASC || mode === SORT_CHRONO_DESC) {
+      const dir = mode === SORT_CHRONO_ASC ? 1 : -1;
       group._children.sort((a, b) => {
         const tA = a.timestamp || '', tB = b.timestamp || '';
-        return tA < tB ? -1 : tA > tB ? 1 : 0;
+        return tA < tB ? -dir : tA > tB ? dir : 0;
       });
-    } else if (mode === SORT_PATH_LENGTH) {
+    } else if (mode === SORT_PATH_ASC || mode === SORT_PATH_DESC) {
+      const dir = mode === SORT_PATH_ASC ? 1 : -1;
       group._children.sort((a, b) => {
         const lenA = getPathHopCount(a), lenB = getPathHopCount(b);
-        if (lenA !== lenB) return lenA - lenB;
+        if (lenA !== lenB) return (lenA - lenB) * dir;
         const oA = (a.observer_name || '').toLowerCase(), oB = (b.observer_name || '').toLowerCase();
         return oA < oB ? -1 : oA > oB ? 1 : 0;
       });
@@ -1299,6 +1305,17 @@
         const tA = a.timestamp || a.rx_at || '', tB = b.timestamp || b.rx_at || '';
         return tA < tB ? -1 : tA > tB ? 1 : 0;
       });
+    }
+
+    // Update header row to match first sorted child
+    const first = group._children[0];
+    if (first) {
+      group.observer_id = first.observer_id;
+      group.observer_name = first.observer_name;
+      group.snr = first.snr;
+      group.rssi = first.rssi;
+      group.path_json = first.path_json;
+      group.direction = first.direction;
     }
   }
 
