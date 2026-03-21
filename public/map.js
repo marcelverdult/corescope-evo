@@ -297,6 +297,7 @@
     }
 
     // Add numbered markers at each hop
+    var labelItems = [];
     positions.forEach((p, i) => {
       const isOrigin = i === 0 && p.isOrigin;
       const isLast = i === positions.length - 1 && positions.length > 1;
@@ -305,7 +306,6 @@
       const label = isOrigin ? 'Sender' : isLast ? 'Last Hop' : `Hop ${isOrigin ? i : i}`;
 
       if (isOrigin) {
-        // Double-ring origin marker
         L.circleMarker([p.lat, p.lon], {
           radius: radius + 4, fillColor: 'transparent', fillOpacity: 0, color: '#06b6d4', weight: 2, opacity: 0.6
         }).addTo(routeLayer);
@@ -316,8 +316,6 @@
         fillOpacity: 0.9, color: '#fff', weight: 2
       }).addTo(routeLayer);
 
-      marker.bindTooltip(`${i + 1}. ${p.name}`, { permanent: true, direction: 'top', className: 'route-tooltip' });
-
       const popupHtml = `<div style="font-size:12px;min-width:160px">
         <div style="font-weight:700;margin-bottom:4px">${label}: ${safeEsc(p.name)}</div>
         <div style="color:#9ca3af;font-size:11px;margin-bottom:4px">${p.role || 'unknown'}</div>
@@ -326,6 +324,19 @@
         ${p.pubkey ? `<div style="margin-top:6px"><a href="#/nodes/${p.pubkey}" style="color:var(--accent);font-size:11px">View Node →</a></div>` : ''}
       </div>`;
       marker.bindPopup(popupHtml, { className: 'route-popup' });
+
+      labelItems.push({ latLng: L.latLng(p.lat, p.lon), isLabel: true, text: `${i + 1}. ${p.name}` });
+    });
+
+    // Deconflict labels so overlapping hop names spread out
+    deconflictLabels(labelItems, map);
+    labelItems.forEach(function (m) {
+      var pos = m.adjustedLatLng || m.latLng;
+      var icon = L.divIcon({ className: 'route-tooltip', html: m.text, iconSize: [null, null], iconAnchor: [0, 0] });
+      L.marker(pos, { icon: icon, interactive: false }).addTo(routeLayer);
+      if (m.offset > 2) {
+        L.polyline([m.latLng, pos], { weight: 1, color: '#475569', opacity: 0.5, dashArray: '3 3' }).addTo(routeLayer);
+      }
     });
 
     // Fit map to route
