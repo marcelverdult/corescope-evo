@@ -972,15 +972,8 @@ app.get('/api/packets/:id', (req, res) => {
   }
   if (!packet) return res.status(404).json({ error: 'Not found' });
 
-  // Use the sibling with the longest path (most hops) for display
-  if (packet.hash) {
-    const siblings = pktStore.getSiblings(packet.hash);
-    const best = siblings.reduce((a, b) => (b.path_json || '').length > (a.path_json || '').length ? b : a, packet);
-    if (best.path_json && best.path_json.length > (packet.path_json || '').length) {
-      packet.path_json = best.path_json;
-      packet.raw_hex = best.raw_hex;
-    }
-  }
+    // Note: packet.path_json reflects the first observer's path (earliest first_seen).
+  // Individual observation paths are in siblingObservations below.
 
   const pathHops = packet.paths || [];
   let decoded;
