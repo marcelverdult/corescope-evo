@@ -471,11 +471,16 @@
       marker.bindPopup(m.popupFn(), { maxWidth: 280 });
       markerLayer.addLayer(marker);
 
-      if (m.offset > 15 && m.isLabel) {
+      if (m.offset > 10) {
         const line = L.polyline([m.latLng, pos], {
-          color: '#999', weight: 1, dashArray: '3,3', opacity: 0.6
+          color: '#ef4444', weight: 2, dashArray: '6,4', opacity: 0.85
         });
         markerLayer.addLayer(line);
+        // Small dot at true GPS position
+        const dot = L.circleMarker(m.latLng, {
+          radius: 3, fillColor: '#ef4444', fillOpacity: 0.9, stroke: true, color: '#fff', weight: 1
+        });
+        markerLayer.addLayer(dot);
       }
     }
   }
