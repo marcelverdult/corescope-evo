@@ -1702,21 +1702,41 @@ app.get('/api/analytics/distance', (req, res) => {
   const allNodes = db.db.prepare('SELECT public_key, name, lat, lon, role FROM nodes WHERE name IS NOT NULL').all();
   const nodeByPk = new Map(allNodes.map(n => [n.public_key, n]));
 
-  // Build prefix lookup for hop resolution
-  const resolveHop = (hop) => {
-    const h = hop.toLowerCase();
-    const candidates = allNodes.filter(n => n.public_key.toLowerCase().startsWith(h));
-    if (candidates.length === 1) return candidates[0];
-    if (candidates.length > 1) {
-      // prefer ones with valid GPS
-      const withLoc = candidates.filter(c => c.lat && c.lon && !(c.lat === 0 && c.lon === 0));
-      return withLoc.length ? withLoc[0] : candidates[0];
+  // Build prefix map for O(1) hop resolution instead of O(N) filter per hop
+  const prefixMap = new Map(); // lowercase prefix → [nodes]
+  for (const n of allNodes) {
+    const pk = n.public_key.toLowerCase();
+    // Index all prefixes from length 2 to full key length
+    for (let len = 2; len <= pk.length; len++) {
+      const pfx = pk.slice(0, len);
+      if (!prefixMap.has(pfx)) prefixMap.set(pfx, []);
+      prefixMap.get(pfx).push(n);
     }
-    return null;
+  }
+
+  // Cache resolved hops to avoid re-resolving same hex prefix
+  const hopCache = new Map();
+  const resolveHop = (hop) => {
+    if (hopCache.has(hop)) return hopCache.get(hop);
+    const h = hop.toLowerCase();
+    const candidates = prefixMap.get(h);
+    let result = null;
+    if (candidates && candidates.length === 1) result = candidates[0];
+    else if (candidates && candidates.length > 1) {
+      const withLoc = candidates.filter(c => c.lat && c.lon && !(c.lat === 0 && c.lon === 0));
+      result = withLoc.length ? withLoc[0] : candidates[0];
+    }
+    hopCache.set(hop, result);
+    return result;
   };
 
+  // Pre-compute repeater status
+  const repeaterSet = new Set();
+  for (const n of allNodes) {
+    if (n.role && n.role.toLowerCase().includes('repeater')) repeaterSet.add(n.public_key);
+  }
   const validGps = n => n && n.lat != null && n.lon != null && !(n.lat === 0 && n.lon === 0);
-  const isRepeater = n => n && n.role && n.role.toLowerCase().includes('repeater');
+  const isRepeater = n => n && repeaterSet.has(n.public_key);
 
   const packets = pktStore.filter(p => p.path_json && p.path_json !== '[]' && (!regionObsIds || regionObsIds.has(p.observer_id)));
 
@@ -1728,7 +1748,9 @@ app.get('/api/analytics/distance', (req, res) => {
 
   for (const p of packets) {
     let hops;
-    try { hops = JSON.parse(p.path_json); } catch { continue; }
+    try {
+      hops = p._parsedPath || (p._parsedPath = JSON.parse(p.path_json));
+    } catch { continue; }
     if (!hops.length) continue;
 
     // Resolve all hops to nodes
@@ -1738,7 +1760,7 @@ app.get('/api/analytics/distance', (req, res) => {
     let senderNode = null;
     if (p.decoded_json) {
       try {
-        const dec = typeof p.decoded_json === 'string' ? JSON.parse(p.decoded_json) : p.decoded_json;
+        const dec = p._parsedDecoded || (p._parsedDecoded = typeof p.decoded_json === 'string' ? JSON.parse(p.decoded_json) : p.decoded_json);
         if (dec.pubKey) senderNode = nodeByPk.get(dec.pubKey) || null;
       } catch {}
     }
