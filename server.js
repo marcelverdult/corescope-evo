@@ -1313,6 +1313,8 @@ app.get('/api/analytics/rf', (req, res) => {
   const sorted = arr => [...arr].sort((a, b) => a - b);
   const median = arr => { const s = sorted(arr); return s.length ? s[Math.floor(s.length/2)] : 0; };
   const stddev = (arr, avg) => Math.sqrt(arr.reduce((s, v) => s + (v - avg) ** 2, 0) / Math.max(arr.length, 1));
+  const arrMin = arr => { let m = Infinity; for (const v of arr) if (v < m) m = v; return m === Infinity ? 0 : m; };
+  const arrMax = arr => { let m = -Infinity; for (const v of arr) if (v > m) m = v; return m === -Infinity ? 0 : m; };
 
   const snrAvg = snrVals.reduce((a, b) => a + b, 0) / Math.max(snrVals.length, 1);
   const rssiAvg = rssiVals.reduce((a, b) => a + b, 0) / Math.max(rssiVals.length, 1);
@@ -1350,7 +1352,7 @@ app.get('/api/analytics/rf', (req, res) => {
   const snrByTypeArr = Object.entries(snrByType).map(([name, d]) => ({
     name, count: d.vals.length,
     avg: d.vals.reduce((a, b) => a + b, 0) / d.vals.length,
-    min: Math.min(...d.vals), max: Math.max(...d.vals)
+    min: arrMin(d.vals), max: arrMax(d.vals)
   })).sort((a, b) => b.count - a.count);
 
   // Signal over time — from signal-filtered subset
@@ -1375,7 +1377,7 @@ app.get('/api/analytics/rf', (req, res) => {
   // Pre-compute histograms server-side so we don't send raw arrays
   function buildHistogram(values, bins) {
     if (!values.length) return { bins: [], min: 0, max: 0 };
-    const min = Math.min(...values), max = Math.max(...values);
+    const min = arrMin(values), max = arrMax(values);
     const range = max - min || 1;
     const binWidth = range / bins;
     const counts = new Array(bins).fill(0);
@@ -1391,17 +1393,17 @@ app.get('/api/analytics/rf', (req, res) => {
   const sizeHistogram = buildHistogram(packetSizes, 25);
 
   const times = allRegional.map(p => new Date(p.timestamp || p.obs_timestamp).getTime()).filter(t => !isNaN(t));
-  const timeSpanHours = times.length ? (Math.max(...times) - Math.min(...times)) / 3600000 : 0;
+  const timeSpanHours = times.length ? (arrMax(times) - arrMin(times)) / 3600000 : 0;
 
   const _rfResult = {
     totalPackets: signalPackets.length,
     totalAllPackets: allRegional.length,
     totalTransmissions: regionalHashes.size,
-    snr: snrVals.length ? { min: Math.min(...snrVals), max: Math.max(...snrVals), avg: snrAvg, median: median(snrVals), stddev: stddev(snrVals, snrAvg) } : { min: 0, max: 0, avg: 0, median: 0, stddev: 0 },
-    rssi: rssiVals.length ? { min: Math.min(...rssiVals), max: Math.max(...rssiVals), avg: rssiAvg, median: median(rssiVals), stddev: stddev(rssiVals, rssiAvg) } : { min: 0, max: 0, avg: 0, median: 0, stddev: 0 },
+    snr: snrVals.length ? { min: arrMin(snrVals), max: arrMax(snrVals), avg: snrAvg, median: median(snrVals), stddev: stddev(snrVals, snrAvg) } : { min: 0, max: 0, avg: 0, median: 0, stddev: 0 },
+    rssi: rssiVals.length ? { min: arrMin(rssiVals), max: arrMax(rssiVals), avg: rssiAvg, median: median(rssiVals), stddev: stddev(rssiVals, rssiAvg) } : { min: 0, max: 0, avg: 0, median: 0, stddev: 0 },
     snrValues: snrHistogram, rssiValues: rssiHistogram, packetSizes: sizeHistogram,
-    minPacketSize: packetSizes.length ? Math.min(...packetSizes) : 0,
-    maxPacketSize: packetSizes.length ? Math.max(...packetSizes) : 0,
+    minPacketSize: packetSizes.length ? arrMin(packetSizes) : 0,
+    maxPacketSize: packetSizes.length ? arrMax(packetSizes) : 0,
     avgPacketSize: packetSizes.length ? Math.round(packetSizes.reduce((a, b) => a + b, 0) / packetSizes.length) : 0,
     packetsPerHour, payloadTypes, snrByType: snrByTypeArr, signalOverTime, scatterData, timeSpanHours
   };
