@@ -702,7 +702,8 @@
           const sortMode = groupSortModes[p.hash] || SORT_OBSERVER;
           const obsLabel = sortMode === SORT_OBSERVER ? '<strong>Observer</strong>' : 'Observer';
           const pathLabel = sortMode === SORT_PATH_LENGTH ? '<strong>Path length</strong>' : 'Path length';
-          html += `<tr class="group-sort-bar"><td colspan="10" style="padding:2px 8px;font-size:0.8em;color:var(--text-muted)">Sort: <a href="#" data-action="sort-group" data-value="${p.hash}" data-sort="${SORT_OBSERVER}" style="color:var(--primary);cursor:pointer">${obsLabel}</a> · <a href="#" data-action="sort-group" data-value="${p.hash}" data-sort="${SORT_PATH_LENGTH}" style="color:var(--primary);cursor:pointer">${pathLabel}</a></td></tr>`;
+          const chronoLabel = sortMode === SORT_CHRONO ? '<strong>Chronological</strong>' : 'Chronological';
+          html += `<tr class="group-sort-bar"><td colspan="10" style="padding:2px 8px;font-size:0.8em;color:var(--text-muted)">Sort: <a href="#" data-action="sort-group" data-value="${p.hash}" data-sort="${SORT_OBSERVER}" style="color:var(--primary);cursor:pointer">${obsLabel}</a> · <a href="#" data-action="sort-group" data-value="${p.hash}" data-sort="${SORT_PATH_LENGTH}" style="color:var(--primary);cursor:pointer">${pathLabel}</a> · <a href="#" data-action="sort-group" data-value="${p.hash}" data-sort="${SORT_CHRONO}" style="color:var(--primary);cursor:pointer">${chronoLabel}</a></td></tr>`;
           for (const c of p._children) {
             const typeName = payloadTypeName(c.payload_type);
             const typeClass = payloadTypeColor(c.payload_type);
@@ -1251,6 +1252,7 @@
   // Observation sort modes
   const SORT_OBSERVER = 'observer';
   const SORT_PATH_LENGTH = 'path';
+  const SORT_CHRONO = 'chrono';
   const groupSortModes = {}; // hash → sort mode
 
   function getPathHopCount(c) {
@@ -1261,7 +1263,12 @@
     if (!group || !group._children) return;
     const mode = groupSortModes[group.hash] || SORT_OBSERVER;
 
-    if (mode === SORT_PATH_LENGTH) {
+    if (mode === SORT_CHRONO) {
+      group._children.sort((a, b) => {
+        const tA = a.timestamp || '', tB = b.timestamp || '';
+        return tA < tB ? -1 : tA > tB ? 1 : 0;
+      });
+    } else if (mode === SORT_PATH_LENGTH) {
       group._children.sort((a, b) => {
         const lenA = getPathHopCount(a), lenB = getPathHopCount(b);
         if (lenA !== lenB) return lenA - lenB;
