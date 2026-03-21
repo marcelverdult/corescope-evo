@@ -90,7 +90,7 @@
     if (!_selected) return 'All Regions';
     var sel = Array.from(_selected);
     if (sel.length === 0) return 'All Regions';
-    if (sel.length <= 2) return sel.map(function (c) { return _regions[c] || c; }).join(', ');
+    if (sel.length <= 2) return sel.join(', ');
     return sel.length + ' Regions';
   }
 
@@ -127,7 +127,7 @@
     html += '<label class="region-dropdown-item"><input type="checkbox" data-region="__all__"' +
       (allSelected ? ' checked' : '') + '> <strong>All</strong></label>';
     codes.forEach(function (code) {
-      var label = _regions[code] || code;
+      var label = _regions[code] ? (code + ' - ' + _regions[code]) : code;
       var active = allSelected || (_selected && _selected.has(code));
       html += '<label class="region-dropdown-item"><input type="checkbox" data-region="' + code + '"' +
         (active ? ' checked' : '') + '> ' + label + '</label>';
