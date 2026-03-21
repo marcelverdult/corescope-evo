@@ -823,6 +823,29 @@
       </div>`;
     }
 
+    const observations = data.observations || [];
+    const obsCount = data.observation_count || observations.length || 1;
+    const uniqueObservers = new Set(observations.map(o => o.observer_id)).size;
+
+    // Propagation time: spread between first and last observation
+    let propagationHtml = '—';
+    if (observations.length >= 2) {
+      const times = observations.map(o => new Date(o.timestamp).getTime()).filter(t => !isNaN(t));
+      if (times.length >= 2) {
+        const first = Math.min(...times);
+        const last = Math.max(...times);
+        const spread = last - first;
+        if (spread < 1000) {
+          propagationHtml = `${spread}ms`;
+        } else if (spread < 60000) {
+          propagationHtml = `${(spread / 1000).toFixed(1)}s`;
+        } else {
+          propagationHtml = `${(spread / 60000).toFixed(1)}m`;
+        }
+        propagationHtml += ` <span style="color:var(--text-muted);font-size:0.85em">(${obsCount} obs × ${uniqueObservers} observers)</span>`;
+      }
+    }
+
     panel.innerHTML = `
       <div class="detail-title">${hasRawHex ? `Packet Byte Breakdown (${size} bytes)` : typeName + ' Packet'}</div>
       <div class="detail-hash">${pkt.hash || 'Packet #' + pkt.id}</div>
@@ -834,6 +857,7 @@
         <dt>Payload Type</dt><dd><span class="badge badge-${payloadTypeColor(pkt.payload_type)}">${typeName}</span></dd>
         ${hashSize ? `<dt>Hash Size</dt><dd>${hashSize} byte${hashSize !== 1 ? 's' : ''}</dd>` : ''}
         <dt>Timestamp</dt><dd>${pkt.timestamp}</dd>
+        <dt>Propagation</dt><dd>${propagationHtml}</dd>
         <dt>Path</dt><dd>${pathHops.length ? renderPath(pathHops) : '—'}</dd>
       </dl>
       <div class="detail-actions">
