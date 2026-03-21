@@ -487,7 +487,11 @@
     });
 
     // Tick relative timestamps every 30s
-    timeAgoTimer = setInterval(renderChannelList, 30000);
+    timeAgoTimer = setInterval(function () {
+      document.querySelectorAll('.ch-item-time[data-ts]').forEach(function (el) {
+        el.textContent = timeAgo(el.dataset.ts);
+      });
+    }, 1000);
   }
 
   var timeAgoTimer = null;
@@ -548,7 +552,7 @@
         <div class="ch-item-body">
           <div class="ch-item-top">
             <span class="ch-item-name">${escapeHtml(name)}</span>
-            <span class="ch-item-time">${time}</span>
+            <span class="ch-item-time" data-ts="${ch.lastActivity || ''}">${time}</span>
           </div>
           <div class="ch-item-preview">${escapeHtml(preview)}</div>
         </div>
