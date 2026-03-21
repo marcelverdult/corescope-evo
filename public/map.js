@@ -8,7 +8,7 @@
   let clusterGroup = null;
   let nodes = [];
   let observers = [];
-  let filters = { repeater: true, companion: true, room: true, sensor: true, observer: true, lastHeard: '30d', neighbors: false, clusters: false };
+  let filters = { repeater: true, companion: true, room: true, sensor: true, observer: true, lastHeard: '30d', neighbors: false, clusters: false, hashLabels: localStorage.getItem('meshcore-map-hash-labels') !== 'false' };
   let wsHandler = null;
   let heatLayer = null;
   let userHasMoved = false;
@@ -60,6 +60,20 @@
     });
   }
 
+  function makeRepeaterLabelIcon(node) {
+    var hashSize = node.hash_size || 1;
+    var s = ROLE_STYLE['repeater'] || ROLE_STYLE.companion;
+    var label = hashSize + 'B';
+    var html = '<div style="background:' + s.color + ';color:#fff;font-weight:bold;font-size:12px;padding:3px 7px;border-radius:4px;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,0.4);text-align:center;line-height:1;">' + label + '</div>';
+    return L.divIcon({
+      html: html,
+      className: 'meshcore-marker meshcore-label-marker',
+      iconSize: null,
+      iconAnchor: [14, 12],
+      popupAnchor: [0, -12],
+    });
+  }
+
   function init(container) {
     container.innerHTML = `
       <div id="map-wrap" style="position:relative;width:100%;height:100%;">
@@ -79,6 +93,7 @@
           <fieldset class="mc-section">
             <legend class="mc-label">Filters</legend>
             <label for="mcNeighbors"><input type="checkbox" id="mcNeighbors"> Show direct neighbors</label>
+            <label for="mcHashLabels"><input type="checkbox" id="mcHashLabels"> Hash size labels</label>
           </fieldset>
           <fieldset class="mc-section">
             <legend class="mc-label">Last Heard</legend>
@@ -154,6 +169,13 @@
     document.getElementById('mcClusters').addEventListener('change', e => { filters.clusters = e.target.checked; renderMarkers(); });
     document.getElementById('mcHeatmap').addEventListener('change', e => { toggleHeatmap(e.target.checked); });
     document.getElementById('mcNeighbors').addEventListener('change', e => { filters.neighbors = e.target.checked; renderMarkers(); });
+
+    // Hash Labels toggle
+    const hashLabelEl = document.getElementById('mcHashLabels');
+    if (hashLabelEl) {
+      hashLabelEl.checked = filters.hashLabels;
+      hashLabelEl.addEventListener('change', e => { filters.hashLabels = e.target.checked; localStorage.setItem('meshcore-map-hash-labels', filters.hashLabels); renderMarkers(); });
+    }
     document.getElementById('mcLastHeard').addEventListener('change', e => { filters.lastHeard = e.target.value; loadNodes(); });
 
     // WS for live advert updates
@@ -355,7 +377,7 @@
     });
 
     for (const node of filtered) {
-      const icon = makeMarkerIcon(node.role || 'companion');
+      const icon = (node.role === 'repeater' && filters.hashLabels) ? makeRepeaterLabelIcon(node) : makeMarkerIcon(node.role || 'companion');
       const marker = L.marker([node.lat, node.lon], {
         icon,
         alt: `${node.name || 'Unknown'} (${node.role || 'node'})`,

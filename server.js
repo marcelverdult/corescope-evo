@@ -973,6 +973,24 @@ app.get('/api/nodes', (req, res) => {
     counts[r + 's'] = db.db.prepare(`SELECT COUNT(*) as count FROM nodes WHERE role = ?`).get(r).count;
   }
 
+  // Compute hash_size for each node from latest ADVERT packets
+  const hashSizeMap = new Map();
+  for (const p of pktStore.packets) {
+    if (p.payload_type === 4 && p.decoded_json) {
+      try {
+        const d = JSON.parse(p.decoded_json);
+        const pk = d.pubKey || d.public_key;
+        if (pk && p.raw_hex && !hashSizeMap.has(pk)) {
+          const pathByte = parseInt(p.raw_hex.slice(2, 4), 16);
+          hashSizeMap.set(pk, ((pathByte >> 6) & 0x3) + 1);
+        }
+      } catch {}
+    }
+  }
+  for (const node of nodes) {
+    node.hash_size = hashSizeMap.get(node.public_key) || null;
+  }
+
   res.json({ nodes, total, counts });
 });
 
