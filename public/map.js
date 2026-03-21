@@ -62,9 +62,12 @@
 
   function makeRepeaterLabelIcon(node) {
     var s = ROLE_STYLE['repeater'] || ROLE_STYLE.companion;
-    var label = node.hash_size ? node.hash_size + 'B' : '?';
-    var bgColor = node.hash_size ? s.color : '#999';
-    var html = '<div style="background:' + bgColor + ';color:#fff;font-weight:bold;font-size:12px;padding:3px 7px;border-radius:4px;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,0.4);text-align:center;line-height:1;">' + label + '</div>';
+    var hs = node.hash_size || 1;
+    // Show the short mesh hash ID (first N bytes of pubkey, uppercased)
+    var shortHash = node.public_key ? node.public_key.slice(0, hs * 2).toUpperCase() : '??';
+    var bgColor = node.hash_size ? s.color : '#888';
+    var html = '<div style="background:' + bgColor + ';color:#fff;font-weight:bold;font-size:11px;padding:2px 5px;border-radius:3px;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,0.4);text-align:center;line-height:1.2;white-space:nowrap;">' +
+      shortHash + '</div>';
     return L.divIcon({
       html: html,
       className: 'meshcore-marker meshcore-label-marker',
@@ -374,31 +377,39 @@
   var _renderingMarkers = false;
   var _lastDeconflictZoom = null;
 
-  function deconflictLabels(labelMarkers, map) {
+  function deconflictLabels(labelMarkers, mapRef) {
     const placed = [];
-    const LABEL_W = 32;
-    const LABEL_H = 22;
-    const PAD = 4;
+    const LABEL_W = 38;
+    const LABEL_H = 24;
+    const PAD = 6;
 
-    const overlaps = (b) => placed.some(p =>
-      b.x < p.x + p.w + PAD && b.x + b.w + PAD > p.x &&
-      b.y < p.y + p.h + PAD && b.y + b.h + PAD > p.y
-    );
+    const overlaps = function(b) {
+      return placed.some(function(p) {
+        return b.x < p.x + p.w + PAD && b.x + b.w + PAD > p.x &&
+               b.y < p.y + p.h + PAD && b.y + b.h + PAD > p.y;
+      });
+    };
 
-    for (const m of labelMarkers) {
-      const pt = map.latLngToLayerPoint(m.latLng);
-      let bestPt = pt;
-      let box = { x: pt.x - LABEL_W / 2, y: pt.y - LABEL_H / 2, w: LABEL_W, h: LABEL_H };
+    // Generate spiral offsets — 5 rings, 8 directions each, up to 120px out
+    var offsets = [];
+    for (var ring = 1; ring <= 6; ring++) {
+      var dist = ring * 28;
+      for (var angle = 0; angle < 360; angle += 45) {
+        var rad = angle * Math.PI / 180;
+        offsets.push([Math.round(Math.cos(rad) * dist), Math.round(Math.sin(rad) * dist)]);
+      }
+    }
+
+    for (var i = 0; i < labelMarkers.length; i++) {
+      var m = labelMarkers[i];
+      var pt = mapRef.latLngToLayerPoint(m.latLng);
+      var bestPt = pt;
+      var box = { x: pt.x - LABEL_W / 2, y: pt.y - LABEL_H / 2, w: LABEL_W, h: LABEL_H };
 
       if (overlaps(box)) {
-        const offsets = [
-          [0, -25], [0, 25], [-30, 0], [30, 0],
-          [-25, -20], [25, -20], [-25, 20], [25, 20],
-          [0, -45], [0, 45], [-50, 0], [50, 0]
-        ];
-        for (const [dx, dy] of offsets) {
-          const tryPt = L.point(pt.x + dx, pt.y + dy);
-          const tryBox = { x: tryPt.x - LABEL_W / 2, y: tryPt.y - LABEL_H / 2, w: LABEL_W, h: LABEL_H };
+        for (var j = 0; j < offsets.length; j++) {
+          var tryPt = L.point(pt.x + offsets[j][0], pt.y + offsets[j][1]);
+          var tryBox = { x: tryPt.x - LABEL_W / 2, y: tryPt.y - LABEL_H / 2, w: LABEL_W, h: LABEL_H };
           if (!overlaps(tryBox)) {
             bestPt = tryPt;
             box = tryBox;
@@ -408,7 +419,7 @@
       }
 
       placed.push(box);
-      m.adjustedLatLng = map.layerPointToLatLng(bestPt);
+      m.adjustedLatLng = mapRef.layerPointToLatLng(bestPt);
       m.offset = Math.sqrt(Math.pow(bestPt.x - pt.x, 2) + Math.pow(bestPt.y - pt.y, 2));
     }
   }

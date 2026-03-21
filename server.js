@@ -973,16 +973,41 @@ app.get('/api/nodes', (req, res) => {
     counts[r + 's'] = db.db.prepare(`SELECT COUNT(*) as count FROM nodes WHERE role = ?`).get(r).count;
   }
 
-  // Compute hash_size for each node from latest ADVERT packets
+  // Compute hash_size for each node from ADVERT path byte or path hop lengths
   const hashSizeMap = new Map();
+  // Pass 1: from ADVERT packets (most authoritative — path byte bits 7-6)
   for (const p of pktStore.packets) {
-    if (p.payload_type === 4 && p.decoded_json) {
+    if (p.payload_type === 4 && p.raw_hex) {
       try {
-        const d = JSON.parse(p.decoded_json);
+        const d = JSON.parse(p.decoded_json || '{}');
         const pk = d.pubKey || d.public_key;
-        if (pk && p.raw_hex && !hashSizeMap.has(pk)) {
+        if (pk && !hashSizeMap.has(pk)) {
           const pathByte = parseInt(p.raw_hex.slice(2, 4), 16);
           hashSizeMap.set(pk, ((pathByte >> 6) & 0x3) + 1);
+        }
+      } catch {}
+    }
+  }
+  // Pass 2: for nodes without ADVERTs, derive from path hop lengths in any packet
+  // Path hops are hex strings; their length / 2 = hash_size in bytes
+  for (const p of pktStore.packets) {
+    if (p.path_json) {
+      try {
+        const hops = JSON.parse(p.path_json);
+        if (hops.length > 0) {
+          const hopLen = hops[0].length / 2; // hex chars / 2 = bytes
+          if (hopLen >= 1 && hopLen <= 4) {
+            // The path byte tells us hash_size for ALL nodes in this packet's mesh
+            const pathByte = p.raw_hex ? parseInt(p.raw_hex.slice(2, 4), 16) : -1;
+            const hs = pathByte >= 0 ? ((pathByte >> 6) & 0x3) + 1 : hopLen;
+            // We can't map hops to pubkeys directly (hops are truncated hashes)
+            // but we know the packet's source node uses this hash_size
+            if (p.decoded_json) {
+              const d = JSON.parse(p.decoded_json);
+              const pk = d.pubKey || d.public_key;
+              if (pk && !hashSizeMap.has(pk)) hashSizeMap.set(pk, hs);
+            }
+          }
         }
       } catch {}
     }
