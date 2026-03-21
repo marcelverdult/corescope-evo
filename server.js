@@ -123,6 +123,27 @@ function computeContentHash(rawHex) {
 const db = require('./db');
 const pktStore = new PacketStore(db, config.packetStore || {}).load();
 _rebuildHashSizeMap();
+
+// --- Shared cached node list (refreshed every 30s, avoids repeated SQLite queries) ---
+let _cachedAllNodes = null;
+let _cachedAllNodesWithRole = null;
+let _cachedAllNodesTs = 0;
+const NODES_CACHE_MS = 30000;
+function getCachedNodes(includeRole) {
+  const now = Date.now();
+  if (!_cachedAllNodes || now - _cachedAllNodesTs > NODES_CACHE_MS) {
+    _cachedAllNodes = db.db.prepare('SELECT public_key, name, lat, lon FROM nodes WHERE name IS NOT NULL').all();
+    _cachedAllNodesWithRole = db.db.prepare('SELECT public_key, name, lat, lon, role FROM nodes WHERE name IS NOT NULL').all();
+    _cachedAllNodesTs = now;
+    // Clear prefix index so disambiguateHops rebuilds it on fresh data
+    delete _cachedAllNodes._prefixIdx;
+    delete _cachedAllNodes._prefixIdxName;
+    delete _cachedAllNodesWithRole._prefixIdx;
+    delete _cachedAllNodesWithRole._prefixIdxName;
+  }
+  return includeRole ? _cachedAllNodesWithRole : _cachedAllNodes;
+}
+
 const configuredChannelKeys = config.channelKeys || {};
 const hashChannels = Array.isArray(config.hashChannels) ? config.hashChannels : [];
 
@@ -1451,7 +1472,7 @@ app.get('/api/analytics/topology', (req, res) => {
   const _ck = 'analytics:topology' + (region ? ':' + region : '');
   const _c = cache.get(_ck); if (_c) return res.json(_c);
   const packets = pktStore.filter(p => p.path_json && p.path_json !== '[]' && (!regionObsIds || regionObsIds.has(p.observer_id)));
-  const allNodes = db.db.prepare('SELECT public_key, name, lat, lon FROM nodes WHERE name IS NOT NULL').all();
+  const allNodes = getCachedNodes(false);
 
   // Build prefix map for O(1) hop resolution (same pattern as distance endpoint)
   const topoPrefixMap = new Map();
@@ -1714,7 +1735,7 @@ app.get('/api/analytics/distance', (req, res) => {
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
   }
 
-  const allNodes = db.db.prepare('SELECT public_key, name, lat, lon, role FROM nodes WHERE name IS NOT NULL').all();
+  const allNodes = getCachedNodes(true);
   const nodeByPk = new Map(allNodes.map(n => [n.public_key, n]));
 
   // Build prefix map for O(1) hop resolution instead of O(N) filter per hop
@@ -1889,7 +1910,7 @@ app.get('/api/analytics/hash-sizes', (req, res) => {
   const uniqueHops = {}; // hop hex → { size, count, resolvedName }
 
   // Resolve all known nodes for hop matching — use prefix map for O(1) lookup
-  const allNodes = db.db.prepare('SELECT public_key, name FROM nodes WHERE name IS NOT NULL').all();
+  const allNodes = getCachedNodes(false);
   const hsPrefixMap = new Map();
   for (const n of allNodes) {
     const pk = n.public_key.toLowerCase();
@@ -1986,7 +2007,7 @@ app.get('/api/resolve-hops', (req, res) => {
   const originLon = req.query.originLon ? parseFloat(req.query.originLon) : null;
   if (!hops.length) return res.json({ resolved: {} });
 
-  const allNodes = db.db.prepare('SELECT public_key, name, lat, lon FROM nodes WHERE name IS NOT NULL').all();
+  const allNodes = getCachedNodes(false);
 
   // Build observer geographic position
   let observerLat = null, observerLon = null;
@@ -2420,7 +2441,7 @@ app.get('/api/nodes/:pubkey/paths', (req, res) => {
   const prefix1 = pubkey.slice(0, 2).toLowerCase();
   const prefix2 = pubkey.slice(0, 4).toLowerCase();
 
-  const allNodes = db.db.prepare('SELECT public_key, name, lat, lon FROM nodes WHERE name IS NOT NULL').all();
+  const allNodes = getCachedNodes(false);
 
   // Scan all transmissions for paths containing this node's prefix
   const matchingTx = [];
@@ -2697,7 +2718,7 @@ function computeAllSubpaths() {
 
   const t0 = Date.now();
   const packets = pktStore.filter(p => p.path_json && p.path_json !== '[]');
-  const allNodes = db.db.prepare('SELECT public_key, name, lat, lon FROM nodes WHERE name IS NOT NULL').all();
+  const allNodes = getCachedNodes(false);
 
   const disambigCache = {};
   function cachedDisambiguate(hops) {
@@ -2713,8 +2734,7 @@ function computeAllSubpaths() {
   let totalPaths = 0;
 
   for (const pkt of packets) {
-    let hops;
-    try { hops = JSON.parse(pkt.path_json); } catch { continue; }
+    const hops = pkt._parsedPath || (pkt.path_json ? (() => { try { return pkt._parsedPath = JSON.parse(pkt.path_json); } catch { return null; } })() : null);
     if (!Array.isArray(hops) || hops.length < 2) continue;
     totalPaths++;
 
@@ -2758,12 +2778,11 @@ app.get('/api/analytics/subpaths', (req, res) => {
       if (obs) for (const o of obs) regionalHashes.add(o.hash);
     }
     const packets = pktStore.filter(p => p.path_json && p.path_json !== '[]' && regionalHashes.has(p.hash));
-    const allNodes = db.db.prepare('SELECT public_key, name, lat, lon FROM nodes WHERE name IS NOT NULL').all();
+    const allNodes = getCachedNodes(false);
     const subpathsByLen = {};
     let totalPaths = 0;
     for (const pkt of packets) {
-      let hops;
-      try { hops = JSON.parse(pkt.path_json); } catch { continue; }
+      const hops = pkt._parsedPath || (pkt.path_json ? (() => { try { return pkt._parsedPath = JSON.parse(pkt.path_json); } catch { return null; } })() : null);
       if (!Array.isArray(hops) || hops.length < 2) continue;
       totalPaths++;
       const resolved = disambiguateHops(hops, allNodes);
@@ -2831,7 +2850,7 @@ app.get('/api/analytics/subpath-detail', (req, res) => {
   if (rawHops.length < 2) return res.json({ error: 'Need at least 2 hops' });
 
   const packets = pktStore.filter(p => p.path_json && p.path_json !== '[]');
-  const allNodes = db.db.prepare('SELECT public_key, name, lat, lon FROM nodes WHERE name IS NOT NULL').all();
+  const allNodes = getCachedNodes(false);
 
   // Disambiguate the requested hops
   const resolvedHops = disambiguateHops(rawHops, allNodes);
