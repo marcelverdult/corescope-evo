@@ -772,7 +772,7 @@
       </div>
     `;
     let allNodes = [];
-    try { const nd = await api('/nodes?limit=2000', { ttl: CLIENT_TTL.nodeList }); allNodes = nd.nodes || []; } catch {}
+    try { const nd = await api('/nodes?limit=2000' + RegionFilter.regionQueryString(), { ttl: CLIENT_TTL.nodeList }); allNodes = nd.nodes || []; } catch {}
     renderHashMatrix(data.topHops, allNodes);
     renderCollisions(data.topHops, allNodes);
   }
@@ -962,11 +962,12 @@
     async function renderSubpaths(el) {
     el.innerHTML = '<div class="text-center text-muted" style="padding:40px">Analyzing route patterns…</div>';
     try {
+      const rq = RegionFilter.regionQueryString();
       const [d2, d3, d4, d5] = await Promise.all([
-        api('/analytics/subpaths?minLen=2&maxLen=2&limit=50', { ttl: CLIENT_TTL.analyticsRF }),
-        api('/analytics/subpaths?minLen=3&maxLen=3&limit=30', { ttl: CLIENT_TTL.analyticsRF }),
-        api('/analytics/subpaths?minLen=4&maxLen=4&limit=20', { ttl: CLIENT_TTL.analyticsRF }),
-        api('/analytics/subpaths?minLen=5&maxLen=8&limit=15', { ttl: CLIENT_TTL.analyticsRF })
+        api('/analytics/subpaths?minLen=2&maxLen=2&limit=50' + rq, { ttl: CLIENT_TTL.analyticsRF }),
+        api('/analytics/subpaths?minLen=3&maxLen=3&limit=30' + rq, { ttl: CLIENT_TTL.analyticsRF }),
+        api('/analytics/subpaths?minLen=4&maxLen=4&limit=20' + rq, { ttl: CLIENT_TTL.analyticsRF }),
+        api('/analytics/subpaths?minLen=5&maxLen=8&limit=15' + rq, { ttl: CLIENT_TTL.analyticsRF })
       ]);
 
       function renderTable(data, title) {
@@ -1165,10 +1166,11 @@
   async function renderNodesTab(el) {
     el.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-muted)">Loading node analytics…</div>';
     try {
+      const rq = RegionFilter.regionQueryString();
       const [nodesResp, bulkHealth, netStatus] = await Promise.all([
-        api('/nodes?limit=200&sortBy=lastSeen', { ttl: CLIENT_TTL.nodeList }),
-        api('/nodes/bulk-health?limit=50', { ttl: CLIENT_TTL.analyticsRF }),
-        api('/nodes/network-status', { ttl: CLIENT_TTL.analyticsRF })
+        api('/nodes?limit=200&sortBy=lastSeen' + rq, { ttl: CLIENT_TTL.nodeList }),
+        api('/nodes/bulk-health?limit=50' + rq, { ttl: CLIENT_TTL.analyticsRF }),
+        api('/nodes/network-status' + rq, { ttl: CLIENT_TTL.analyticsRF })
       ]);
       const nodes = nodesResp.nodes || nodesResp;
       const myNodes = JSON.parse(localStorage.getItem('meshcore-my-nodes') || '[]');

@@ -1131,10 +1131,32 @@ app.get('/api/nodes/search', (req, res) => {
 // Bulk health summary for analytics — single query approach (MUST be before :pubkey routes)
 app.get('/api/nodes/bulk-health', (req, res) => {
   const limit = Math.min(Number(req.query.limit) || 50, 200);
-  const _ck = 'bulk-health:' + limit;
+  const regionKey = req.query.region || '';
+  const _ck = 'bulk-health:' + limit + ':r=' + regionKey;
   const _c = cache.get(_ck); if (_c) return res.json(_c);
 
-  const nodes = db.db.prepare(`SELECT * FROM nodes ORDER BY last_seen DESC LIMIT ?`).all(limit);
+  // Region filtering
+  const regionObsIds = getObserverIdsForRegions(req.query.region);
+  let regionNodeKeys = null;
+  let regionalHashes = null;
+  if (regionObsIds) {
+    regionalHashes = new Set();
+    for (const obsId of regionObsIds) {
+      const obs = pktStore.byObserver.get(obsId);
+      if (obs) for (const o of obs) regionalHashes.add(o.hash);
+    }
+    regionNodeKeys = new Set();
+    for (const [pubkey, hashes] of pktStore._nodeHashIndex) {
+      for (const h of hashes) {
+        if (regionalHashes.has(h)) { regionNodeKeys.add(pubkey); break; }
+      }
+    }
+  }
+
+  let nodes = db.db.prepare(`SELECT * FROM nodes ORDER BY last_seen DESC LIMIT ?`).all(regionNodeKeys ? 500 : limit);
+  if (regionNodeKeys) {
+    nodes = nodes.filter(n => regionNodeKeys.has(n.public_key)).slice(0, limit);
+  }
   if (nodes.length === 0) { cache.set(_ck, [], TTL.bulkHealth); return res.json([]); }
 
   const todayStart = new Date();
@@ -1192,7 +1214,25 @@ app.get('/api/nodes/bulk-health', (req, res) => {
 
 app.get('/api/nodes/network-status', (req, res) => {
   const now = Date.now();
-  const allNodes = db.db.prepare('SELECT public_key, name, role, last_seen FROM nodes').all();
+  let allNodes = db.db.prepare('SELECT public_key, name, role, last_seen FROM nodes').all();
+
+  // Region filtering
+  const regionObsIds = getObserverIdsForRegions(req.query.region);
+  if (regionObsIds) {
+    const regionalHashes = new Set();
+    for (const obsId of regionObsIds) {
+      const obs = pktStore.byObserver.get(obsId);
+      if (obs) for (const o of obs) regionalHashes.add(o.hash);
+    }
+    const regionNodeKeys = new Set();
+    for (const [pubkey, hashes] of pktStore._nodeHashIndex) {
+      for (const h of hashes) {
+        if (regionalHashes.has(h)) { regionNodeKeys.add(pubkey); break; }
+      }
+    }
+    allNodes = allNodes.filter(n => regionNodeKeys.has(n.public_key));
+  }
+
   let active = 0, degraded = 0, silent = 0;
   const roleCounts = {};
   allNodes.forEach(n => {
@@ -2409,12 +2449,59 @@ function computeAllSubpaths() {
 
 // Subpath frequency analysis — reads from pre-computed master
 app.get('/api/analytics/subpaths', (req, res) => {
-  const _ck = 'analytics:subpaths:' + (req.query.minLen||2) + ':' + (req.query.maxLen||8) + ':' + (req.query.limit||100);
+  const regionKey = req.query.region || '';
+  const _ck = 'analytics:subpaths:' + (req.query.minLen||2) + ':' + (req.query.maxLen||8) + ':' + (req.query.limit||100) + ':r=' + regionKey;
   const _c = cache.get(_ck); if (_c) return res.json(_c);
 
   const minLen = Math.max(2, Number(req.query.minLen) || 2);
   const maxLen = Number(req.query.maxLen) || 8;
   const limit = Number(req.query.limit) || 100;
+
+  const regionObsIds = getObserverIdsForRegions(req.query.region);
+  if (regionObsIds) {
+    // Region-filtered subpath computation
+    const regionalHashes = new Set();
+    for (const obsId of regionObsIds) {
+      const obs = pktStore.byObserver.get(obsId);
+      if (obs) for (const o of obs) regionalHashes.add(o.hash);
+    }
+    const packets = pktStore.filter(p => p.path_json && p.path_json !== '[]' && regionalHashes.has(p.hash));
+    const allNodes = db.db.prepare('SELECT public_key, name, lat, lon FROM nodes WHERE name IS NOT NULL').all();
+    const subpathsByLen = {};
+    let totalPaths = 0;
+    for (const pkt of packets) {
+      let hops;
+      try { hops = JSON.parse(pkt.path_json); } catch { continue; }
+      if (!Array.isArray(hops) || hops.length < 2) continue;
+      totalPaths++;
+      const resolved = disambiguateHops(hops, allNodes);
+      const named = resolved.map(r => r.name);
+      for (let len = minLen; len <= Math.min(maxLen, named.length); len++) {
+        if (!subpathsByLen[len]) subpathsByLen[len] = {};
+        for (let start = 0; start <= named.length - len; start++) {
+          const sub = named.slice(start, start + len).join(' \u2192 ');
+          const raw = hops.slice(start, start + len).join(',');
+          if (!subpathsByLen[len][sub]) subpathsByLen[len][sub] = { count: 0, raw };
+          subpathsByLen[len][sub].count++;
+        }
+      }
+    }
+    const merged = {};
+    for (let len = minLen; len <= maxLen; len++) {
+      const bucket = subpathsByLen[len] || {};
+      for (const [path, data] of Object.entries(bucket)) {
+        if (!merged[path]) merged[path] = { count: 0, raw: data.raw };
+        merged[path].count += data.count;
+      }
+    }
+    const ranked = Object.entries(merged)
+      .map(([path, data]) => ({ path, rawHops: data.raw.split(','), count: data.count, hops: path.split(' \u2192 ').length, pct: totalPaths > 0 ? Math.round(data.count / totalPaths * 1000) / 10 : 0 }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, limit);
+    const result = { subpaths: ranked, totalPaths };
+    cache.set(_ck, result, TTL.analyticsSubpaths);
+    return res.json(result);
+  }
 
   const { subpathsByLen, totalPaths } = computeAllSubpaths();
 
