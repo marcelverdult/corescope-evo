@@ -1,4 +1,66 @@
 # Changelog
+
+## [2.4.0] - 2026-03-21
+
+### Added
+- **Channel name tags** in packet detail column — decrypted CHAN messages show a blue pill with channel name (#test, #sf, etc.)
+- **Distance/Range analytics tab** — haversine distance calculations, link-type breakdown (R↔R, C↔R, C↔C), distance histogram, top 20 longest hops leaderboard, top 10 multi-hop paths
+- **View on Map buttons** for distance leaderboard hops and paths
+- **Realistic packet propagation mode** on live map — "Realistic" toggle buffers WS packets by hash, animates all paths simultaneously
+- **Packet propagation time** shown in detail pane (time spread across observers)
+- **Replay sends all observations** — ▶ button uses realistic propagation animation
+- **Paths-through section** on node detail panel (both desktop and mobile)
+- **Regional filters on all tabs** — shared RegionFilter component with pill/dropdown modes
+- **Configurable map defaults** via `config.json` `mapDefaults` + `/api/config/map` endpoint
+- **Favorites filter on live map** — filter animations and feed list for packets involving favorited nodes
+- **Hash prefix labels** on map markers with deconfliction (spiral offsets, callout lines)
+- **Shareable channel URLs** (`#/channels/HASH`)
+- **Channel rainbow table** — pre-computed keys for common MeshCore channel names
+- **Zero-API live channel updates** via WebSocket — no API re-fetches on new messages
+- **Channel message dedup** by packet hash (multiple observers → one message entry)
+- **1-second ticking timeAgo labels** on channel list (was 30s full re-render)
+- **API key required** for POST `/api/packets` and `/api/perf/reset`
+- **HTTPS support** (merged from lincomatic PR #105)
+- **Graceful shutdown** (merged from lincomatic PR #109)
+
+### Changed
+- Channel key architecture simplified — `channelKeys` for pre-computed hex keys, `hashChannels` for channel names (auto-derived via SHA256)
+- Channel keys use plain `String(channelHash)` instead of composite `ch_`/`unk_` prefixes
+- Node region filtering uses ADVERT-based `_advertByObserver` index instead of data packet hashes (much more accurate)
+- Observation sort in expanded packet groups: grouped by observer, earliest-observer first
+- Transmission header row updates observer + path when earlier observation arrives
+- Max hop distance filter tightened from 1000km to 300km (LoRa world record ~250km)
+- Route view labels use deconflicted divIcons with callout lines
+- Channels page only shows decrypted messages, hides encrypted garbage
+
+### Fixed
+- **Channel "10h ago" timestamp bug** — WS handler was using `packet.timestamp` (first_seen from earliest observation) instead of current time for lastActivity
+- **Stale UI / packets not updating** — `insert()` used wrong ID type for packet lookup after insert (packets table ID vs transmissions view ID)
+- **ADVERT timestamp validation removed** — field isn't stored; was rejecting valid nodes with slightly-off clocks
+- **Channels page API spam** — removed unnecessary `invalidateApiCache()` calls; WS updates are now zero-API
+- **Duplicate observations** in expanded packet view — missing dedup check in second insert code path
+- **Analytics RF 500 error** — `Math.min(...arr)` stack overflow with 193K observations; replaced with for-loop helpers
+- **Region filter bugs** — broken SQL using non-existent `sender_key` column, tab reset on filter change, missing from packets page
+- **Channel hash display** — decimal→hex in analytics, keyed by decrypted name instead of hash byte
+- **Corrupted repeater entries** — ADVERT validation at ingestion (pubkey, lat/lon, name, role)
+- **Hash_size** — uses newest ADVERT (not oldest), precomputed at startup for O(1) lookups
+- **Tab backgrounding** — skip animations when tab hidden, resume on return
+- **Feed panel position** — raised from 58px to 68px to clear VCR bar
+- **Hop disambiguation** — anchored from sender origin, not just observer position
+- **btn-icon contrast** — text nearly invisible on dark background
+- **Packet hash case normalization** for deeplink lookups
+
+### Performance
+- `/api/analytics/distance`: 3s → 630ms
+- `/api/analytics/topology`: 289ms → 193ms
+- `/api/observers`: 3s → 130ms
+- `/api/nodes`: 50ms → 2ms (hash_size precompute)
+- Event loop max latency: 3.2s → 903ms (startup only)
+- Startup pre-warm yields event loop between endpoints via `setImmediate`
+- Client-side hop resolution (moved from server)
+- SQLite manual PASSIVE checkpointing (disabled auto-checkpoint)
+- Single API call for packet expand (was 3)
+
 ## [2.3.0] - 2026-03-20
 
 ### Added
@@ -27,47 +89,3 @@
 ### Performance
 - **8.19× dedup ratio on production** (117K observations → 14K transmissions)
 - RAM usage reduced proportionally — store loads transmissions, not inflated observations
-
-## v2.1.1 — Multi-Broker MQTT & Observer Detail (2026-03-20)
-
-### 🆕 New Features
-
-- **Multi-Broker MQTT** — Connect to multiple MQTT brokers simultaneously via `mqttSources` config array. Each source gets its own connection, topics, credentials, TLS settings, and optional IATA region filter. Legacy `mqtt` config still works.
-- **IATA Region Filtering** — `mqttSources[].iataFilter` restricts accepted regions per source (e.g. only accept SJC/SFO/OAK packets from a shared feed).
-- **Observer Detail Pages** — Click any observer row for a full detail page with status, radio info, battery/uptime/noise floor, packet type donut chart, timeline, unique nodes chart, SNR distribution, and recent packets table.
-- **Observer Status Topic Parsing** — `meshcore/<region>/<id>/status` messages populate model, firmware, client_version, radio config, battery, uptime, and noise floor. 7 new columns in the observers table with auto-migration.
-- **Channel Key Auto-Derivation** — Hashtag channel keys (`#channel`) are automatically derived as `SHA256("#channelname")` first 16 bytes on startup. Only non-hashtag keys (like `public`) need manual config.
-- **Map Dark/Light Mode** — Map page now uses CartoDB dark/light tiles that swap automatically with the theme toggle (same as live page).
-- **Shareable URLs** — Copy Link button on packet detail, standalone packet page at `#/packet/ID`, deep links to channels and observer detail pages.
-- **Multi-Node Packet Filter** — "My Nodes" toggle in packets view now uses server-side `findPacketsForNode()` to find ALL packet types (messages, acks, traces), not just ADVERTs.
-
-### 🐛 Bug Fixes
-
-- **Observer name resolution** — MQTT packets now pass `msg.origin` (friendly name) to both packet records and observer upserts. Previously only the status handler used it.
-- **Observer analytics ordering** — Fixed `recentPackets` returning oldest instead of newest (wrong slice direction). Sorted observer analytics packets explicitly.
-- **Spark bars visible** — Fixed `.data-table td { max-width: 0 }` crushing spark bar cells to zero width with inline style override.
-- **My Nodes filter field names** — Fixed `pubkey` → `pubKey`, `to`/`from` → `srcPubKey`/`destPubKey`/`srcHash`/`destHash`.
-- **Duplicate pin buttons** — Live page destroy now removes the nav pin button; init guards against duplicates.
-- **Packets page crash** — Fixed non-async `renderTableRows` using `await` (syntax error prevented entire page from loading).
-- **Node search all packet types** — Search by node name now returns messages, acks, and traces — not just ADVERTs.
-- **Node packet count accuracy** — `findPacketsForNode()` is now single source of truth for all node packet lookups.
-- **Health endpoint recentPackets** — Changed from `slice(-10).reverse()` to `slice(0, 20)` — 20 newest DESC instead of 10 oldest.
-- **RF analytics total packets** — Added `totalAllPackets` field so frontend shows both total and signal-filtered counts.
-- **Duplicate `const crypto` crash** — Removed duplicate `require('crypto')` that crashed prod for ~2 minutes.
-- **PII scrubbed from git history** — Removed real names and coordinates from seed data across all commits.
-
-### 🏗️ Infrastructure
-
-- **Docker container deployed to Azure VM** — Live at `https://analyzer.00id.net` with automatic Let's Encrypt TLS via Caddy.
-- **`deploy.sh` fixed** — Config mount (`-v config.json:/app/config.json:ro`) was missing, causing every deploy to fall back to placeholder credentials. Added `|| true` to stop/rm to prevent chain failures.
-- **CI/CD via GitHub Actions** — Self-hosted runner on VM, auto-deploys on push to master.
-
----
-
-## v2.0.1 — Mobile Packets (2026-03-18)
-
-See [v2.0.1 release](https://github.com/Kpa-clawbot/meshcore-analyzer/releases/tag/v2.0.1).
-
-## v2.0.0 — Live Trace Map & VCR Playback (2026-03-17)
-
-See [v2.0.0 release](https://github.com/Kpa-clawbot/meshcore-analyzer/releases/tag/v2.0.0).
