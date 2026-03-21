@@ -1269,11 +1269,46 @@ app.get('/api/analytics/rf', (req, res) => {
   const _ck = 'analytics:rf' + (region ? ':' + region : '');
   const _c = cache.get(_ck); if (_c) return res.json(_c);
   const PTYPES = { 0:'REQ',1:'RESPONSE',2:'TXT_MSG',3:'ACK',4:'ADVERT',5:'GRP_TXT',7:'ANON_REQ',8:'PATH',9:'TRACE',11:'CONTROL' };
-  const packets = pktStore.filter(p => p.snr != null && (!regionObsIds || regionObsIds.has(p.observer_id)));
 
-  const snrVals = packets.map(p => p.snr).filter(v => v != null);
-  const rssiVals = packets.map(p => p.rssi).filter(v => v != null);
-  const packetSizes = packets.filter(p => p.raw_hex).map(p => p.raw_hex.length / 2);
+  // Step 1: Get ALL regional observations (no SNR requirement) — for general stats
+  // Step 2: Filter by SNR for signal-specific stats
+  // When no region filter, use all transmissions directly for backward compat
+  let allRegional, signalPackets;
+  if (regionObsIds) {
+    // Collect observations from regional observers via byObserver index
+    allRegional = [];
+    for (const obsId of regionObsIds) {
+      const obs = pktStore.byObserver.get(obsId);
+      if (obs) allRegional.push(...obs);
+    }
+    signalPackets = allRegional.filter(p => p.snr != null);
+  } else {
+    // No region filter — flatten all observations from all transmissions
+    allRegional = [];
+    for (const tx of pktStore.packets) {
+      if (tx.observations && tx.observations.length) {
+        allRegional.push(...tx.observations);
+      } else {
+        allRegional.push(tx); // legacy packets without observations
+      }
+    }
+    signalPackets = allRegional.filter(p => p.snr != null);
+  }
+
+  // Unique transmission hashes in the regional set
+  const regionalHashes = new Set(allRegional.map(p => p.hash).filter(Boolean));
+
+  const snrVals = signalPackets.map(p => p.snr).filter(v => v != null);
+  const rssiVals = signalPackets.map(p => p.rssi).filter(v => v != null);
+  // Packet sizes from ALL regional observations (use unique hashes to avoid double-counting)
+  const seenSizeHashes = new Set();
+  const packetSizes = [];
+  for (const p of allRegional) {
+    if (p.raw_hex && p.hash && !seenSizeHashes.has(p.hash)) {
+      seenSizeHashes.add(p.hash);
+      packetSizes.push(p.raw_hex.length / 2);
+    }
+  }
 
   const sorted = arr => [...arr].sort((a, b) => a - b);
   const median = arr => { const s = sorted(arr); return s.length ? s[Math.floor(s.length/2)] : 0; };
@@ -1282,24 +1317,32 @@ app.get('/api/analytics/rf', (req, res) => {
   const snrAvg = snrVals.reduce((a, b) => a + b, 0) / Math.max(snrVals.length, 1);
   const rssiAvg = rssiVals.reduce((a, b) => a + b, 0) / Math.max(rssiVals.length, 1);
 
-  // Packets per hour
+  // Packets per hour — from ALL regional observations
   const hourBuckets = {};
-  packets.forEach(p => {
-    const hr = p.timestamp.slice(0, 13);
+  allRegional.forEach(p => {
+    const ts = p.timestamp || p.obs_timestamp;
+    if (!ts) return;
+    const hr = ts.slice(0, 13);
     hourBuckets[hr] = (hourBuckets[hr] || 0) + 1;
   });
   const packetsPerHour = Object.entries(hourBuckets).sort().map(([hour, count]) => ({ hour, count }));
 
-  // Payload type distribution
+  // Payload type distribution — from ALL regional (unique by hash to count transmissions)
+  const seenTypeHashes = new Set();
   const typeBuckets = {};
-  packets.forEach(p => { typeBuckets[p.payload_type] = (typeBuckets[p.payload_type] || 0) + 1; });
+  allRegional.forEach(p => {
+    if (p.hash && !seenTypeHashes.has(p.hash)) {
+      seenTypeHashes.add(p.hash);
+      typeBuckets[p.payload_type] = (typeBuckets[p.payload_type] || 0) + 1;
+    }
+  });
   const payloadTypes = Object.entries(typeBuckets)
     .map(([type, count]) => ({ type: +type, name: PTYPES[type] || `UNK(${type})`, count }))
     .sort((a, b) => b.count - a.count);
 
-  // SNR by payload type
+  // SNR by payload type — from signal-filtered subset
   const snrByType = {};
-  packets.forEach(p => {
+  signalPackets.forEach(p => {
     const name = PTYPES[p.payload_type] || `UNK(${p.payload_type})`;
     if (!snrByType[name]) snrByType[name] = { vals: [] };
     snrByType[name].vals.push(p.snr);
@@ -1310,10 +1353,12 @@ app.get('/api/analytics/rf', (req, res) => {
     min: Math.min(...d.vals), max: Math.max(...d.vals)
   })).sort((a, b) => b.count - a.count);
 
-  // Signal over time
+  // Signal over time — from signal-filtered subset
   const sigTime = {};
-  packets.forEach(p => {
-    const hr = p.timestamp.slice(0, 13);
+  signalPackets.forEach(p => {
+    const ts = p.timestamp || p.obs_timestamp;
+    if (!ts) return;
+    const hr = ts.slice(0, 13);
     if (!sigTime[hr]) sigTime[hr] = { snrs: [], count: 0 };
     sigTime[hr].snrs.push(p.snr);
     sigTime[hr].count++;
@@ -1323,7 +1368,7 @@ app.get('/api/analytics/rf', (req, res) => {
   }));
 
   // Scatter data (SNR vs RSSI) — downsample to max 500 points
-  const scatterAll = packets.filter(p => p.snr != null && p.rssi != null);
+  const scatterAll = signalPackets.filter(p => p.snr != null && p.rssi != null);
   const scatterStep = Math.max(1, Math.floor(scatterAll.length / 500));
   const scatterData = scatterAll.filter((_, i) => i % scatterStep === 0).map(p => ({ snr: p.snr, rssi: p.rssi }));
 
@@ -1345,14 +1390,15 @@ app.get('/api/analytics/rf', (req, res) => {
   const rssiHistogram = buildHistogram(rssiVals, 20);
   const sizeHistogram = buildHistogram(packetSizes, 25);
 
-  const times = packets.map(p => new Date(p.timestamp).getTime());
+  const times = allRegional.map(p => new Date(p.timestamp || p.obs_timestamp).getTime()).filter(t => !isNaN(t));
   const timeSpanHours = times.length ? (Math.max(...times) - Math.min(...times)) / 3600000 : 0;
 
   const _rfResult = {
-    totalPackets: packets.length,
-    totalAllPackets: pktStore.packets.length,
-    snr: { min: Math.min(...snrVals), max: Math.max(...snrVals), avg: snrAvg, median: median(snrVals), stddev: stddev(snrVals, snrAvg) },
-    rssi: { min: Math.min(...rssiVals), max: Math.max(...rssiVals), avg: rssiAvg, median: median(rssiVals), stddev: stddev(rssiVals, rssiAvg) },
+    totalPackets: signalPackets.length,
+    totalAllPackets: allRegional.length,
+    totalTransmissions: regionalHashes.size,
+    snr: snrVals.length ? { min: Math.min(...snrVals), max: Math.max(...snrVals), avg: snrAvg, median: median(snrVals), stddev: stddev(snrVals, snrAvg) } : { min: 0, max: 0, avg: 0, median: 0, stddev: 0 },
+    rssi: rssiVals.length ? { min: Math.min(...rssiVals), max: Math.max(...rssiVals), avg: rssiAvg, median: median(rssiVals), stddev: stddev(rssiVals, rssiAvg) } : { min: 0, max: 0, avg: 0, median: 0, stddev: 0 },
     snrValues: snrHistogram, rssiValues: rssiHistogram, packetSizes: sizeHistogram,
     minPacketSize: packetSizes.length ? Math.min(...packetSizes) : 0,
     maxPacketSize: packetSizes.length ? Math.max(...packetSizes) : 0,
