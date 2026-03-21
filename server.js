@@ -2870,44 +2870,17 @@ const listenPort = process.env.PORT || config.port;
 server.listen(listenPort, () => {
   const protocol = isHttps ? 'https' : 'http';
   console.log(`MeshCore Analyzer running on ${protocol}://localhost:${listenPort}`);
-  // Pre-warm expensive caches on startup
+  // Pre-warm expensive caches via self-requests (yields event loop between each)
   setTimeout(() => {
-    const t0 = Date.now();
-    try {
-      computeAllSubpaths();
-      // Pre-warm the 4 specific subpath queries the frontend makes
-      const warmUrls = [
-        { minLen: 2, maxLen: 2, limit: 50 },
-        { minLen: 3, maxLen: 3, limit: 30 },
-        { minLen: 4, maxLen: 4, limit: 20 },
-        { minLen: 5, maxLen: 8, limit: 15 },
-      ];
-      for (const q of warmUrls) {
-        const ck = `analytics:subpaths:${q.minLen}:${q.maxLen}:${q.limit}`;
-        if (!cache.get(ck)) {
-          const { subpathsByLen, totalPaths } = computeAllSubpaths();
-          const merged = {};
-          for (let len = q.minLen; len <= q.maxLen; len++) {
-            const bucket = subpathsByLen[len] || {};
-            for (const [path, data] of Object.entries(bucket)) {
-              if (!merged[path]) merged[path] = { count: 0, raw: data.raw };
-              merged[path].count += data.count;
-            }
-          }
-          const ranked = Object.entries(merged)
-            .map(([path, data]) => ({ path, rawHops: data.raw.split(','), count: data.count, hops: path.split(' → ').length, pct: totalPaths > 0 ? Math.round(data.count / totalPaths * 1000) / 10 : 0 }))
-            .sort((a, b) => b.count - a.count)
-            .slice(0, q.limit);
-          cache.set(ck, { subpaths: ranked, totalPaths }, TTL.analyticsSubpaths);
-        }
-      }
-    } catch (e) { console.error('[pre-warm] subpaths:', e.message); }
-    console.log(`[pre-warm] subpaths: ${Date.now() - t0}ms`);
-
-    // Pre-warm other heavy analytics endpoints via self-request
     const port = listenPort;
     const warmClient = isHttps ? https : http;
     const warmEndpoints = [
+      // Subpaths (heaviest — must go first so cache is ready)
+      '/api/analytics/subpaths?minLen=2&maxLen=2&limit=50',
+      '/api/analytics/subpaths?minLen=3&maxLen=3&limit=30',
+      '/api/analytics/subpaths?minLen=4&maxLen=4&limit=20',
+      '/api/analytics/subpaths?minLen=5&maxLen=8&limit=15',
+      // Other analytics
       '/api/observers',
       '/api/nodes?limit=10000&lastHeard=259200',
       '/api/analytics/rf',
@@ -2921,7 +2894,7 @@ server.listen(listenPort, () => {
     const tw = Date.now();
     const warmNext = () => {
       if (warmed >= warmEndpoints.length) {
-        console.log(`[pre-warm] analytics: ${warmEndpoints.length} endpoints in ${Date.now() - tw}ms`);
+        console.log(`[pre-warm] ${warmEndpoints.length} endpoints in ${Date.now() - tw}ms`);
         return;
       }
       const ep = warmEndpoints[warmed++];
@@ -2932,9 +2905,8 @@ server.listen(listenPort, () => {
         res.on('end', () => setImmediate(warmNext));
       }).on('error', () => setImmediate(warmNext));
     };
-    // Stagger: warm analytics after subpaths are done (sequential to avoid blocking)
     warmNext();
-  }, 100); // warm ASAP — before clients reconnect
+  }, 5000); // 5s delay — let initial client page load complete first
 });
 
 // --- Graceful Shutdown ---
