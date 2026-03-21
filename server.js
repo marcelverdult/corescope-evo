@@ -1036,43 +1036,38 @@ app.get('/api/nodes', (req, res) => {
     if (ms) { where.push('last_seen > @since'); params.since = new Date(Date.now() - ms).toISOString(); }
   }
 
-  // Region filtering: if region param is set, only include nodes seen by observers in those regions
+  // Region filtering: if region param is set, only include nodes whose ADVERTs were seen by regional observers
   const regionObsIds = getObserverIdsForRegions(region);
   let regionNodeKeys = null;
   if (regionObsIds && regionObsIds.size > 0) {
-    // Collect all packet hashes seen by regional observers
-    const regionalHashes = new Set();
-    for (const obsId of regionObsIds) {
-      const obs = pktStore.byObserver.get(obsId);
-      if (obs) for (const o of obs) regionalHashes.add(o.hash);
-    }
-    // Find node pubkeys from those packets (via _nodeHashIndex)
-    regionNodeKeys = new Set();
-    for (const [pubkey, hashes] of pktStore._nodeHashIndex) {
-      for (const h of hashes) {
-        if (regionalHashes.has(h)) { regionNodeKeys.add(pubkey); break; }
-      }
-    }
+    regionNodeKeys = pktStore.getNodesByAdvertObservers(regionObsIds);
   }
 
   const clause = where.length ? 'WHERE ' + where.join(' AND ') : '';
   const sortMap = { name: 'name ASC', lastSeen: 'last_seen DESC', packetCount: 'advert_count DESC' };
   const order = sortMap[sortBy] || 'last_seen DESC';
 
-  let nodes, total;
+  let nodes, total, filteredAll;
   if (regionNodeKeys) {
     const allNodes = db.db.prepare(`SELECT * FROM nodes ${clause} ORDER BY ${order}`).all(params);
-    const filtered = allNodes.filter(n => regionNodeKeys.has(n.public_key));
-    total = filtered.length;
-    nodes = filtered.slice(Number(offset), Number(offset) + Number(limit));
+    filteredAll = allNodes.filter(n => regionNodeKeys.has(n.public_key));
+    total = filteredAll.length;
+    nodes = filteredAll.slice(Number(offset), Number(offset) + Number(limit));
   } else {
     nodes = db.db.prepare(`SELECT * FROM nodes ${clause} ORDER BY ${order} LIMIT @limit OFFSET @offset`).all({ ...params, limit: Number(limit), offset: Number(offset) });
     total = db.db.prepare(`SELECT COUNT(*) as count FROM nodes ${clause}`).get(params).count;
+    filteredAll = null;
   }
 
   const counts = {};
-  for (const r of ['repeater', 'room', 'companion', 'sensor']) {
-    counts[r + 's'] = db.db.prepare(`SELECT COUNT(*) as count FROM nodes WHERE role = ?`).get(r).count;
+  if (filteredAll) {
+    for (const r of ['repeater', 'room', 'companion', 'sensor']) {
+      counts[r + 's'] = filteredAll.filter(n => n.role === r).length;
+    }
+  } else {
+    for (const r of ['repeater', 'room', 'companion', 'sensor']) {
+      counts[r + 's'] = db.db.prepare(`SELECT COUNT(*) as count FROM nodes WHERE role = ?`).get(r).count;
+    }
   }
 
   // Compute hash_size for each node from ADVERT path byte or path hop lengths

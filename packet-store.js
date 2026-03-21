@@ -30,6 +30,7 @@ class PacketStore {
 
     // Track which hashes are indexed per node pubkey (avoid dupes in byNode)
     this._nodeHashIndex = new Map(); // pubkey → Set<hash>
+    this._advertByObserver = new Map(); // pubkey → Set<observer_id> (ADVERT-only, for region filtering)
 
     this.loaded = false;
     this.stats = { totalLoaded: 0, totalObservations: 0, evicted: 0, inserts: 0, queries: 0 };
@@ -150,6 +151,17 @@ class PacketStore {
         this.stats.totalObservations++;
       }
     }
+
+    // Post-load: build ADVERT-by-observer index (needs all observations loaded first)
+    for (const tx of this.packets) {
+      if (tx.payload_type === 4 && tx.decoded_json) {
+        try {
+          const d = JSON.parse(tx.decoded_json);
+          if (d.pubKey) this._indexAdvertObservers(d.pubKey, tx);
+        } catch {}
+      }
+    }
+    console.log(`[PacketStore] ADVERT observer index: ${this._advertByObserver.size} nodes tracked`);
   }
 
   /** Fallback: load from legacy packets table */
@@ -242,12 +254,32 @@ class PacketStore {
       if (decoded.srcPubKey) keys.add(decoded.srcPubKey);
       for (const k of keys) {
         if (!this._nodeHashIndex.has(k)) this._nodeHashIndex.set(k, new Set());
-        if (this._nodeHashIndex.get(k).has(tx.hash)) continue; // already indexed
+        if (this._nodeHashIndex.get(k).has(tx.hash)) continue;
         this._nodeHashIndex.get(k).add(tx.hash);
         if (!this.byNode.has(k)) this.byNode.set(k, []);
         this.byNode.get(k).push(tx);
       }
     } catch {}
+  }
+
+  /** Track which observers saw an ADVERT from a given pubkey */
+  _indexAdvertObservers(pubkey, tx) {
+    if (!this._advertByObserver.has(pubkey)) this._advertByObserver.set(pubkey, new Set());
+    const s = this._advertByObserver.get(pubkey);
+    for (const obs of tx.observations) {
+      if (obs.observer_id) s.add(obs.observer_id);
+    }
+  }
+
+  /** Get node pubkeys whose ADVERTs were seen by any of the given observer IDs */
+  getNodesByAdvertObservers(observerIds) {
+    const result = new Set();
+    for (const [pubkey, observers] of this._advertByObserver) {
+      for (const obsId of observerIds) {
+        if (observers.has(obsId)) { result.add(pubkey); break; }
+      }
+    }
+    return result;
   }
 
   /** Remove oldest transmissions when over memory limit */
@@ -348,6 +380,18 @@ class PacketStore {
       }
 
       this.stats.totalObservations++;
+
+      // Update ADVERT observer index for live ingestion
+      if (tx.payload_type === 4 && obs.observer_id && tx.decoded_json) {
+        try {
+          const d = JSON.parse(tx.decoded_json);
+          if (d.pubKey) {
+            if (!this._advertByObserver.has(d.pubKey)) this._advertByObserver.set(d.pubKey, new Set());
+            this._advertByObserver.get(d.pubKey).add(obs.observer_id);
+          }
+        } catch {}
+      }
+
       this._evict();
       this.stats.inserts++;
     }
@@ -568,6 +612,7 @@ class PacketStore {
         byHash: this.byHash.size,
         byObserver: this.byObserver.size,
         byNode: this.byNode.size,
+        advertByObserver: this._advertByObserver.size,
       }
     };
   }
