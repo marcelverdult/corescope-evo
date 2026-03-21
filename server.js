@@ -431,6 +431,16 @@ setInterval(() => {
   _elLast = now;
 }, EL_INTERVAL).unref();
 
+// Manual WAL checkpoint every 5 minutes (auto-checkpoint disabled to avoid random event loop spikes)
+setInterval(() => {
+  try {
+    const t0 = Date.now();
+    db.db.pragma('wal_checkpoint(PASSIVE)'); // PASSIVE = non-blocking, won't stall writers
+    const ms = Date.now() - t0;
+    if (ms > 50) console.log(`[wal] checkpoint: ${ms}ms`);
+  } catch (e) { console.error('[wal] checkpoint error:', e.message); }
+}, 300000).unref();
+
 // --- Health / Telemetry Endpoint ---
 app.get('/api/health', (req, res) => {
   const mem = process.memoryUsage();
