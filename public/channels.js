@@ -407,7 +407,7 @@
         }
         if (!sender) sender = 'Unknown';
 
-        var ts = m.data?.packet?.timestamp || payload.sender_timestamp || new Date().toISOString();
+        var ts = m.data?.packet?.timestamp || m.data?.timestamp || new Date().toISOString();
         var pktHash = m.data?.hash || m.data?.packet?.hash || null;
         var pktId = m.data?.id || null;
         var snr = m.data?.snr ?? m.data?.packet?.snr ?? payload.SNR ?? null;
