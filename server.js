@@ -1026,15 +1026,17 @@ app.get('/api/nodes', (req, res) => {
   const regionObsIds = getObserverIdsForRegions(region);
   let regionNodeKeys = null;
   if (regionObsIds) {
+    // Collect all packet hashes seen by regional observers (using byObserver index)
+    const regionalHashes = new Set();
+    for (const obsId of regionObsIds) {
+      const obs = pktStore.byObserver.get(obsId);
+      if (obs) for (const o of obs) regionalHashes.add(o.hash);
+    }
+    // Find node pubkeys that have at least one packet in the regional set (using _nodeHashIndex)
     regionNodeKeys = new Set();
-    for (const pkt of pktStore.packets) {
-      if (regionObsIds.has(pkt.observer_id)) {
-        try {
-          const d = JSON.parse(pkt.decoded_json || '{}');
-          const pk = d.pubKey || d.public_key;
-          if (pk) regionNodeKeys.add(pk);
-          if (d.sender_key) regionNodeKeys.add(d.sender_key);
-        } catch {}
+    for (const [pubkey, hashes] of pktStore._nodeHashIndex) {
+      for (const h of hashes) {
+        if (regionalHashes.has(h)) { regionNodeKeys.add(pubkey); break; }
       }
     }
   }
