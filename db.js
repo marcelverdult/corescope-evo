@@ -679,4 +679,4 @@ function getNodeAnalytics(pubkey, days) {
   };
 }
 
-module.exports = { db, insertTransmission, insertPath, upsertNode, upsertObserver, updateObserverStatus, getPackets, getPacket, getTransmission, getNodes, getNode, getObservers, getStats, seed, searchNodes, getNodeHealth, getNodeAnalytics };
+module.exports = { db, insertPacket, insertTransmission, insertPath, upsertNode, upsertObserver, updateObserverStatus, getPackets, getPacket, getTransmission, getNodes, getNode, getObservers, getStats, seed, searchNodes, getNodeHealth, getNodeAnalytics };
