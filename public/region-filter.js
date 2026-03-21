@@ -65,22 +65,47 @@
     return p ? '&region=' + encodeURIComponent(p) : '';
   }
 
-  /** Render the filter bar into a container element */
-  function render(container) {
-    var codes = Object.keys(_regions);
-    if (codes.length < 2) {
-      container.innerHTML = '';
-      container.style.display = 'none';
-      return;
+  /** Handle a region toggle (shared logic for both pill and dropdown modes) */
+  function toggleRegion(region, codes, container) {
+    if (region === '__all__') {
+      _selected = null;
+    } else {
+      if (!_selected) {
+        _selected = new Set([region]);
+      } else if (_selected.has(region)) {
+        _selected.delete(region);
+        if (_selected.size === 0) _selected = null;
+      } else {
+        _selected.add(region);
+      }
+      if (_selected && _selected.size === codes.length) _selected = null;
     }
-    container.style.display = '';
+    saveToStorage();
+    render(container);
+    _listeners.forEach(function (fn) { fn(getSelected()); });
+  }
+
+  /** Build summary label for dropdown trigger */
+  function dropdownLabel(codes) {
+    if (!_selected) return 'All';
+    var sel = Array.from(_selected);
+    if (sel.length === 0) return 'All';
+    if (sel.length <= 2) return sel.map(function (c) { return _regions[c] || c; }).join(', ');
+    return sel.length + ' selected';
+  }
+
+  /** Render pill bar mode (≤4 regions) */
+  function renderPills(container, codes) {
     var allSelected = !_selected;
-    var html = '<div class="region-filter-bar">';
-    html += '<button class="region-pill' + (allSelected ? ' region-pill-active' : '') + '" data-region="__all__">All</button>';
+    var html = '<div class="region-filter-bar" role="group" aria-label="Region filter">';
+    html += '<span class="region-filter-label" id="region-filter-label">Region:</span>';
+    html += '<button class="region-pill' + (allSelected ? ' region-pill-active' : '') +
+      '" data-region="__all__" role="checkbox" aria-checked="' + allSelected + '">All</button>';
     codes.forEach(function (code) {
       var label = _regions[code] || code;
       var active = allSelected || (_selected && _selected.has(code));
-      html += '<button class="region-pill' + (active ? ' region-pill-active' : '') + '" data-region="' + code + '">' + label + '</button>';
+      html += '<button class="region-pill' + (active ? ' region-pill-active' : '') +
+        '" data-region="' + code + '" role="checkbox" aria-checked="' + !!active + '">' + label + '</button>';
     });
     html += '</div>';
     container.innerHTML = html;
@@ -88,26 +113,75 @@
     container.onclick = function (e) {
       var btn = e.target.closest('[data-region]');
       if (!btn) return;
-      var region = btn.dataset.region;
-      if (region === '__all__') {
-        _selected = null;
-      } else {
-        if (!_selected) {
-          // Switch from "all" to just this one
-          _selected = new Set([region]);
-        } else if (_selected.has(region)) {
-          _selected.delete(region);
-          if (_selected.size === 0) _selected = null; // back to all
-        } else {
-          _selected.add(region);
-        }
-        // If all individually selected, switch to "all" mode
-        if (_selected && _selected.size === codes.length) _selected = null;
-      }
-      saveToStorage();
-      render(container);
-      _listeners.forEach(function (fn) { fn(getSelected()); });
+      toggleRegion(btn.dataset.region, codes, container);
     };
+  }
+
+  /** Render dropdown mode (>4 regions) */
+  function renderDropdown(container, codes) {
+    var allSelected = !_selected;
+    var html = '<div class="region-dropdown-wrap" role="group" aria-label="Region filter">';
+    html += '<span class="region-filter-label">Region:</span>';
+    html += '<button class="region-dropdown-trigger" aria-haspopup="listbox" aria-expanded="false">' +
+      dropdownLabel(codes) + ' ▾</button>';
+    html += '<div class="region-dropdown-menu" role="listbox" aria-label="Select regions" hidden>';
+    html += '<label class="region-dropdown-item"><input type="checkbox" data-region="__all__"' +
+      (allSelected ? ' checked' : '') + '> <strong>All</strong></label>';
+    codes.forEach(function (code) {
+      var label = _regions[code] || code;
+      var active = allSelected || (_selected && _selected.has(code));
+      html += '<label class="region-dropdown-item"><input type="checkbox" data-region="' + code + '"' +
+        (active ? ' checked' : '') + '> ' + label + '</label>';
+    });
+    html += '</div></div>';
+    container.innerHTML = html;
+
+    var trigger = container.querySelector('.region-dropdown-trigger');
+    var menu = container.querySelector('.region-dropdown-menu');
+
+    trigger.onclick = function () {
+      var open = !menu.hidden;
+      menu.hidden = open;
+      trigger.setAttribute('aria-expanded', String(!open));
+    };
+
+    menu.onchange = function (e) {
+      var input = e.target;
+      if (!input.dataset.region) return;
+      toggleRegion(input.dataset.region, codes, container);
+    };
+
+    // Close on outside click
+    function onDocClick(e) {
+      if (!container.contains(e.target)) {
+        menu.hidden = true;
+        trigger.setAttribute('aria-expanded', 'false');
+      }
+    }
+    document.addEventListener('click', onDocClick, true);
+    container._regionCleanup = function () {
+      document.removeEventListener('click', onDocClick, true);
+    };
+  }
+
+  /** Render the filter bar into a container element */
+  function render(container) {
+    // Clean up previous outside-click listener if any
+    if (container._regionCleanup) { container._regionCleanup(); container._regionCleanup = null; }
+
+    var codes = Object.keys(_regions);
+    if (codes.length < 2) {
+      container.innerHTML = '';
+      container.style.display = 'none';
+      return;
+    }
+    container.style.display = '';
+
+    if (codes.length > 4) {
+      renderDropdown(container, codes);
+    } else {
+      renderPills(container, codes);
+    }
   }
 
   /** Subscribe to selection changes. Callback receives selected array or null */
