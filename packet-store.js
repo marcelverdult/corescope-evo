@@ -156,6 +156,22 @@ class PacketStore {
       }
     }
 
+    // Post-load: set each transmission's observer/path to the EARLIEST observation
+    for (const tx of this.packets) {
+      if (tx.observations.length > 0) {
+        let earliest = tx.observations[0];
+        for (let i = 1; i < tx.observations.length; i++) {
+          if (tx.observations[i].timestamp < earliest.timestamp) earliest = tx.observations[i];
+        }
+        tx.observer_id = earliest.observer_id;
+        tx.observer_name = earliest.observer_name;
+        tx.snr = earliest.snr;
+        tx.rssi = earliest.rssi;
+        tx.path_json = earliest.path_json;
+        tx.direction = earliest.direction;
+      }
+    }
+
     // Post-load: build ADVERT-by-observer index (needs all observations loaded first)
     for (const tx of this.packets) {
       if (tx.payload_type === 4 && tx.decoded_json) {
