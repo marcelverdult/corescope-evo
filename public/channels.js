@@ -373,12 +373,113 @@
     });
 
     wsHandler = debouncedOnWS(function (msgs) {
-      var dominated = msgs.some(function (m) {
+      var dominated = msgs.filter(function (m) {
         return m.type === 'message' || (m.type === 'packet' && m.data?.decoded?.header?.payloadTypeName === 'GRP_TXT');
       });
-      if (dominated) {
-        loadChannels(true, true);
-        if (selectedHash) refreshMessages(true);
+      if (!dominated.length) return;
+
+      var channelListDirty = false;
+      var messagesDirty = false;
+
+      for (var i = 0; i < dominated.length; i++) {
+        var m = dominated[i];
+        var payload = m.data?.decoded?.payload;
+        if (!payload) continue;
+
+        var channelName = payload.channel || 'unknown';
+        var rawText = payload.text || '';
+        var sender = payload.sender || null;
+        var displayText = rawText;
+
+        // Parse "sender: message" format
+        if (rawText && !sender) {
+          var colonIdx = rawText.indexOf(': ');
+          if (colonIdx > 0 && colonIdx < 50) {
+            sender = rawText.slice(0, colonIdx);
+            displayText = rawText.slice(colonIdx + 2);
+          }
+        } else if (rawText && sender) {
+          var colonIdx2 = rawText.indexOf(': ');
+          if (colonIdx2 > 0 && colonIdx2 < 50) {
+            displayText = rawText.slice(colonIdx2 + 2);
+          }
+        }
+        if (!sender) sender = 'Unknown';
+
+        var ts = m.data?.packet?.timestamp || payload.sender_timestamp || new Date().toISOString();
+        var pktHash = m.data?.hash || m.data?.packet?.hash || null;
+        var pktId = m.data?.id || null;
+        var snr = m.data?.snr ?? m.data?.packet?.snr ?? payload.SNR ?? null;
+        var observer = m.data?.packet?.observer_name || m.data?.observer || null;
+
+        // Update channel list entry
+        var ch = channels.find(function (c) { return c.hash === channelName; });
+        if (ch) {
+          ch.messageCount = (ch.messageCount || 0) + 1;
+          ch.lastActivity = ts;
+          ch.lastSender = sender;
+          ch.lastMessage = truncate(displayText, 100);
+          channelListDirty = true;
+        } else {
+          // New channel we haven't seen
+          channels.push({
+            hash: channelName,
+            name: channelName,
+            messageCount: 1,
+            lastActivity: ts,
+            lastSender: sender,
+            lastMessage: truncate(displayText, 100),
+          });
+          channelListDirty = true;
+        }
+
+        // If this message is for the selected channel, append to messages
+        if (selectedHash && channelName === selectedHash) {
+          // Deduplicate: check if we already have this exact message
+          var dedupeKey = sender + ':' + ts;
+          var existing = messages.find(function (msg) { return msg.sender === sender && msg.timestamp === ts; });
+          if (existing) {
+            existing.repeats = (existing.repeats || 1) + 1;
+            if (observer && existing.observers && existing.observers.indexOf(observer) === -1) {
+              existing.observers.push(observer);
+            }
+          } else {
+            messages.push({
+              sender: sender,
+              text: displayText,
+              timestamp: ts,
+              sender_timestamp: payload.sender_timestamp || null,
+              packetId: pktId,
+              packetHash: pktHash,
+              repeats: 1,
+              observers: observer ? [observer] : [],
+              hops: payload.path_len || 0,
+              snr: snr,
+            });
+          }
+          messagesDirty = true;
+        }
+      }
+
+      if (channelListDirty) {
+        channels.sort(function (a, b) { return (b.lastActivity || '').localeCompare(a.lastActivity || ''); });
+        renderChannelList();
+      }
+      if (messagesDirty) {
+        renderMessages();
+        // Update header count
+        var ch2 = channels.find(function (c) { return c.hash === selectedHash; });
+        var header = document.getElementById('chHeader');
+        if (header && ch2) {
+          header.querySelector('.ch-header-text').textContent = (ch2.name || 'Channel ' + selectedHash) + ' — ' + messages.length + ' messages';
+        }
+        var msgEl = document.getElementById('chMessages');
+        if (msgEl && autoScroll) scrollToBottom();
+        else {
+          document.getElementById('chScrollBtn')?.classList.remove('hidden');
+          var liveEl = document.getElementById('chAriaLive');
+          if (liveEl) liveEl.textContent = 'New message received';
+        }
       }
     });
   }
@@ -397,11 +498,11 @@
     if (panel) panel.remove();
   }
 
-  async function loadChannels(silent, bust) {
+  async function loadChannels(silent) {
     try {
       const rp = RegionFilter.getRegionParam();
       const qs = rp ? '?region=' + encodeURIComponent(rp) : '';
-      const data = await api('/channels' + qs, { ttl: CLIENT_TTL.channels, bust: !!bust });
+      const data = await api('/channels' + qs, { ttl: CLIENT_TTL.channels });
       channels = (data.channels || []).sort((a, b) => (b.lastActivity || '').localeCompare(a.lastActivity || ''));
       renderChannelList();
     } catch (e) {
@@ -470,13 +571,13 @@
     }
   }
 
-  async function refreshMessages(bust) {
+  async function refreshMessages() {
     if (!selectedHash) return;
     const msgEl = document.getElementById('chMessages');
     if (!msgEl) return;
     const wasAtBottom = msgEl.scrollHeight - msgEl.scrollTop - msgEl.clientHeight < 60;
     try {
-      const data = await api(`/channels/${encodeURIComponent(selectedHash)}/messages?limit=200`, { ttl: CLIENT_TTL.channelMessages, bust: !!bust });
+      const data = await api(`/channels/${encodeURIComponent(selectedHash)}/messages?limit=200`, { ttl: CLIENT_TTL.channelMessages });
       const newMsgs = data.messages || [];
       // #92: Use message ID/hash for change detection instead of count + timestamp
       var _getLastId = function (arr) { var m = arr.length ? arr[arr.length - 1] : null; return m ? (m.id || m.packetId || m.timestamp || '') : ''; };
