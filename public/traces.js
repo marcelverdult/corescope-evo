@@ -5,10 +5,10 @@
   let currentHash = null;
   let traceData = [];
   let packetMeta = null;
-  function init(app) {
-    // Check URL for pre-filled hash
+  function init(app, routeParam) {
+    // Check URL for pre-filled hash — support both route param and query param
     const params = new URLSearchParams(location.hash.split('?')[1] || '');
-    const urlHash = params.get('hash') || '';
+    const urlHash = routeParam || params.get('hash') || '';
 
     app.innerHTML = `
       <div class="traces-page">
