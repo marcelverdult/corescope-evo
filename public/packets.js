@@ -413,6 +413,11 @@
         <select id="fType" aria-label="Filter by packet type"><option value="">All Types</option></select>
         <button class="btn ${groupByHash ? 'active' : ''}" id="fGroup">Group by Hash</button>
         <button class="btn" id="fMyNodes" title="Show only packets from claimed/favorited nodes">★ My Nodes</button>
+        <select id="fObsSort" aria-label="Observation sort order" title="Sort order for expanded observations">
+          <option value="observer">Sort: Observer</option>
+          <option value="path">Sort: Path length</option>
+          <option value="chrono">Sort: Chronological</option>
+        </select>
         <div class="col-toggle-wrap">
           <button class="col-toggle-btn" id="colToggleBtn">Columns ▾</button>
           <div class="col-toggle-menu" id="colToggleMenu"></div>
@@ -458,6 +463,19 @@
       filters.myNodes = !filters.myNodes;
       this.classList.toggle('active', filters.myNodes);
       loadPackets();
+    });
+
+    // Observation sort dropdown
+    const obsSortSel = document.getElementById('fObsSort');
+    obsSortSel.value = obsSortMode;
+    obsSortSel.addEventListener('change', function () {
+      obsSortMode = this.value;
+      localStorage.setItem('meshcore-obs-sort', obsSortMode);
+      // Re-sort all expanded groups
+      for (const p of packets) {
+        if (expandedHashes.has(p.hash) && p._children) sortGroupChildren(p);
+      }
+      renderTableRows();
     });
 
     // Column visibility toggle (#71)
@@ -600,13 +618,6 @@
           if (hash) selectPacket(null, hash);
           else selectPacket(Number(value));
         }
-        else if (action === 'sort-group') {
-          e.preventDefault();
-          const sortType = btn.dataset.sort;
-          groupSortModes[value] = sortType;
-          const group = packets.find(p => p.hash === value);
-          if (group) { sortGroupChildren(group); renderTableRows(); }
-        }
         else if (action === 'select-observation') {
           const parentHash = row.dataset.parentHash;
           const group = packets.find(p => p.hash === parentHash);
@@ -699,11 +710,6 @@
         </tr>`;
         // Child rows (loaded async when expanded)
         if (isExpanded && p._children) {
-          const sortMode = groupSortModes[p.hash] || SORT_OBSERVER;
-          const obsLabel = sortMode === SORT_OBSERVER ? '<strong>Observer</strong>' : 'Observer';
-          const pathLabel = sortMode === SORT_PATH_LENGTH ? '<strong>Path length</strong>' : 'Path length';
-          const chronoLabel = sortMode === SORT_CHRONO ? '<strong>Chronological</strong>' : 'Chronological';
-          html += `<tr class="group-sort-bar"><td colspan="10" style="padding:2px 8px;font-size:0.8em;color:var(--text-muted)">Sort: <a href="#" data-action="sort-group" data-value="${p.hash}" data-sort="${SORT_OBSERVER}" style="color:var(--primary);cursor:pointer">${obsLabel}</a> · <a href="#" data-action="sort-group" data-value="${p.hash}" data-sort="${SORT_PATH_LENGTH}" style="color:var(--primary);cursor:pointer">${pathLabel}</a> · <a href="#" data-action="sort-group" data-value="${p.hash}" data-sort="${SORT_CHRONO}" style="color:var(--primary);cursor:pointer">${chronoLabel}</a></td></tr>`;
           for (const c of p._children) {
             const typeName = payloadTypeName(c.payload_type);
             const typeClass = payloadTypeColor(c.payload_type);
@@ -1253,7 +1259,7 @@
   const SORT_OBSERVER = 'observer';
   const SORT_PATH_LENGTH = 'path';
   const SORT_CHRONO = 'chrono';
-  const groupSortModes = {}; // hash → sort mode
+  let obsSortMode = localStorage.getItem('meshcore-obs-sort') || SORT_OBSERVER;
 
   function getPathHopCount(c) {
     try { return JSON.parse(c.path_json || '[]').length; } catch { return 0; }
@@ -1261,7 +1267,7 @@
 
   function sortGroupChildren(group) {
     if (!group || !group._children) return;
-    const mode = groupSortModes[group.hash] || SORT_OBSERVER;
+    const mode = obsSortMode;
 
     if (mode === SORT_CHRONO) {
       group._children.sort((a, b) => {
