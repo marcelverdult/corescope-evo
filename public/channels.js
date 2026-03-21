@@ -377,8 +377,10 @@
         return m.type === 'message' || (m.type === 'packet' && m.data?.decoded?.header?.payloadTypeName === 'GRP_TXT');
       });
       if (dominated) {
+        invalidateApiCache('/channels');
         loadChannels(true);
         if (selectedHash) {
+          invalidateApiCache('/channels/' + encodeURIComponent(selectedHash) + '/messages');
           refreshMessages();
         }
       }
