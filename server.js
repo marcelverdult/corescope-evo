@@ -611,7 +611,7 @@ for (const source of mqttSources) {
         const fullPacket = pktStore.getById(packetId);
         const tx = pktStore.byHash.get(pktData.hash);
         const observation_count = tx ? tx.observation_count : 1;
-        const broadcastData = { id: packetId, raw: msg.raw, decoded, snr: msg.SNR, rssi: msg.RSSI, hash: msg.hash, observer: observerId, packet: fullPacket, observation_count };
+        const broadcastData = { id: packetId, raw: msg.raw, decoded, snr: msg.SNR, rssi: msg.RSSI, hash: pktData.hash, observer: observerId, packet: fullPacket, observation_count };
         broadcast({ type: 'packet', data: broadcastData });
 
         if (decoded.header.payloadTypeName === 'GRP_TXT') {
@@ -839,7 +839,7 @@ app.get('/api/packets/:id', (req, res) => {
   let packet;
   if (isHash) {
     // Hash-based lookup
-    const tx = pktStore.byHash.get(param);
+    const tx = pktStore.byHash.get(param.toLowerCase());
     packet = tx || null;
   }
   if (!packet) {

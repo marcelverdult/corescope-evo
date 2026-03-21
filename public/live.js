@@ -1822,7 +1822,7 @@
         ${rssi != null ? `<span>📡 ${rssi} dBm</span>` : ''}
         ${observer ? `<span>👁 ${escapeHtml(observer)}</span>` : ''}
       </div>
-      ${pkt.hash ? `<a class="fdc-link" href="#/packets/${pkt.hash}">View in packets →</a>` : ''}
+      ${pkt.hash ? `<a class="fdc-link" href="#/packets/${pkt.hash.toLowerCase()}">View in packets →</a>` : ''}
       <button class="fdc-replay">↻ Replay</button>
     `;
     card.querySelector('.fdc-close').addEventListener('click', (e) => { e.stopPropagation(); card.remove(); });

@@ -420,8 +420,9 @@ class PacketStore {
       }
       if (observer) results = this._transmissionsForObserver(observer, results);
       if (hash) {
-        const tx = this.byHash.get(hash);
-        results = tx ? results.filter(p => p.hash === hash) : [];
+        const h = hash.toLowerCase();
+        const tx = this.byHash.get(h);
+        results = tx ? results.filter(p => p.hash === h) : [];
       }
       if (since) results = results.filter(p => p.timestamp > since);
       if (until) results = results.filter(p => p.timestamp < until);
@@ -536,8 +537,9 @@ class PacketStore {
 
   /** Get all siblings of a packet (same hash) — returns observations array */
   getSiblings(hash) {
-    if (this.sqliteOnly) return this.db.prepare('SELECT * FROM packets WHERE hash = ? ORDER BY timestamp DESC').all(hash);
-    const tx = this.byHash.get(hash);
+    const h = hash.toLowerCase();
+    if (this.sqliteOnly) return this.db.prepare('SELECT * FROM packets WHERE hash = ? ORDER BY timestamp DESC').all(h);
+    const tx = this.byHash.get(h);
     return tx ? tx.observations : [];
   }
 
@@ -576,7 +578,7 @@ class PacketStore {
     if (type !== undefined) { where.push('payload_type = ?'); params.push(Number(type)); }
     if (route !== undefined) { where.push('route_type = ?'); params.push(Number(route)); }
     if (observer) { where.push('observer_id = ?'); params.push(observer); }
-    if (hash) { where.push('hash = ?'); params.push(hash); }
+    if (hash) { where.push('hash = ?'); params.push(hash.toLowerCase()); }
     if (since) { where.push('timestamp > ?'); params.push(since); }
     if (until) { where.push('timestamp < ?'); params.push(until); }
     if (region) { where.push('observer_id IN (SELECT id FROM observers WHERE iata = ?)'); params.push(region); }
@@ -593,7 +595,7 @@ class PacketStore {
     if (type !== undefined) { where.push('payload_type = ?'); params.push(Number(type)); }
     if (route !== undefined) { where.push('route_type = ?'); params.push(Number(route)); }
     if (observer) { where.push('observer_id = ?'); params.push(observer); }
-    if (hash) { where.push('hash = ?'); params.push(hash); }
+    if (hash) { where.push('hash = ?'); params.push(hash.toLowerCase()); }
     if (since) { where.push('timestamp > ?'); params.push(since); }
     if (until) { where.push('timestamp < ?'); params.push(until); }
     if (region) { where.push('observer_id IN (SELECT id FROM observers WHERE iata = ?)'); params.push(region); }
