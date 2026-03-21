@@ -203,7 +203,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 
 .btn-icon {
   background: none; border: 1px solid var(--border); border-radius: 6px;
-  padding: 6px 10px; cursor: pointer; font-size: 14px; transition: all .15s;
+  color: var(--text); padding: 6px 10px; cursor: pointer; font-size: 14px; transition: all .15s;
 }
 .btn-icon:hover { background: var(--row-hover); }
 
