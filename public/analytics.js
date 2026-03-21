@@ -1338,8 +1338,6 @@
 
       // Histogram
       if (data.distHistogram && data.distHistogram.bins) {
-        const h = histogram(null, 0, '#22c55e');
-        // Use pre-computed histogram
         const buckets = data.distHistogram.bins.map(b => b.count);
         const labels = data.distHistogram.bins.map(b => b.x.toFixed(1));
         html += `<div class="analytics-section"><h3>Hop Distance Distribution</h3>${barChart(buckets, labels, '#22c55e')}</div>`;
