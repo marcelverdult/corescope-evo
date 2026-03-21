@@ -259,8 +259,10 @@ class TTLCache {
 const cache = new TTLCache();
 
 
-// Seed DB if empty
-db.seed();
+// Seed DB only when explicitly requested via --seed flag or SEED_DB=true env var
+if (process.argv.includes('--seed') || process.env.SEED_DB === 'true') {
+  db.seed();
+}
 
 const app = express();
 
