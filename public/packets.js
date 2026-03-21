@@ -179,14 +179,12 @@
         const data = await api(`/packets/${h}`);
         if (gen === initGeneration && data?.packet) {
           if (obsTarget && data.observations) {
-            // Find the matching observation and select it
-            const obs = data.observations.find(o => String(o.observer_id) === String(obsTarget));
+            // Find the matching observation by its unique id
+            const obs = data.observations.find(o => String(o.id) === String(obsTarget));
             if (obs) {
-              // Expand the group so the observation row is visible
               expandedHashes.add(h);
-              // Build the obs-specific packet view
               const obsPacket = {...data.packet, observer_id: obs.observer_id, observer_name: obs.observer_name, snr: obs.snr, rssi: obs.rssi, path_json: obs.path_json, timestamp: obs.timestamp, first_seen: obs.timestamp};
-              selectPacket(obs.id || data.packet.id, h, {packet: obsPacket, breakdown: data.breakdown, observations: data.observations}, obs.observer_id);
+              selectPacket(obs.id, h, {packet: obsPacket, breakdown: data.breakdown, observations: data.observations}, obs.id);
             } else {
               selectPacket(data.packet.id, h, data);
             }
@@ -609,7 +607,7 @@
           if (child) {
             const parentData = group._fetchedData;
             const obsPacket = parentData ? {...parentData.packet, observer_id: child.observer_id, observer_name: child.observer_name, snr: child.snr, rssi: child.rssi, path_json: child.path_json, timestamp: child.timestamp, first_seen: child.timestamp} : child;
-            selectPacket(child.id, parentHash, {packet: obsPacket, breakdown: parentData?.breakdown, observations: parentData?.observations}, child.observer_id);
+            selectPacket(child.id, parentHash, {packet: obsPacket, breakdown: parentData?.breakdown, observations: parentData?.observations}, child.id);
           }
         }
         else if (action === 'select-hash') pktSelectHash(value);
@@ -774,12 +772,12 @@
     return '';
   }
 
-  let selectedObserverId = null;
+  let selectedObservationId = null;
 
-  async function selectPacket(id, hash, prefetchedData, obsId) {
+  async function selectPacket(id, hash, prefetchedData, obsRowId) {
     selectedId = id;
-    selectedObserverId = obsId || null;
-    const obsParam = selectedObserverId ? `?obs=${selectedObserverId}` : '';
+    selectedObservationId = obsRowId || null;
+    const obsParam = selectedObservationId ? `?obs=${selectedObservationId}` : '';
     if (hash) {
       history.replaceState(null, '', `#/packets/${hash}${obsParam}`);
     } else {
@@ -906,6 +904,7 @@
       <div class="detail-actions">
         <button class="copy-link-btn" data-packet-hash="${pkt.hash || ''}" data-packet-id="${pkt.id}" title="Copy link to this packet">🔗 Copy Link</button>
         ${pathHops.length ? `<button class="detail-map-link" id="viewRouteBtn">🗺️ View route on map</button>` : ''}
+        ${pkt.hash ? `<a href="#/traces/${pkt.hash}" class="detail-map-link" style="text-decoration:none">🔍 Trace</a>` : ''}
         <button class="replay-live-btn" title="Replay this packet on the live map">▶ Replay</button>
       </div>
 
@@ -920,7 +919,7 @@
     if (copyLinkBtn) {
       copyLinkBtn.addEventListener('click', () => {
         const pktHash = copyLinkBtn.dataset.packetHash;
-        const obsParam = selectedObserverId ? `?obs=${selectedObserverId}` : '';
+        const obsParam = selectedObservationId ? `?obs=${selectedObservationId}` : '';
         const url = pktHash ? `${location.origin}/#/packets/${pktHash}${obsParam}` : `${location.origin}/#/packets/${copyLinkBtn.dataset.packetId}${obsParam}`;
         navigator.clipboard.writeText(url).then(() => {
           copyLinkBtn.textContent = '✅ Copied!';
