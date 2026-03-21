@@ -1219,16 +1219,16 @@
         // Sort: group by observer, earliest-observer first, then by time within each observer
         const earliest = {};
         for (const c of group._children) {
-          const obs = c.observer || '';
-          const t = c.rx_at || c.created_at || '';
+          const obs = c.observer_name || c.observer || '';
+          const t = c.timestamp || c.rx_at || c.created_at || '';
           if (!earliest[obs] || t < earliest[obs]) earliest[obs] = t;
         }
         group._children.sort((a, b) => {
-          const oA = a.observer || '', oB = b.observer || '';
+          const oA = a.observer_name || a.observer || '', oB = b.observer_name || b.observer || '';
           const eA = earliest[oA] || '', eB = earliest[oB] || '';
           if (eA !== eB) return eA < eB ? -1 : 1;
           if (oA !== oB) return oA < oB ? -1 : 1;
-          const tA = a.rx_at || a.created_at || '', tB = b.rx_at || b.created_at || '';
+          const tA = a.timestamp || a.rx_at || '', tB = b.timestamp || b.rx_at || '';
           return tA < tB ? -1 : tA > tB ? 1 : 0;
         });
       }
