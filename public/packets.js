@@ -600,6 +600,13 @@
           if (hash) selectPacket(null, hash);
           else selectPacket(Number(value));
         }
+        else if (action === 'sort-group') {
+          e.preventDefault();
+          const sortType = btn.dataset.sort;
+          groupSortModes[value] = sortType;
+          const group = packets.find(p => p.hash === value);
+          if (group) { sortGroupChildren(group); renderTableRows(); }
+        }
         else if (action === 'select-observation') {
           const parentHash = row.dataset.parentHash;
           const group = packets.find(p => p.hash === parentHash);
@@ -692,6 +699,10 @@
         </tr>`;
         // Child rows (loaded async when expanded)
         if (isExpanded && p._children) {
+          const sortMode = groupSortModes[p.hash] || SORT_OBSERVER;
+          const obsLabel = sortMode === SORT_OBSERVER ? '<strong>Observer</strong>' : 'Observer';
+          const pathLabel = sortMode === SORT_PATH_LENGTH ? '<strong>Path length</strong>' : 'Path length';
+          html += `<tr class="group-sort-bar"><td colspan="10" style="padding:2px 8px;font-size:0.8em;color:var(--text-muted)">Sort: <a href="#" data-action="sort-group" data-value="${p.hash}" data-sort="${SORT_OBSERVER}" style="color:var(--primary);cursor:pointer">${obsLabel}</a> · <a href="#" data-action="sort-group" data-value="${p.hash}" data-sort="${SORT_PATH_LENGTH}" style="color:var(--primary);cursor:pointer">${pathLabel}</a></td></tr>`;
           for (const c of p._children) {
             const typeName = payloadTypeName(c.payload_type);
             const typeClass = payloadTypeColor(c.payload_type);
@@ -1237,6 +1248,45 @@
     } catch {}
   })();
 
+  // Observation sort modes
+  const SORT_OBSERVER = 'observer';
+  const SORT_PATH_LENGTH = 'path';
+  const groupSortModes = {}; // hash → sort mode
+
+  function getPathHopCount(c) {
+    try { return JSON.parse(c.path_json || '[]').length; } catch { return 0; }
+  }
+
+  function sortGroupChildren(group) {
+    if (!group || !group._children) return;
+    const mode = groupSortModes[group.hash] || SORT_OBSERVER;
+
+    if (mode === SORT_PATH_LENGTH) {
+      group._children.sort((a, b) => {
+        const lenA = getPathHopCount(a), lenB = getPathHopCount(b);
+        if (lenA !== lenB) return lenA - lenB;
+        const oA = (a.observer_name || '').toLowerCase(), oB = (b.observer_name || '').toLowerCase();
+        return oA < oB ? -1 : oA > oB ? 1 : 0;
+      });
+    } else {
+      // Default: group by observer, earliest-observer first, then ascending time within each
+      const earliest = {};
+      for (const c of group._children) {
+        const obs = c.observer_name || c.observer || '';
+        const t = c.timestamp || c.rx_at || c.created_at || '';
+        if (!earliest[obs] || t < earliest[obs]) earliest[obs] = t;
+      }
+      group._children.sort((a, b) => {
+        const oA = a.observer_name || a.observer || '', oB = b.observer_name || b.observer || '';
+        const eA = earliest[oA] || '', eB = earliest[oB] || '';
+        if (eA !== eB) return eA < eB ? -1 : 1;
+        if (oA !== oB) return oA < oB ? -1 : 1;
+        const tA = a.timestamp || a.rx_at || '', tB = b.timestamp || b.rx_at || '';
+        return tA < tB ? -1 : tA > tB ? 1 : 0;
+      });
+    }
+  }
+
   // Global handlers
   async function pktToggleGroup(hash) {
     if (expandedHashes.has(hash)) {
@@ -1253,21 +1303,8 @@
       if (group && data.observations) {
         group._children = data.observations.map(o => ({...pkt, ...o, _isObservation: true}));
         group._fetchedData = data;
-        // Sort: group by observer, earliest-observer first, then by time within each observer
-        const earliest = {};
-        for (const c of group._children) {
-          const obs = c.observer_name || c.observer || '';
-          const t = c.timestamp || c.rx_at || c.created_at || '';
-          if (!earliest[obs] || t < earliest[obs]) earliest[obs] = t;
-        }
-        group._children.sort((a, b) => {
-          const oA = a.observer_name || a.observer || '', oB = b.observer_name || b.observer || '';
-          const eA = earliest[oA] || '', eB = earliest[oB] || '';
-          if (eA !== eB) return eA < eB ? -1 : 1;
-          if (oA !== oB) return oA < oB ? -1 : 1;
-          const tA = a.timestamp || a.rx_at || '', tB = b.timestamp || b.rx_at || '';
-          return tA < tB ? -1 : tA > tB ? 1 : 0;
-        });
+        // Sort children based on current sort mode
+        sortGroupChildren(group);
       }
       // Resolve any new hops from children
       const childHops = new Set();
