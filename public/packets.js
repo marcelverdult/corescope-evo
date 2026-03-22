@@ -3,6 +3,7 @@
 
 (function () {
   let packets = [];
+  let hashIndex = new Map(); // hash → packet group for O(1) dedup
 
   // Resolve observer_id to friendly name from loaded observers list
   function obsName(id) {
@@ -297,7 +298,7 @@
           // Update existing groups or create new ones
           for (const p of filtered) {
             const h = p.hash;
-            const existing = packets.find(g => g.hash === h);
+            const existing = hashIndex.get(h);
             if (existing) {
               existing.count = (existing.count || 1) + 1;
               existing.observation_count = (existing.observation_count || 1) + 1;
@@ -316,7 +317,7 @@
               }
             } else {
               // New group
-              packets.unshift({
+              const newGroup = {
                 hash: h,
                 count: 1,
                 observer_count: 1,
@@ -327,7 +328,9 @@
                 payload_type: p.payload_type,
                 raw_hex: p.raw_hex,
                 decoded_json: p.decoded_json,
-              });
+              };
+              packets.unshift(newGroup);
+              if (h) hashIndex.set(h, newGroup);
             }
           }
           // Re-sort by latest DESC, cap size
@@ -347,7 +350,7 @@
     if (wsHandler) offWS(wsHandler);
     wsHandler = null;
     packets = [];
-    selectedId = null;
+    hashIndex = new Map();    selectedId = null;
     filtersBuilt = false;
     delete filters.node;
     expandedHashes = new Set();
@@ -385,6 +388,8 @@
 
       const data = await api('/packets?' + params.toString());
       packets = data.packets || [];
+      hashIndex = new Map();
+      for (const p of packets) { if (p.hash) hashIndex.set(p.hash, p); }
       totalCount = data.total || packets.length;
 
       // When ungrouped, fetch observations for all multi-obs packets and flatten
