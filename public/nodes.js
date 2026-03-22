@@ -143,12 +143,14 @@
         </div>
 
         ${observers.length ? `<div class="node-full-card">
+          ${(() => { const regions = [...new Set(observers.map(o => o.iata).filter(Boolean))]; return regions.length ? `<div style="margin-bottom:8px"><strong>Regions:</strong> ${regions.map(r => '<span class="badge" style="margin:0 2px">' + escapeHtml(r) + '</span>').join(' ')}</div>` : ''; })()}
           <h4>Heard By (${observers.length} observer${observers.length > 1 ? 's' : ''})</h4>
           <table class="data-table" style="font-size:12px">
-            <thead><tr><th>Observer</th><th>Packets</th><th>Avg SNR</th><th>Avg RSSI</th></tr></thead>
+            <thead><tr><th>Observer</th><th>Region</th><th>Packets</th><th>Avg SNR</th><th>Avg RSSI</th></tr></thead>
             <tbody>
               ${observers.map(o => `<tr>
                 <td style="font-weight:600">${escapeHtml(o.observer_name || o.observer_id)}</td>
+                <td>${o.iata ? escapeHtml(o.iata) : '—'}</td>
                 <td>${o.packetCount}</td>
                 <td>${o.avgSnr != null ? o.avgSnr.toFixed(1) + ' dB' : '—'}</td>
                 <td>${o.avgRssi != null ? o.avgRssi.toFixed(0) + ' dBm' : '—'}</td>
@@ -518,10 +520,11 @@
         </div>
 
         ${observers.length ? `<div class="node-detail-section">
+          ${(() => { const regions = [...new Set(observers.map(o => o.iata).filter(Boolean))]; return regions.length ? `<div style="margin-bottom:6px;font-size:12px"><strong>Regions:</strong> ${regions.join(', ')}</div>` : ''; })()}
           <h4>Heard By (${observers.length} observer${observers.length > 1 ? 's' : ''})</h4>
           <div class="observer-list">
             ${observers.map(o => `<div class="observer-row" style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid var(--border);font-size:12px">
-              <span style="font-weight:600">${escapeHtml(o.observer_name || o.observer_id)}</span>
+              <span style="font-weight:600">${escapeHtml(o.observer_name || o.observer_id)}${o.iata ? ' <span class="badge" style="font-size:10px">' + escapeHtml(o.iata) + '</span>' : ''}</span>
               <span style="color:var(--text-muted)">${o.packetCount} pkts · ${o.avgSnr != null ? 'SNR ' + o.avgSnr.toFixed(1) + 'dB' : ''}${o.avgRssi != null ? ' · RSSI ' + o.avgRssi.toFixed(0) : ''}</span>
             </div>`).join('')}
           </div>

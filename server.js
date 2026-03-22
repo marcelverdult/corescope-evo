@@ -2470,9 +2470,15 @@ app.get('/api/nodes/:pubkey/health', (req, res) => {
     }
   }
 
+  // Build observer iata lookup
+  const allObservers = db.getObservers();
+  const obsIataMap = {};
+  for (const obs of allObservers) { if (obs.iata) obsIataMap[obs.id] = obs.iata; }
+
   const observers = Object.entries(obsMap).map(([observer_id, o]) => ({
     observer_id, observer_name: o.observer_name, packetCount: o.packetCount,
-    avgSnr: o.snrN ? o.snrSum / o.snrN : null, avgRssi: o.rssiN ? o.rssiSum / o.rssiN : null
+    avgSnr: o.snrN ? o.snrSum / o.snrN : null, avgRssi: o.rssiN ? o.rssiSum / o.rssiN : null,
+    iata: obsIataMap[observer_id] || null
   })).sort((a, b) => b.packetCount - a.packetCount);
 
   const recentPackets = packets.slice(0, 20);

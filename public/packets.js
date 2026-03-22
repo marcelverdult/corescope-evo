@@ -9,7 +9,8 @@
   function obsName(id) {
     if (!id) return '—';
     const o = observers.find(ob => ob.id === id);
-    return o?.name || id;
+    if (!o) return id;
+    return o.iata ? `${o.name} (${o.iata})` : o.name;
   }
   let selectedId = null;
   let groupByHash = true;
@@ -1331,11 +1332,16 @@
         const hopName = hopEntry ? (typeof hopEntry === 'string' ? hopEntry : hopEntry.name) : null;
         const hopPubkey = hopEntry?.pubkey || pathHops[i];
         const conflicts = hopEntry?.conflicts || [];
+        const distInfo = conflicts.length === 1 && conflicts[0].distKm != null
+          ? ` (${Math.round(conflicts[0].distKm)}km)`
+          : conflicts.length > 1 && conflicts.find(c => c.distKm != null)
+            ? ` (${Math.round(conflicts.find(c => c.distKm != null).distKm)}km)`
+            : '';
         const conflictInfo = conflicts.length > 1
-          ? ` <span class="hop-warn" title="${conflicts.length} candidates: ${conflicts.map(c => c.name + (c.regional ? '' : ' (global)')).join(', ')}">⚠${conflicts.length}</span>`
+          ? ` <span class="hop-warn" title="${conflicts.length} candidates: ${conflicts.map(c => c.name + (c.distKm != null ? ' (' + Math.round(c.distKm) + 'km)' : '') + (c.regional ? '' : ' (global)')).join(', ')}">⚠${conflicts.length}</span>`
           : '';
         const nameHtml = hopName
-          ? `<a href="#/nodes/${encodeURIComponent(hopPubkey)}" class="hop-link hop-named" data-hop-link="true">${escapeHtml(hopName)}</a>${conflictInfo}`
+          ? `<a href="#/nodes/${encodeURIComponent(hopPubkey)}" class="hop-link hop-named" data-hop-link="true">${escapeHtml(hopName)}</a>${distInfo}${conflictInfo}`
           : '';
         const label = hopName ? `Hop ${i} — ${nameHtml}` : `Hop ${i}`;
         rows += fieldRow(off + i * hashSize, label, pathHops[i], '');
