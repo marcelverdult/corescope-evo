@@ -1100,10 +1100,12 @@
     let pathHops;
     try { pathHops = JSON.parse(pkt.path_json || '[]'); } catch { pathHops = []; }
 
-    // Re-resolve hops with observer context for regional filtering
-    if (pathHops.length && pkt.observer_id) {
+    // Re-resolve hops with observer + sender location for regional filtering & disambiguation
+    if (pathHops.length) {
       await ensureHopResolver();
-      const resolved = HopResolver.resolve(pathHops, null, null, null, null, pkt.observer_id);
+      const senderLat = decoded.lat || decoded.latitude || null;
+      const senderLon = decoded.lon || decoded.longitude || null;
+      const resolved = HopResolver.resolve(pathHops, senderLat, senderLon, null, null, pkt.observer_id);
       Object.assign(hopNameCache, resolved || {});
     }
 
