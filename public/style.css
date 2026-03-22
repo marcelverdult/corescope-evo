@@ -1592,3 +1592,35 @@ tr[data-hops]:hover { background: rgba(59,130,246,0.1); }
 /* Node labels on map */
 .matrix-theme .node-label { color: #00ff41 !important; text-shadow: 0 0 4px #00ff41 !important; }
 .matrix-theme .leaflet-marker-icon:not(.matrix-char) { filter: hue-rotate(90deg) saturate(1) brightness(0.35) opacity(0.5); }
+
+/* Audio controls */
+.audio-controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+.audio-controls.hidden { display: none; }
+.audio-slider-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-secondary, #6b7280);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.audio-slider {
+  width: 80px;
+  height: 4px;
+  cursor: pointer;
+  accent-color: #8b5cf6;
+}
+.audio-slider-label span {
+  min-width: 24px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.matrix-theme .audio-controls label,
+.matrix-theme .audio-controls span { color: #00ff41 !important; }
+.matrix-theme .audio-slider { accent-color: #00ff41; }

@@ -639,8 +639,14 @@
             <span id="matrixDesc" class="sr-only">Animate packet hex bytes flowing along paths like the Matrix</span>
             <label><input type="checkbox" id="liveMatrixRainToggle" aria-describedby="rainDesc"> Rain</label>
             <span id="rainDesc" class="sr-only">Matrix rain overlay — packets fall as hex columns</span>
+            <label><input type="checkbox" id="liveAudioToggle" aria-describedby="audioDesc"> 🎵 Audio</label>
+            <span id="audioDesc" class="sr-only">Sonify packets — turn raw bytes into generative music</span>
             <label><input type="checkbox" id="liveFavoritesToggle" aria-describedby="favDesc"> ⭐ Favorites</label>
             <span id="favDesc" class="sr-only">Show only favorited and claimed nodes</span>
+          </div>
+          <div class="audio-controls hidden" id="audioControls">
+            <label class="audio-slider-label">BPM <input type="range" id="audioBpmSlider" min="40" max="300" value="120" class="audio-slider"><span id="audioBpmVal">120</span></label>
+            <label class="audio-slider-label">Vol <input type="range" id="audioVolSlider" min="0" max="100" value="30" class="audio-slider"><span id="audioVolVal">30</span></label>
           </div>
         </div>
         <div class="live-overlay live-feed" id="liveFeed">
@@ -824,6 +830,41 @@
       if (matrixRain) startMatrixRain(); else stopMatrixRain();
     });
     if (matrixRain) startMatrixRain();
+
+    // Audio toggle
+    const audioToggle = document.getElementById('liveAudioToggle');
+    const audioControls = document.getElementById('audioControls');
+    const bpmSlider = document.getElementById('audioBpmSlider');
+    const bpmVal = document.getElementById('audioBpmVal');
+    const volSlider = document.getElementById('audioVolSlider');
+    const volVal = document.getElementById('audioVolVal');
+
+    if (window.MeshAudio) {
+      MeshAudio.restore();
+      audioToggle.checked = MeshAudio.isEnabled();
+      if (MeshAudio.isEnabled()) audioControls.classList.remove('hidden');
+      bpmSlider.value = MeshAudio.getBPM();
+      bpmVal.textContent = MeshAudio.getBPM();
+      volSlider.value = Math.round(MeshAudio.getVolume() * 100);
+      volVal.textContent = Math.round(MeshAudio.getVolume() * 100);
+    }
+
+    audioToggle.addEventListener('change', (e) => {
+      if (window.MeshAudio) {
+        MeshAudio.setEnabled(e.target.checked);
+        audioControls.classList.toggle('hidden', !e.target.checked);
+      }
+    });
+    bpmSlider.addEventListener('input', (e) => {
+      const v = parseInt(e.target.value, 10);
+      bpmVal.textContent = v;
+      if (window.MeshAudio) MeshAudio.setBPM(v);
+    });
+    volSlider.addEventListener('input', (e) => {
+      const v = parseInt(e.target.value, 10);
+      volVal.textContent = v;
+      if (window.MeshAudio) MeshAudio.setVolume(v / 100);
+    });
 
     // Feed show/hide
     const feedEl = document.getElementById('liveFeed');
@@ -1394,6 +1435,7 @@
     const color = TYPE_COLORS[typeName] || '#6b7280';
 
     playSound(typeName);
+    if (window.MeshAudio) MeshAudio.sonifyPacket(pkt);
     addFeedItem(icon, typeName, payload, hops, color, pkt);
     addRainDrop(pkt);
     // Spawn extra rain columns for multiple observations with varied hop counts
