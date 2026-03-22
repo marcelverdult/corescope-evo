@@ -468,7 +468,7 @@
             <button class="col-toggle-btn" id="colToggleBtn" title="Show/hide table columns">Columns ▾</button>
             <div class="col-toggle-menu" id="colToggleMenu"></div>
           </div>
-          <button class="btn btn-icon${showHexHashes ? ' active' : ''}" id="hexHashToggle" title="Show hex hashes in path column">Hex</button>
+          <button class="btn btn-icon${showHexHashes ? ' active' : ''}" id="hexHashToggle" title="Show raw hex hash prefixes instead of resolved node names in the path column">Hex Paths</button>
         </div>
       </div>
       <table class="data-table" id="pktTable">
@@ -678,7 +678,7 @@
       showHexHashes = !showHexHashes;
       localStorage.setItem('meshcore-hex-hashes', showHexHashes);
       this.classList.toggle('active', showHexHashes);
-      renderTable();
+      renderTableRows();
     });
 
     // Node name filter with autocomplete
