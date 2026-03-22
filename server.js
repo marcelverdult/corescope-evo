@@ -2097,6 +2097,8 @@ app.get('/api/resolve-hops', (req, res) => {
         return { ...c, regional: r.near, filterMethod: r.method, distKm: r.distKm };
       });
       const regional = checked.filter(c => c.regional);
+      // Sort by distance to region center — closest first
+      regional.sort((a, b) => (a.distKm || 9999) - (b.distKm || 9999));
       const candidates = regional.length > 0 ? regional : checked;
       const globalFallback = regional.length === 0 && checked.length > 0;
 

@@ -106,6 +106,7 @@ window.HopResolver = (function() {
           return { ...c, regional: r ? r.near : false, filterMethod: r ? r.method : 'none', distKm: r ? r.distKm : undefined };
         });
         const regional = checked.filter(c => c.regional);
+        regional.sort((a, b) => (a.distKm || 9999) - (b.distKm || 9999));
         const candidates = regional.length > 0 ? regional : checked;
         const globalFallback = regional.length === 0 && checked.length > 0 && packetIata != null;
 
