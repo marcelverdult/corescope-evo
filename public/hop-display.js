@@ -28,25 +28,27 @@ window.HopDisplay = (function() {
     const unreliable = entry.unreliable || false;
     const display = opts.hexMode ? h : (name ? escapeHtml(opts.truncate ? name.slice(0, opts.truncate) : name) : h);
 
-    // Build tooltip
+    // Build tooltip — only show regional candidates (global is noise)
     let title = h;
     if (conflicts.length > 0) {
-      const lines = conflicts.map(c => {
+      const regional = conflicts.filter(c => c.regional);
+      const shown = regional.length > 0 ? regional : conflicts; // fall back to all if no regional
+      const lines = shown.map(c => {
         let line = c.name || c.pubkey?.slice(0, 12) || '?';
         if (c.distKm != null) line += ` (${c.distKm}km)`;
-        if (c.filterMethod === 'geo') line += ' 📍';
-        if (!c.regional) line += ' ⚑global';
         return line;
       });
-      const regionLabel = totalRegional > 0 ? `${totalRegional} regional` : `${totalGlobal} global`;
-      title = `${h} — ${regionLabel} match${conflicts.length > 1 ? 'es' : ''}:\n${lines.join('\n')}`;
+      const label = regional.length > 0 ? `${regional.length} in region` : `${conflicts.length} global`;
+      title = `${h} — ${label}:\n${lines.join('\n')}`;
     }
     if (unreliable) title += '\n✗ Unreliable — too far from neighbors';
-    if (globalFallback) title += '\n⚑ No regional candidates — global fallback';
+    if (globalFallback) title += '\n⚑ No regional candidates';
 
-    // Badge
-    const warnBadge = conflicts.length > 1
-      ? `<span class="hop-warn" title="${escapeHtml(title)}">⚠${conflicts.length}</span>`
+    // Badge — only count regional conflicts
+    const regionalConflicts = conflicts.filter(c => c.regional);
+    const badgeCount = regionalConflicts.length > 0 ? regionalConflicts.length : (globalFallback ? conflicts.length : 0);
+    const warnBadge = badgeCount > 1
+      ? `<span class="hop-warn" title="${escapeHtml(title)}">⚠${badgeCount}</span>`
       : '';
 
     const cls = [
