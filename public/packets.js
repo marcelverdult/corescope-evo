@@ -133,33 +133,7 @@
     if (showHexHashes) {
       return `<span class="hop">${escapeHtml(h)}</span>`;
     }
-    const entry = hopNameCache[h];
-    const name = entry ? (typeof entry === 'string' ? entry : entry.name) : null;
-    const pubkey = entry?.pubkey || h;
-    const ambiguous = entry?.ambiguous || false;
-    const conflicts = entry?.conflicts || [];
-    const regionalCount = conflicts.filter(c => c.regional).length;
-    const totalGlobal = entry?.totalGlobal || conflicts.length;
-    const globalFallback = entry?.globalFallback || false;
-    const unreliable = entry?.unreliable || false;
-    const display = name ? escapeHtml(name) : h;
-    const hopBytes = Math.ceil(h.length / 2);
-
-    let title = h;
-    if (ambiguous && conflicts.length > 0) {
-      const regionLabel = regionalCount > 0 ? `${regionalCount} regional` : `${totalGlobal} global (no regional match)`;
-      title = `${h} (${hopBytes}B) — ⚠ ${regionLabel}: ${conflicts.map(c => c.name + (c.regional ? '' : ' ⚑')).join(', ')}`;
-    }
-    if (unreliable) title += ' — ✗ unreliable (too far from neighbors)';
-    if (globalFallback) title += ' — ⚑ no regional candidates, using global fallback';
-
-    const warnBadge = ambiguous
-      ? `<span class="hop-warn" title="${conflicts.length} conflicts">${conflicts.length > 1 ? '⚠' + conflicts.length : '⚠'}</span>`
-      : '';
-    const unreliableCls = unreliable ? ' hop-unreliable' : '';
-    const fallbackCls = globalFallback ? ' hop-global-fallback' : '';
-
-    return `<a class="hop hop-link ${name ? 'hop-named' : ''} ${ambiguous ? 'hop-ambiguous' : ''}${unreliableCls}${fallbackCls}" href="#/nodes/${encodeURIComponent(pubkey)}" title="${title}" data-hop-link="true">${display}${warnBadge}</a>`;
+    return HopDisplay.renderHop(h, hopNameCache[h]);
   }
 
   function renderPath(hops) {

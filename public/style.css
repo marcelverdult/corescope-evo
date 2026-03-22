@@ -1227,6 +1227,7 @@ button.ch-item.ch-item-encrypted .ch-badge { filter: grayscale(0.6); }
 .hop-warn { font-size: 0.7em; margin-left: 2px; vertical-align: super; color: #f59e0b; }
 .hop-unreliable { opacity: 0.5; text-decoration: line-through; }
 .hop-global-fallback { border-bottom: 1px dashed #ef4444; }
+.hop-current { font-weight: 700 !important; color: var(--accent) !important; }
 
 /* Self-loop subpath rows */
 .subpath-selfloop { opacity: 0.6; }

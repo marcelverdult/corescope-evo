@@ -235,6 +235,11 @@
           return paths.map(p => {
             const chain = p.hops.map(h => {
               const isThis = h.pubkey === n.public_key;
+              if (window.HopDisplay) {
+                const entry = { name: h.name, pubkey: h.pubkey, ambiguous: h.ambiguous, conflicts: h.conflicts, totalGlobal: h.totalGlobal, totalRegional: h.totalRegional, globalFallback: h.globalFallback, unreliable: h.unreliable };
+                const html = HopDisplay.renderHop(h.prefix, entry);
+                return isThis ? html.replace('class="', 'class="hop-current ') : html;
+              }
               const name = escapeHtml(h.name || h.prefix);
               const link = h.pubkey ? `<a href="#/nodes/${encodeURIComponent(h.pubkey)}" style="${isThis ? 'font-weight:700;color:var(--accent, #3b82f6)' : ''}">${name}</a>` : `<span>${name}</span>`;
               return link;
