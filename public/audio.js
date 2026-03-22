@@ -175,10 +175,12 @@
     const savedVoice = localStorage.getItem('live-audio-voice');
     if (savedVoice) setVoice(savedVoice);
 
-    // If audio was enabled, wait for ANY user gesture to init context
+    // If audio was enabled, create context now and try to resume.
+    // Browsers with prior engagement will auto-allow; gesture listener is fallback.
     if (audioEnabled) {
+      initAudio();
       const unlockAudio = () => {
-        initAudio();
+        if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
         document.removeEventListener('click', unlockAudio, true);
         document.removeEventListener('touchstart', unlockAudio, true);
         document.removeEventListener('keydown', unlockAudio, true);
