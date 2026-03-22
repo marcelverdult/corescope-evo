@@ -795,8 +795,21 @@
       matrixMode = e.target.checked;
       localStorage.setItem('live-matrix-mode', matrixMode);
       applyMatrixTheme(matrixMode);
+      if (matrixMode) {
+        hideHeatMap();
+        const ht = document.getElementById('liveHeatToggle');
+        if (ht) { ht.checked = false; ht.disabled = true; }
+      } else {
+        const ht = document.getElementById('liveHeatToggle');
+        if (ht) { ht.disabled = false; }
+      }
     });
     applyMatrixTheme(matrixMode);
+    if (matrixMode) {
+      hideHeatMap();
+      const ht = document.getElementById('liveHeatToggle');
+      if (ht) { ht.checked = false; ht.disabled = true; }
+    }
 
     // Feed show/hide
     const feedEl = document.getElementById('liveFeed');
