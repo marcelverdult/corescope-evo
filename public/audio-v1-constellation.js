@@ -52,8 +52,9 @@
     const filterFreq = mapRange(Math.min(hopCount, 10), 1, 10, 8000, 800);
 
     // Volume from observations
-    const volume = Math.min(0.5, 0.15 + (obsCount - 1) * 0.03);
-    const voiceCount = Math.min(obsCount, 4);
+    const volume = Math.min(0.6, 0.15 + (obsCount - 1) * 0.02);
+    // More observers = richer chord: 1→1, 3→2, 8→3, 15→4, 30→5, 60→6
+    const voiceCount = Math.min(Math.max(1, Math.ceil(Math.log2(obsCount + 1))), 8);
 
     // Audio nodes
     const filter = audioCtx.createBiquadFilter();
@@ -85,7 +86,7 @@
       const noteEnd = noteStart + duration;
 
       for (let v = 0; v < voiceCount; v++) {
-        const detune = v === 0 ? 0 : (v % 2 === 0 ? 1 : -1) * (v * 7);
+        const detune = v === 0 ? 0 : (v % 2 === 0 ? 1 : -1) * (v * 5 + 3); // ±8, ±13, ±18, ±23...
         const osc = audioCtx.createOscillator();
         const envGain = audioCtx.createGain();
 
