@@ -796,7 +796,7 @@ for (const source of mqttSources) {
           };
           const packetId = pktStore.insert(advertPktData); _updateHashSizeForPacket(advertPktData);
           try { db.insertTransmission(advertPktData); } catch (e) { console.error('[dual-write] transmission insert error:', e.message); }
-          broadcast({ type: 'packet', data: { id: packetId, decoded: { header: { payloadTypeName: 'ADVERT' }, payload: advert } } });
+          broadcast({ type: 'packet', data: { id: packetId, hash: advertPktData.hash, raw: advertPktData.raw_hex, decoded: { header: { payloadTypeName: 'ADVERT' }, payload: advert } } });
         }
         return;
       }
@@ -829,8 +829,8 @@ for (const source of mqttSources) {
         };
         const packetId = pktStore.insert(chPktData); _updateHashSizeForPacket(chPktData);
         try { db.insertTransmission(chPktData); } catch (e) { console.error('[dual-write] transmission insert error:', e.message); }
-        broadcast({ type: 'packet', data: { id: packetId, decoded: { header: { payloadTypeName: 'GRP_TXT' }, payload: channelMsg } } });
-        broadcast({ type: 'message', data: { id: packetId, decoded: { header: { payloadTypeName: 'GRP_TXT' }, payload: channelMsg } } });
+        broadcast({ type: 'packet', data: { id: packetId, hash: chPktData.hash, raw: chPktData.raw_hex, decoded: { header: { payloadTypeName: 'GRP_TXT' }, payload: channelMsg } } });
+        broadcast({ type: 'message', data: { id: packetId, hash: chPktData.hash, decoded: { header: { payloadTypeName: 'GRP_TXT' }, payload: channelMsg } } });
         return;
       }
 
@@ -852,7 +852,7 @@ for (const source of mqttSources) {
         };
         const packetId = pktStore.insert(dmPktData); _updateHashSizeForPacket(dmPktData);
         try { db.insertTransmission(dmPktData); } catch (e) { console.error('[dual-write] transmission insert error:', e.message); }
-        broadcast({ type: 'packet', data: { id: packetId, decoded: { header: { payloadTypeName: 'TXT_MSG' }, payload: dm } } });
+        broadcast({ type: 'packet', data: { id: packetId, hash: dmPktData.hash, raw: dmPktData.raw_hex, decoded: { header: { payloadTypeName: 'TXT_MSG' }, payload: dm } } });
         return;
       }
 
@@ -874,7 +874,7 @@ for (const source of mqttSources) {
         };
         const packetId = pktStore.insert(tracePktData); _updateHashSizeForPacket(tracePktData);
         try { db.insertTransmission(tracePktData); } catch (e) { console.error('[dual-write] transmission insert error:', e.message); }
-        broadcast({ type: 'packet', data: { id: packetId, decoded: { header: { payloadTypeName: 'TRACE' }, payload: trace } } });
+        broadcast({ type: 'packet', data: { id: packetId, hash: tracePktData.hash, raw: tracePktData.raw_hex, decoded: { header: { payloadTypeName: 'TRACE' }, payload: trace } } });
         return;
       }
 
@@ -1112,7 +1112,7 @@ app.post('/api/packets', requireApiKey, (req, res) => {
     // Invalidate caches on new data
     cache.debouncedInvalidateAll();
 
-    broadcast({ type: 'packet', data: { id: packetId, decoded } });
+    broadcast({ type: 'packet', data: { id: packetId, hash: apiPktData.hash, raw: apiPktData.raw_hex, decoded } });
 
     res.json({ id: packetId, decoded });
   } catch (e) {

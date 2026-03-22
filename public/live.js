@@ -1470,6 +1470,9 @@
     if (showOnlyFavorites && !packets.some(p => packetInvolvesFavorite(p))) return;
 
     if (window.MeshAudio) MeshAudio.sonifyPacket(first);
+    // Add single consolidated feed item for the group
+    const allHops = (decoded.path?.hops) || [];
+    addFeedItem(icon, typeName, payload, allHops, color, Object.assign({}, first, { observation_count: packets.length }));
     // Rain drop per observation in the group
     packets.forEach((p, i) => setTimeout(() => addRainDrop(p), i * 150));
 
