@@ -3,6 +3,11 @@ name: Deploy
 on:
   push:
     branches: [master]
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+      - '.gitignore'
+      - 'docs/**'
 
 concurrency:
   group: deploy
