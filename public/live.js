@@ -1745,39 +1745,39 @@
 
   function drawMatrixLine(from, to, color, onComplete, rawHex) {
     if (!animLayer || !pathsLayer) { if (onComplete) onComplete(); return; }
-    // Extract hex bytes from raw packet data, or generate random ones
     const hexStr = rawHex || '';
     const bytes = [];
     for (let i = 0; i < hexStr.length; i += 2) {
       bytes.push(hexStr.slice(i, i + 2).toUpperCase());
     }
     if (bytes.length === 0) {
-      // Fallback: generate random hex if no raw data
       for (let i = 0; i < 16; i++) bytes.push(((Math.random() * 256) | 0).toString(16).padStart(2, '0').toUpperCase());
     }
 
     const matrixGreen = '#00ff41';
-    const TRAIL_LEN = Math.min(6, bytes.length); // visible chars at once — fewer for more spacing
-    const TOTAL_STEPS = 35; // animation steps per hop
+    const TRAIL_LEN = Math.min(6, bytes.length);
+    const DURATION_MS = 1400; // total hop duration
+    const CHAR_INTERVAL = 0.06; // spawn a char every 6% of progress
     const charMarkers = [];
-    let step = 0;
+    let nextCharAt = CHAR_INTERVAL;
+    let byteIdx = 0;
 
-    // Dim trail line underneath
     const trail = L.polyline([from], {
       color: matrixGreen, weight: 1.5, opacity: 0.2, lineCap: 'round'
     }).addTo(pathsLayer);
 
     const trailCoords = [from];
+    const startTime = performance.now();
 
-    const interval = setInterval(() => {
-      step++;
-      const t = step / TOTAL_STEPS;
+    function tick(now) {
+      const elapsed = now - startTime;
+      const t = Math.min(1, elapsed / DURATION_MS);
       const lat = from[0] + (to[0] - from[0]) * t;
       const lon = from[1] + (to[1] - from[1]) * t;
       trailCoords.push([lat, lon]);
       trail.setLatLngs(trailCoords);
 
-      // Remove old char markers beyond trail length
+      // Remove old chars beyond trail length
       while (charMarkers.length > TRAIL_LEN) {
         const old = charMarkers.shift();
         try { animLayer.removeLayer(old.marker); } catch {}
@@ -1792,47 +1792,47 @@
         if (el) { el.style.opacity = op; el.style.fontSize = size + 'px'; }
       }
 
-      // Add new leading character every 2nd step for spacing
-      if (step % 2 === 0) {
-        const byteIdx = (step / 2) % bytes.length;
+      // Spawn new char at intervals
+      if (t >= nextCharAt && t < 1) {
+        nextCharAt += CHAR_INTERVAL;
         const charEl = L.marker([lat, lon], {
           icon: L.divIcon({
             className: 'matrix-char',
-            html: `<span style="color:#fff;font-family:'Courier New',monospace;font-size:16px;font-weight:bold;text-shadow:0 0 8px ${matrixGreen},0 0 16px ${matrixGreen},0 0 24px ${matrixGreen}60;pointer-events:none">${bytes[byteIdx]}</span>`,
+            html: `<span style="color:#fff;font-family:'Courier New',monospace;font-size:16px;font-weight:bold;text-shadow:0 0 8px ${matrixGreen},0 0 16px ${matrixGreen},0 0 24px ${matrixGreen}60;pointer-events:none">${bytes[byteIdx % bytes.length]}</span>`,
             iconSize: [24, 18],
             iconAnchor: [12, 9]
           }),
           interactive: false
         }).addTo(animLayer);
         charMarkers.push({ marker: charEl });
+        byteIdx++;
       }
 
-      if (step >= TOTAL_STEPS) {
-        clearInterval(interval);
-
-        // Fade out everything
-        setTimeout(() => {
-          let fadeStep = 0;
-          const fadeInterval = setInterval(() => {
-            fadeStep++;
-            const fadeOp = 1 - fadeStep / 10;
-            if (fadeOp <= 0) {
-              clearInterval(fadeInterval);
-              for (const cm of charMarkers) try { animLayer.removeLayer(cm.marker); } catch {}
-              try { pathsLayer.removeLayer(trail); } catch {}
-              charMarkers.length = 0;
-            } else {
-              for (const cm of charMarkers) {
-                const el = cm.marker.getElement(); if (el) el.style.opacity = fadeOp * 0.5;
-              }
-              trail.setStyle({ opacity: fadeOp * 0.1 });
+      if (t < 1) {
+        requestAnimationFrame(tick);
+      } else {
+        // Fade out
+        const fadeStart = performance.now();
+        function fadeOut(now) {
+          const ft = Math.min(1, (now - fadeStart) / 500);
+          if (ft >= 1) {
+            for (const cm of charMarkers) try { animLayer.removeLayer(cm.marker); } catch {}
+            try { pathsLayer.removeLayer(trail); } catch {}
+            charMarkers.length = 0;
+          } else {
+            const op = 1 - ft;
+            for (const cm of charMarkers) {
+              const el = cm.marker.getElement(); if (el) el.style.opacity = op * 0.5;
             }
-          }, 50);
-        }, 400);
-
+            trail.setStyle({ opacity: op * 0.15 });
+            requestAnimationFrame(fadeOut);
+          }
+        }
+        setTimeout(() => requestAnimationFrame(fadeOut), 300);
         if (onComplete) onComplete();
       }
-    }, 40);
+    }
+    requestAnimationFrame(tick);
   }
 
   function drawAnimatedLine(from, to, color, onComplete, overrideOpacity, rawHex) {
