@@ -1798,7 +1798,7 @@
     const decoded = pkt.decoded || {};
     const hops = decoded.path?.hops || [];
     const hopCount = Math.max(1, hops.length);
-    const rawHex = pkt.raw || '';
+    const rawHex = pkt.raw || pkt.raw_hex || (pkt.packet && pkt.packet.raw_hex) || '';
     const bytes = [];
     for (let i = 0; i < rawHex.length; i += 2) {
       bytes.push(rawHex.slice(i, i + 2).toUpperCase());
