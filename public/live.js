@@ -1709,8 +1709,8 @@
         const age = charMarkers.length - i;
         const op = Math.max(0.1, 1 - (age / TRAIL_LEN) * 0.8);
         const size = Math.max(7, 12 - age);
-        charMarkers[i].marker.getElement().style.opacity = op;
-        charMarkers[i].marker.getElement().style.fontSize = size + 'px';
+        const el = charMarkers[i].marker.getElement();
+        if (el) { el.style.opacity = op; el.style.fontSize = size + 'px'; }
       }
 
       // Add new leading character
@@ -1742,7 +1742,7 @@
               charMarkers.length = 0;
             } else {
               for (const cm of charMarkers) {
-                try { cm.marker.getElement().style.opacity = fadeOp * 0.5; } catch {}
+                const el = cm.marker.getElement(); if (el) el.style.opacity = fadeOp * 0.5;
               }
               trail.setStyle({ opacity: fadeOp * 0.1 });
             }
