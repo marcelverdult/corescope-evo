@@ -384,11 +384,18 @@
         const targetNode = nodes.find(n => n.public_key === targetNodeKey);
         if (targetNode && targetNode.lat && targetNode.lon) {
           map.setView([targetNode.lat, targetNode.lon], 14);
-          markerLayer.eachLayer(m => {
-            if (m._nodeKey === targetNodeKey && m.openPopup) {
-              m.openPopup();
-            }
-          });
+          // Delay popup open slightly — Leaflet needs the map to settle after setView
+          setTimeout(() => {
+            let found = false;
+            markerLayer.eachLayer(m => {
+              if (found) return;
+              if (m._nodeKey === targetNodeKey && m.openPopup) {
+                m.openPopup();
+                found = true;
+              }
+            });
+            if (!found) console.warn('[map] Target node marker not found:', targetNodeKey);
+          }, 500);
         }
       }
 
