@@ -91,6 +91,47 @@ sonifyPacket(pkt):
   10. Schedule note sequence via Tone.js
 ```
 
+## Percussion Layer
+
+Percussion fires **instantly** on packet arrival — gives you the rhythmic pulse while the melodic notes unfold underneath.
+
+### Drum Kit Mapping
+
+| Packet Type | Drum Sound | Why |
+|-------------|-----------|-----|
+| **Any packet** | Kick drum | Network heartbeat. Every arrival = one kick. Busier network = faster kicks. |
+| **ADVERT** | Hi-hat | Most frequent, repetitive — the timekeeper tick. |
+| **GRP_TXT / TXT_MSG** | Snare | Human-initiated messages are accent hits. |
+| **TRACE** | Rim click | Sparse, searching — light metallic tick. |
+| **8+ hops OR 10+ observations** | Cymbal crash | Big network events get a crash. Rare = special. |
+
+### Sound Design (all synthesized, no samples)
+
+**Kick:** Sine oscillator, frequency ramp 150Hz → 40Hz in ~50ms, short gain envelope.
+
+**Hi-hat:** White noise through highpass filter (7-10kHz).
+- **Closed** (1-2 hops): 30ms decay — tight tick
+- **Open** (3+ hops): 150ms decay — sizzle
+
+**Snare:** White noise burst (bandpass ~200-1000Hz) + sine tone body (~180Hz). Observation count scales intensity (more observers = louder crack, longer decay).
+
+**Rim click:** Short sine pulse at ~800Hz with fast decay (20ms). Dry, metallic.
+
+**Cymbal crash:** White noise through bandpass (3-8kHz), long decay (500ms-1s). Only triggers on exceptional packets.
+
+### Byte-Driven Variation
+First payload byte mod 4 selects between variations of each percussion sound:
+- Slightly different pitch (±10-20%)
+- Different decay length
+- Different filter frequency
+
+Prevents machine-gun effect of identical repeated hits.
+
+### Timing
+- Percussion: fires immediately on packet arrival (t=0)
+- Melody: unfolds over 0.6-1.6s starting at t=0
+- Result: rhythmic hit gives you the pulse, melody gives you the data underneath
+
 ## The Full Experience
 
 Matrix mode + Rain + Audio: green hex bytes flow across the map, columns of raw data rain down, and each packet plays its own unique melody derived from its actual bytes. Quiet periods are sparse atmospheric ambience; traffic bursts become dense polyrhythmic cascades. Crank the BPM for techno, slow it down for ambient.
