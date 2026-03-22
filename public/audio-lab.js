@@ -84,6 +84,11 @@
       .alab-map-table .map-value { font-family: var(--mono); font-weight: 700; white-space: nowrap; width: 120px; }
       .alab-map-table .map-why { font-size: 11px; color: var(--text-muted); font-family: var(--mono); }
       .map-why-inline { display: block; font-size: 10px; color: var(--text-muted); font-family: var(--mono); margin-top: 2px; }
+      .alab-note-play { background: none; border: 1px solid var(--border); border-radius: 4px; cursor: pointer;
+        font-size: 10px; padding: 2px 6px; color: var(--text-muted); }
+      .alab-note-play:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+      .alab-note-clickable { cursor: pointer; }
+      .alab-note-clickable:hover { background: var(--hover-bg); }
       .alab-empty { text-align: center; padding: 60px 20px; color: var(--text-muted); font-size: 15px; }
       .alab-slider-group { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); }
       .alab-slider-group input[type=range] { width: 80px; }
@@ -258,13 +263,14 @@
       <div class="alab-section">
         <h3>🎹 Note Sequence</h3>
         <table class="alab-note-table">
-          <tr><th>#</th><th>Payload Index</th><th>Byte</th><th>→ MIDI</th><th>→ Freq</th><th>Duration (why)</th><th>Gap (why)</th></tr>
+          <tr><th></th><th>#</th><th>Payload Index</th><th>Byte</th><th>→ MIDI</th><th>→ Freq</th><th>Duration (why)</th><th>Gap (why)</th></tr>
           ${m.notes.map((n, i) => {
             const durWhy = `byte ${n.byte} → map(0...255 → 50...400ms) × tempo`;
             const gapWhy = i < m.notes.length - 1
               ? `|${n.byte} − ${m.notes[i+1].byte}| = ${Math.abs(m.notes[i+1].byte - n.byte)} → map(0...255 → 30...300ms) × tempo`
               : '';
-            return `<tr id="noteRow${i}">
+            return `<tr id="noteRow${i}" class="alab-note-clickable" data-note-idx="${i}">
+            <td><button class="alab-note-play" data-note-idx="${i}" title="Play this note">▶</button></td>
             <td>${i + 1}</td>
             <td>[${n.index}]</td>
             <td>0x${n.byte.toString(16).padStart(2, '0').toUpperCase()} (${n.byte})</td>
@@ -297,6 +303,18 @@
         viz.appendChild(bar);
       }
     }
+
+    // Wire up individual note play buttons
+    document.querySelectorAll('.alab-note-play').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        playOneNote(parseInt(btn.dataset.noteIdx));
+      });
+    });
+    // Also allow clicking anywhere on the row
+    document.querySelectorAll('.alab-note-clickable').forEach(row => {
+      row.addEventListener('click', () => playOneNote(parseInt(row.dataset.noteIdx)));
+    });
   }
 
   function clearHighlights() {
@@ -327,6 +345,58 @@
     });
     // Clear all at end
     highlightTimers.push(setTimeout(clearHighlights, timeOffset + 200));
+  }
+
+  function playOneNote(noteIdx) {
+    if (!selectedPacket) return;
+    const m = computeMapping(selectedPacket);
+    if (!m || !m.notes[noteIdx]) return;
+
+    if (window.MeshAudio && !MeshAudio.isEnabled()) MeshAudio.setEnabled(true);
+    const audioCtx = MeshAudio.getContext();
+    if (!audioCtx) return;
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+
+    const note = m.notes[noteIdx];
+    const oscType = SYNTH_TYPES[m.typeName] || 'triangle';
+    const ADSR = { ADVERT: { a: 0.02, d: 0.3, s: 0.4, r: 0.5 }, GRP_TXT: { a: 0.005, d: 0.15, s: 0.1, r: 0.2 },
+      TXT_MSG: { a: 0.01, d: 0.2, s: 0.3, r: 0.4 }, TRACE: { a: 0.05, d: 0.4, s: 0.5, r: 0.8 } };
+    const env = ADSR[m.typeName] || ADSR.ADVERT;
+    const vol = parseFloat(m.volume) || 0.3;
+    const dur = note.duration / 1000;
+
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    const filter = audioCtx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = m.filterHz;
+
+    osc.type = oscType;
+    osc.frequency.value = note.freq;
+
+    const now = audioCtx.currentTime + 0.02;
+    const sustainVol = Math.max(vol * env.s, 0.0001);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(Math.max(vol, 0.0001), now + env.a);
+    gain.gain.exponentialRampToValueAtTime(sustainVol, now + env.a + env.d);
+    gain.gain.setTargetAtTime(0.0001, now + dur, env.r / 5);
+
+    osc.connect(gain);
+    gain.connect(filter);
+    filter.connect(audioCtx.destination);
+    osc.start(now);
+    osc.stop(now + dur + env.r + 0.1);
+    osc.onended = () => { osc.disconnect(); gain.disconnect(); filter.disconnect(); };
+
+    // Highlight this note
+    clearHighlights();
+    const hexEl = document.getElementById('hexByte' + note.index);
+    const rowEl = document.getElementById('noteRow' + noteIdx);
+    const barEl = document.getElementById('byteBar' + note.index);
+    if (hexEl) hexEl.classList.add('playing');
+    if (rowEl) rowEl.classList.add('playing');
+    if (barEl) barEl.classList.add('playing');
+    highlightTimers.push(setTimeout(clearHighlights, note.duration + 200));
   }
 
   function playSelected() {

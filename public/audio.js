@@ -207,6 +207,7 @@
     setVolume, getVolume,
     registerVoice, setVoice, getVoiceName, getVoiceNames,
     restore,
+    getContext() { return audioCtx; },
     // Helpers for voice modules
     helpers: { buildScale, midiToFreq, mapRange, quantizeToScale },
   };
