@@ -139,6 +139,16 @@
     }
     map = L.map('leaflet-map', { zoomControl: true }).setView(initCenter, initZoom);
 
+    // Drop a highlight pin if navigated from a packet detail link
+    if (urlParams.get('lat') && urlParams.get('lon')) {
+      const pinLat = parseFloat(urlParams.get('lat'));
+      const pinLon = parseFloat(urlParams.get('lon'));
+      const pin = L.circleMarker([pinLat, pinLon], { radius: 12, color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.3, weight: 2 }).addTo(map);
+      pin.bindTooltip(`${pinLat.toFixed(4)}, ${pinLon.toFixed(4)}`, { permanent: true, direction: 'top', offset: [0, -10] });
+      // Fade out pin after 10 seconds
+      setTimeout(() => { map.removeLayer(pin); }, 10000);
+    }
+
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark' ||
       (document.documentElement.getAttribute('data-theme') !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
     const tileLayer = L.tileLayer(isDark ? TILE_DARK : TILE_LIGHT, {
