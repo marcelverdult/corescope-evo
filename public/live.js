@@ -1814,7 +1814,7 @@
         // Fade out
         const fadeStart = performance.now();
         function fadeOut(now) {
-          const ft = Math.min(1, (now - fadeStart) / 500);
+          const ft = Math.min(1, (now - fadeStart) / 300);
           if (ft >= 1) {
             for (const cm of charMarkers) try { animLayer.removeLayer(cm.marker); } catch {}
             try { pathsLayer.removeLayer(trail); } catch {}
@@ -1828,7 +1828,7 @@
             requestAnimationFrame(fadeOut);
           }
         }
-        setTimeout(() => requestAnimationFrame(fadeOut), 300);
+        setTimeout(() => requestAnimationFrame(fadeOut), 150);
         if (onComplete) onComplete();
       }
     }
