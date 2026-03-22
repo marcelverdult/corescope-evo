@@ -99,12 +99,19 @@
     }, { passive: false });
   }
 
-  // Ensure HopResolver is initialized with the nodes list
+  // Ensure HopResolver is initialized with the nodes list + observer IATA data
   async function ensureHopResolver() {
     if (!HopResolver.ready()) {
       try {
-        const data = await api('/nodes?limit=2000', { ttl: 60000 });
-        HopResolver.init(data.nodes || []);
+        const [nodeData, obsData, coordData] = await Promise.all([
+          api('/nodes?limit=2000', { ttl: 60000 }),
+          api('/observers', { ttl: 60000 }),
+          api('/iata-coords', { ttl: 300000 }).catch(() => ({ coords: {} })),
+        ]);
+        HopResolver.init(nodeData.nodes || [], {
+          observers: obsData.observers || obsData || [],
+          iataCoords: coordData.coords || {},
+        });
       } catch {}
     }
   }
@@ -1259,7 +1266,7 @@
             // Try to find observer in nodes list by name — best effort
           }
           await ensureHopResolver();
-          const data = { resolved: HopResolver.resolve(pathHops, senderLat || null, senderLon || null, obsLat, obsLon) };
+          const data = { resolved: HopResolver.resolve(pathHops, senderLat || null, senderLon || null, obsLat, obsLon, pkt.observer_id) };
           // Pass full pubkeys (client-disambiguated) to map, falling back to short prefix
           const resolvedKeys = pathHops.map(h => {
             const r = data.resolved?.[h];

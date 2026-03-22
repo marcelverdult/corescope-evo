@@ -10,7 +10,12 @@ const fs = require('fs');
 const config = require('./config.json');
 const decoder = require('./decoder');
 const PAYLOAD_TYPES = decoder.PAYLOAD_TYPES;
-const { nodeNearRegion } = require('./iata-coords');
+const { nodeNearRegion, IATA_COORDS } = require('./iata-coords');
+
+// IATA coordinates for client-side regional filtering
+app.get('/api/iata-coords', (req, res) => {
+  res.json({ coords: IATA_COORDS });
+});
 
 // Health thresholds — configurable with sensible defaults
 const _ht = config.healthThresholds || {};

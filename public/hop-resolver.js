@@ -6,18 +6,32 @@ window.HopResolver = (function() {
   'use strict';
 
   const MAX_HOP_DIST = 1.8; // ~200km in degrees
+  const REGION_RADIUS_KM = 300;
   let prefixIdx = {};   // lowercase hex prefix → [node, ...]
   let nodesList = [];
+  let observerIataMap = {}; // observer_id → iata
+  let iataCoords = {};  // iata → {lat, lon}
 
   function dist(lat1, lon1, lat2, lon2) {
     return Math.sqrt((lat1 - lat2) ** 2 + (lon1 - lon2) ** 2);
   }
 
+  function haversineKm(lat1, lon1, lat2, lon2) {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) ** 2 +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLon / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
   /**
    * Initialize (or rebuild) the prefix index from the full nodes list.
    * @param {Array} nodes - Array of {public_key, name, lat, lon, ...}
+   * @param {Object} [opts] - Optional: { observers: [{id, iata}], iataCoords: {code: {lat,lon}} }
    */
-  function init(nodes) {
+  function init(nodes, opts) {
     nodesList = nodes || [];
     prefixIdx = {};
     for (const n of nodesList) {
@@ -29,6 +43,28 @@ window.HopResolver = (function() {
         prefixIdx[p].push(n);
       }
     }
+    // Store observer IATA mapping and coords if provided
+    observerIataMap = {};
+    if (opts && opts.observers) {
+      for (const o of opts.observers) {
+        if (o.id && o.iata) observerIataMap[o.id] = o.iata;
+      }
+    }
+    iataCoords = (opts && opts.iataCoords) || (window.IATA_COORDS_GEO) || {};
+  }
+
+  /**
+   * Check if a node is near an IATA region center.
+   * Returns { near, method, distKm } or null.
+   */
+  function nodeInRegion(candidate, iata) {
+    const center = iataCoords[iata];
+    if (!center) return null;
+    if (candidate.lat && candidate.lon && !(candidate.lat === 0 && candidate.lon === 0)) {
+      const d = haversineKm(candidate.lat, candidate.lon, center.lat, center.lon);
+      return { near: d <= REGION_RADIUS_KM, method: 'geo', distKm: Math.round(d) };
+    }
+    return null; // no GPS — can't geo-filter client-side
   }
 
   /**
@@ -42,22 +78,50 @@ window.HopResolver = (function() {
    * @param {number|null} observerLon - Observer longitude (backward anchor)
    * @returns {Object} resolved map keyed by hop prefix
    */
-  function resolve(hops, originLat, originLon, observerLat, observerLon) {
+  function resolve(hops, originLat, originLon, observerLat, observerLon, observerId) {
     if (!hops || !hops.length) return {};
+
+    // Determine observer's IATA for regional filtering
+    const packetIata = observerId ? observerIataMap[observerId] : null;
 
     const resolved = {};
     const hopPositions = {};
 
-    // First pass: find candidates
+    // First pass: find candidates with regional filtering
     for (const hop of hops) {
       const h = hop.toLowerCase();
-      const candidates = prefixIdx[h] || [];
-      if (candidates.length === 0) {
-        resolved[hop] = { name: null, candidates: [] };
-      } else if (candidates.length === 1) {
-        resolved[hop] = { name: candidates[0].name, pubkey: candidates[0].public_key, candidates: [{ name: candidates[0].name, pubkey: candidates[0].public_key }] };
+      const allCandidates = prefixIdx[h] || [];
+      if (allCandidates.length === 0) {
+        resolved[hop] = { name: null, candidates: [], conflicts: [] };
+      } else if (allCandidates.length === 1) {
+        const c = allCandidates[0];
+        const regionCheck = packetIata ? nodeInRegion(c, packetIata) : null;
+        resolved[hop] = { name: c.name, pubkey: c.public_key,
+          candidates: [{ name: c.name, pubkey: c.public_key, lat: c.lat, lon: c.lon, regional: regionCheck ? regionCheck.near : false, filterMethod: regionCheck ? regionCheck.method : 'none', distKm: regionCheck ? regionCheck.distKm : undefined }],
+          conflicts: [] };
       } else {
-        resolved[hop] = { name: candidates[0].name, pubkey: candidates[0].public_key, ambiguous: true, candidates: candidates.map(c => ({ name: c.name, pubkey: c.public_key, lat: c.lat, lon: c.lon })) };
+        // Multiple candidates — apply geo regional filtering
+        const checked = allCandidates.map(c => {
+          const r = packetIata ? nodeInRegion(c, packetIata) : null;
+          return { ...c, regional: r ? r.near : false, filterMethod: r ? r.method : 'none', distKm: r ? r.distKm : undefined };
+        });
+        const regional = checked.filter(c => c.regional);
+        const candidates = regional.length > 0 ? regional : checked;
+        const globalFallback = regional.length === 0 && checked.length > 0 && packetIata != null;
+
+        const conflicts = candidates.map(c => ({
+          name: c.name, pubkey: c.public_key, lat: c.lat, lon: c.lon,
+          regional: c.regional, filterMethod: c.filterMethod, distKm: c.distKm
+        }));
+
+        if (candidates.length === 1) {
+          resolved[hop] = { name: candidates[0].name, pubkey: candidates[0].public_key,
+            candidates: conflicts, conflicts, globalFallback };
+        } else {
+          resolved[hop] = { name: candidates[0].name, pubkey: candidates[0].public_key,
+            ambiguous: true, candidates: conflicts, conflicts, globalFallback,
+            hopBytes: Math.ceil(hop.length / 2), totalGlobal: allCandidates.length, totalRegional: regional.length };
+        }
       }
     }
 
