@@ -1491,13 +1491,14 @@ tr[data-hops]:hover { background: rgba(59,130,246,0.1); }
 .region-dropdown-trigger:hover { border-color: var(--accent); color: var(--accent); }
 .region-dropdown-menu {
   position: absolute; top: 100%; left: 0; z-index: 90;
-  min-width: 220px; max-height: 260px; overflow-y: auto;
+  min-width: 220px; width: max-content; max-height: 260px; overflow-y: auto;
   background: var(--card-bg, #fff); border: 1px solid var(--border); border-radius: 8px;
   box-shadow: 0 4px 16px rgba(0,0,0,0.12); padding: 4px 0;
 }
 .region-dropdown-item {
   display: flex; align-items: center; gap: 6px; padding: 6px 12px;
   font-size: 13px; cursor: pointer; color: var(--text); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; max-width: 320px;
 }
 .region-dropdown-item input[type="checkbox"] {
   width: 14px; height: 14px; margin: 0; flex-shrink: 0;
