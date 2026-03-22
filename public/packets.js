@@ -345,7 +345,7 @@
   async function loadPackets() {
     try {
       const params = new URLSearchParams();
-      params.set('limit', '100');
+      params.set('limit', '10000');
       const regionParam = RegionFilter.getRegionParam();
       if (regionParam) params.set('region', regionParam);
       if (filters.hash) params.set('hash', filters.hash);
