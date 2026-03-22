@@ -1590,4 +1590,4 @@ tr[data-hops]:hover { background: rgba(59,130,246,0.1); }
 
 /* Node labels on map */
 .matrix-theme .node-label { color: #00ff41 !important; text-shadow: 0 0 4px #00ff41 !important; }
-.matrix-theme .leaflet-marker-icon:not(.matrix-char) { filter: hue-rotate(90deg) saturate(3) brightness(1.2); }
+.matrix-theme .leaflet-marker-icon:not(.matrix-char) { filter: hue-rotate(90deg) saturate(2) brightness(0.6); }
