@@ -1224,7 +1224,9 @@ button.ch-item.ch-item-encrypted .ch-badge { filter: grayscale(0.6); }
 
 /* Ambiguous hop indicator */
 .hop-ambiguous { border-bottom: 1px dashed #f59e0b; }
-.hop-warn { font-size: 0.7em; margin-left: 2px; vertical-align: super; }
+.hop-warn { font-size: 0.7em; margin-left: 2px; vertical-align: super; color: #f59e0b; }
+.hop-unreliable { opacity: 0.5; text-decoration: line-through; }
+.hop-global-fallback { border-bottom: 1px dashed #ef4444; }
 
 /* Self-loop subpath rows */
 .subpath-selfloop { opacity: 0.6; }

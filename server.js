@@ -2003,25 +2003,47 @@ app.get('/api/analytics/hash-sizes', (req, res) => {
 app.get('/api/resolve-hops', (req, res) => {
   const hops = (req.query.hops || '').split(',').filter(Boolean);
   const observerId = req.query.observer || null;
-  // Origin anchor: sender's lat/lon for forward-pass disambiguation.
-  // Without this, the first ambiguous hop falls through to the backward pass
-  // which anchors from the observer — wrong when sender and observer are far apart.
   const originLat = req.query.originLat ? parseFloat(req.query.originLat) : null;
   const originLon = req.query.originLon ? parseFloat(req.query.originLon) : null;
   if (!hops.length) return res.json({ resolved: {} });
 
   const allNodes = getCachedNodes(false);
+  const allObservers = db.getObservers();
+
+  // Build observer IATA lookup and regional observer sets
+  const observerIataMap = {}; // observer_id → iata
+  const observersByIata = {}; // iata → Set<observer_id>
+  for (const obs of allObservers) {
+    if (obs.iata) {
+      observerIataMap[obs.id] = obs.iata;
+      if (!observersByIata[obs.iata]) observersByIata[obs.iata] = new Set();
+      observersByIata[obs.iata].add(obs.id);
+    }
+  }
+
+  // Determine this packet's region from its observer
+  const packetIata = observerId ? observerIataMap[observerId] : null;
+  const regionalObserverIds = packetIata ? observersByIata[packetIata] : null;
+
+  // Helper: check if a node has been seen by any observer in the given region
+  const nodeSeenInRegion = (pubkey) => {
+    if (!regionalObserverIds) return false;
+    const nodeObservers = pktStore._advertByObserver.get(pubkey);
+    if (!nodeObservers) return false;
+    for (const obsId of nodeObservers) {
+      if (regionalObserverIds.has(obsId)) return true;
+    }
+    return false;
+  };
 
   // Build observer geographic position
   let observerLat = null, observerLon = null;
   if (observerId) {
-    // Try exact name match first
     const obsNode = allNodes.find(n => n.name === observerId);
     if (obsNode && obsNode.lat && obsNode.lon && !(obsNode.lat === 0 && obsNode.lon === 0)) {
       observerLat = obsNode.lat;
       observerLon = obsNode.lon;
     } else {
-      // Fall back to averaging nearby nodes from adverts this observer received
       const obsNodes = db.db.prepare(`
         SELECT n.lat, n.lon FROM packets_v p
         JOIN nodes n ON n.public_key = json_extract(p.decoded_json, '$.pubKey')
@@ -2040,25 +2062,44 @@ app.get('/api/resolve-hops', (req, res) => {
   }
 
   const resolved = {};
-  // First pass: find all candidates for each hop
+  // First pass: find all candidates for each hop, split into regional and global
   for (const hop of hops) {
     const hopLower = hop.toLowerCase();
-    const candidates = allNodes.filter(n => n.public_key.toLowerCase().startsWith(hopLower));
-    if (candidates.length === 0) {
-      resolved[hop] = { name: null, candidates: [] };
-    } else if (candidates.length === 1) {
-      resolved[hop] = { name: candidates[0].name, pubkey: candidates[0].public_key, candidates: [{ name: candidates[0].name, pubkey: candidates[0].public_key }] };
+    const hopByteLen = Math.ceil(hop.length / 2); // 2 hex chars = 1 byte
+    const allCandidates = allNodes.filter(n => n.public_key.toLowerCase().startsWith(hopLower));
+
+    if (allCandidates.length === 0) {
+      resolved[hop] = { name: null, candidates: [], conflicts: [] };
+    } else if (allCandidates.length === 1) {
+      const c = allCandidates[0];
+      resolved[hop] = { name: c.name, pubkey: c.public_key, candidates: [{ name: c.name, pubkey: c.public_key, lat: c.lat, lon: c.lon }], conflicts: [] };
     } else {
-      resolved[hop] = { name: candidates[0].name, pubkey: candidates[0].public_key, ambiguous: true, candidates: candidates.map(c => ({ name: c.name, pubkey: c.public_key, lat: c.lat, lon: c.lon })) };
+      // Multiple candidates — apply regional filtering
+      const regional = allCandidates.filter(c => nodeSeenInRegion(c.public_key));
+      const candidates = regional.length > 0 ? regional : allCandidates;
+      const globalFallback = regional.length === 0 && allCandidates.length > 0;
+
+      const conflicts = candidates.map(c => ({
+        name: c.name, pubkey: c.public_key, lat: c.lat, lon: c.lon,
+        regional: nodeSeenInRegion(c.public_key)
+      }));
+
+      if (candidates.length === 1) {
+        resolved[hop] = { name: candidates[0].name, pubkey: candidates[0].public_key,
+          candidates: conflicts, conflicts, globalFallback };
+      } else {
+        resolved[hop] = { name: candidates[0].name, pubkey: candidates[0].public_key,
+          ambiguous: true, candidates: conflicts, conflicts, globalFallback,
+          hopBytes: hopByteLen, totalGlobal: allCandidates.length, totalRegional: regional.length };
+      }
     }
   }
 
-  // Sequential disambiguation: each hop must be near the previous one
-  // Walk the path forward, resolving ambiguous hops by distance to last known position
-  // Start from first unambiguous hop (or observer position as anchor for last hop)
-  
-  // Build initial resolved positions map
-  const hopPositions = {}; // hop -> {lat, lon}
+  const dist = (lat1, lon1, lat2, lon2) => Math.sqrt((lat1 - lat2) ** 2 + (lon1 - lon2) ** 2);
+
+  // Forward pass: resolve each ambiguous hop using previous hop's position
+  const hopPositions = {};
+  // Seed unambiguous positions
   for (const hop of hops) {
     const r = resolved[hop];
     if (r && !r.ambiguous && r.pubkey) {
@@ -2069,9 +2110,6 @@ app.get('/api/resolve-hops', (req, res) => {
     }
   }
 
-  const dist = (lat1, lon1, lat2, lon2) => Math.sqrt((lat1 - lat2) ** 2 + (lon1 - lon2) ** 2);
-
-  // Forward pass: resolve each ambiguous hop using previous hop's position
   let lastPos = (originLat != null && originLon != null) ? { lat: originLat, lon: originLon } : null;
   for (let hi = 0; hi < hops.length; hi++) {
     const hop = hops[hi];
@@ -2084,7 +2122,6 @@ app.get('/api/resolve-hops', (req, res) => {
     const withLoc = r.candidates.filter(c => c.lat && c.lon && !(c.lat === 0 && c.lon === 0));
     if (!withLoc.length) continue;
 
-    // Use previous hop position, or observer position for last hop, or skip
     let anchor = lastPos;
     if (!anchor && hi === hops.length - 1 && observerLat != null) {
       anchor = { lat: observerLat, lon: observerLon };
@@ -2117,7 +2154,7 @@ app.get('/api/resolve-hops', (req, res) => {
     nextPos = hopPositions[hop];
   }
 
-  // Sanity check: drop hops impossibly far from both neighbors (>200km ≈ 1.8°)
+  // Sanity check: drop hops impossibly far from both neighbors
   const MAX_HOP_DIST = MAX_HOP_DIST_SERVER;
   for (let i = 0; i < hops.length; i++) {
     const pos = hopPositions[hops[i]];
@@ -2130,14 +2167,13 @@ app.get('/api/resolve-hops', (req, res) => {
     const tooFarPrev = prev && dPrev > MAX_HOP_DIST;
     const tooFarNext = next && dNext > MAX_HOP_DIST;
     if ((tooFarPrev && tooFarNext) || (tooFarPrev && !next) || (tooFarNext && !prev)) {
-      // Mark as unreliable — likely prefix collision with distant node
       const r = resolved[hops[i]];
       if (r) { r.unreliable = true; }
       delete hopPositions[hops[i]];
     }
   }
 
-  res.json({ resolved });
+  res.json({ resolved, region: packetIata || null });
 });
 
 // channelHashNames removed — we only use decoded channel names now
