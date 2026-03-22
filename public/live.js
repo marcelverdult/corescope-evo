@@ -1818,7 +1818,7 @@
     const W = rainCanvas.width;
     const H = rainCanvas.height;
     // Fall distance proportional to hops: 8+ hops = full height
-    const maxY = H * Math.min(1, hopCount / 8);
+    const maxY = H * Math.min(1, hopCount / 4);
     // Duration: 5s for full height, proportional for shorter
     const duration = 5000 * (maxY / H);
 
