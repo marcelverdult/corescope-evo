@@ -304,7 +304,7 @@
         const decoded = typeof p.decoded_json === 'string' ? JSON.parse(p.decoded_json) : (p.decoded_json || {});
         const hops = typeof p.path_json === 'string' ? JSON.parse(p.path_json) : (p.path_json || []);
         const typeName = PAYLOAD_LABELS[p.payload_type] || 'Type ' + p.payload_type;
-        return `<tr style="cursor:pointer" onclick="location.hash='#/packet/${p.id}'">
+        return `<tr style="cursor:pointer" onclick="location.hash='#/packets/${p.hash || p.id}'">
           <td>${timeAgo(p.timestamp)}</td>
           <td>${typeName}</td>
           <td class="mono" style="font-size:0.85em">${(p.hash || '').substring(0, 10)}</td>
