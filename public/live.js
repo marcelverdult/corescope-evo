@@ -13,6 +13,7 @@
   let showGhostHops = localStorage.getItem('live-ghost-hops') !== 'false';
   let realisticPropagation = localStorage.getItem('live-realistic-propagation') === 'true';
   let showOnlyFavorites = localStorage.getItem('live-favorites-only') === 'true';
+  let matrixMode = localStorage.getItem('live-matrix-mode') === 'true';
   const propagationBuffer = new Map(); // hash -> {timer, packets[]}
   let _onResize = null;
   let _navCleanup = null;
@@ -631,6 +632,8 @@
             <span id="ghostDesc" class="sr-only">Show interpolated ghost markers for unknown hops</span>
             <label><input type="checkbox" id="liveRealisticToggle" aria-describedby="realisticDesc"> Realistic</label>
             <span id="realisticDesc" class="sr-only">Buffer packets by hash and animate all paths simultaneously</span>
+            <label><input type="checkbox" id="liveMatrixToggle" aria-describedby="matrixDesc"> Matrix</label>
+            <span id="matrixDesc" class="sr-only">Animate packet hex bytes flowing along paths like the Matrix</span>
             <label><input type="checkbox" id="liveFavoritesToggle" aria-describedby="favDesc"> ⭐ Favorites</label>
             <span id="favDesc" class="sr-only">Show only favorited and claimed nodes</span>
           </div>
@@ -784,6 +787,13 @@
       showOnlyFavorites = e.target.checked;
       localStorage.setItem('live-favorites-only', showOnlyFavorites);
       applyFavoritesFilter();
+    });
+
+    const matrixToggle = document.getElementById('liveMatrixToggle');
+    matrixToggle.checked = matrixMode;
+    matrixToggle.addEventListener('change', (e) => {
+      matrixMode = e.target.checked;
+      localStorage.setItem('live-matrix-mode', matrixMode);
     });
 
     // Feed show/hide
@@ -1365,7 +1375,7 @@
     const hopPositions = resolveHopPositions(hops, payload);
     if (hopPositions.length === 0) return;
     if (hopPositions.length === 1) { pulseNode(hopPositions[0].key, hopPositions[0].pos, typeName); return; }
-    animatePath(hopPositions, typeName, color);
+    animatePath(hopPositions, typeName, color, pkt.raw);
   }
 
   function animateRealisticPropagation(packets) {
@@ -1452,7 +1462,7 @@
 
     // Animate all paths simultaneously
     for (const hopPositions of allPaths) {
-      animatePath(hopPositions, typeName, color);
+      animatePath(hopPositions, typeName, color, first.raw);
     }
   }
 
@@ -1554,7 +1564,7 @@
     return raw.filter(h => h.pos != null);
   }
 
-  function animatePath(hopPositions, typeName, color) {
+  function animatePath(hopPositions, typeName, color, rawHex) {
     if (!animLayer || !pathsLayer) return;
     activeAnims++;
     document.getElementById('liveAnimCount').textContent = activeAnims;
@@ -1591,7 +1601,7 @@
         const nextGhost = hopPositions[hopIndex + 1].ghost;
         const lineColor = (isGhost || nextGhost) ? '#94a3b8' : color;
         const lineOpacity = (isGhost || nextGhost) ? 0.3 : undefined;
-        drawAnimatedLine(hp.pos, nextPos, lineColor, () => { hopIndex++; nextHop(); }, lineOpacity);
+        drawAnimatedLine(hp.pos, nextPos, lineColor, () => { hopIndex++; nextHop(); }, lineOpacity, rawHex);
       } else {
         if (!isGhost) pulseNode(hp.key, hp.pos, typeName);
         hopIndex++; nextHop();
@@ -1654,8 +1664,99 @@
     nodeActivity[key] = (nodeActivity[key] || 0) + 1;
   }
 
-  function drawAnimatedLine(from, to, color, onComplete, overrideOpacity) {
+  function drawMatrixLine(from, to, color, onComplete, rawHex) {
     if (!animLayer || !pathsLayer) { if (onComplete) onComplete(); return; }
+    // Extract hex bytes from raw packet data, or generate random ones
+    const hexStr = rawHex || '';
+    const bytes = [];
+    for (let i = 0; i < hexStr.length; i += 2) {
+      bytes.push(hexStr.slice(i, i + 2).toUpperCase());
+    }
+    if (bytes.length === 0) {
+      // Fallback: generate random hex if no raw data
+      for (let i = 0; i < 16; i++) bytes.push(((Math.random() * 256) | 0).toString(16).padStart(2, '0').toUpperCase());
+    }
+
+    const matrixGreen = '#00ff41';
+    const TRAIL_LEN = Math.min(8, bytes.length); // visible chars at once
+    const TOTAL_STEPS = 30;
+    const charMarkers = [];
+    let step = 0;
+
+    // Dim trail line underneath
+    const trail = L.polyline([from], {
+      color: matrixGreen, weight: 1, opacity: 0.15, lineCap: 'round'
+    }).addTo(pathsLayer);
+
+    const trailCoords = [from];
+
+    const interval = setInterval(() => {
+      step++;
+      const t = step / TOTAL_STEPS;
+      const lat = from[0] + (to[0] - from[0]) * t;
+      const lon = from[1] + (to[1] - from[1]) * t;
+      trailCoords.push([lat, lon]);
+      trail.setLatLngs(trailCoords);
+
+      // Remove old char markers beyond trail length
+      while (charMarkers.length > TRAIL_LEN) {
+        const old = charMarkers.shift();
+        try { animLayer.removeLayer(old.marker); } catch {}
+      }
+
+      // Fade existing chars
+      for (let i = 0; i < charMarkers.length; i++) {
+        const age = charMarkers.length - i;
+        const op = Math.max(0.1, 1 - (age / TRAIL_LEN) * 0.8);
+        const size = Math.max(7, 12 - age);
+        charMarkers[i].marker.getElement().style.opacity = op;
+        charMarkers[i].marker.getElement().style.fontSize = size + 'px';
+      }
+
+      // Add new leading character
+      const byteIdx = step % bytes.length;
+      const charEl = L.marker([lat, lon], {
+        icon: L.divIcon({
+          className: 'matrix-char',
+          html: `<span style="color:${matrixGreen};font-family:'Courier New',monospace;font-size:12px;font-weight:bold;text-shadow:0 0 6px ${matrixGreen},0 0 12px ${matrixGreen}80;pointer-events:none">${bytes[byteIdx]}</span>`,
+          iconSize: [20, 14],
+          iconAnchor: [10, 7]
+        }),
+        interactive: false
+      }).addTo(animLayer);
+      charMarkers.push({ marker: charEl });
+
+      if (step >= TOTAL_STEPS) {
+        clearInterval(interval);
+
+        // Fade out everything
+        setTimeout(() => {
+          let fadeStep = 0;
+          const fadeInterval = setInterval(() => {
+            fadeStep++;
+            const fadeOp = 1 - fadeStep / 10;
+            if (fadeOp <= 0) {
+              clearInterval(fadeInterval);
+              for (const cm of charMarkers) try { animLayer.removeLayer(cm.marker); } catch {}
+              try { pathsLayer.removeLayer(trail); } catch {}
+              charMarkers.length = 0;
+            } else {
+              for (const cm of charMarkers) {
+                try { cm.marker.getElement().style.opacity = fadeOp * 0.5; } catch {}
+              }
+              trail.setStyle({ opacity: fadeOp * 0.1 });
+            }
+          }, 50);
+        }, 400);
+
+        if (onComplete) onComplete();
+      }
+    }, 33);
+  }
+
+  function drawAnimatedLine(from, to, color, onComplete, overrideOpacity, rawHex) {
+    if (!animLayer || !pathsLayer) { if (onComplete) onComplete(); return; }
+    if (matrixMode) return drawMatrixLine(from, to, color, onComplete, rawHex);
     const steps = 20;
     const latStep = (to[0] - from[0]) / steps;
     const lonStep = (to[1] - from[1]) / steps;

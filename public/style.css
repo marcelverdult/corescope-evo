@@ -1530,3 +1530,7 @@ tr[data-hops]:hover { background: rgba(59,130,246,0.1); }
 .multi-select-item:hover { background: var(--row-hover, #f5f5f5); }
 
 .chan-tag { background: var(--accent, #3b82f6); color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 0.9em; font-weight: 600; }
+
+/* Matrix mode hex animation */
+.matrix-char { background: none !important; border: none !important; }
+.matrix-char span { display: block; text-align: center; white-space: nowrap; line-height: 1; }
