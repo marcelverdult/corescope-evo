@@ -2,7 +2,7 @@
 
 ## [2.4.0] — 2026-03-22
 
-Big batch: observation drill-down, distance analytics, regional filters on all tabs, channel decryption fixes, performance, and a ton of bug fixes.
+UI polish, client-side filtering, time window selector, DB cleanup, and bug fixes.
 
 ### Added
 - Observation-level deeplinks (`#/packets/HASH?obs=OBSERVER_ID`)
