@@ -607,8 +607,10 @@
 
     // Close multi-select menus on outside click
     document.addEventListener('click', (e) => {
-      if (!document.getElementById('observerFilterWrap').contains(e.target)) obsMenu.classList.remove('open');
-      if (!document.getElementById('typeFilterWrap').contains(e.target)) typeMenu.classList.remove('open');
+      const obsWrap = document.getElementById('observerFilterWrap');
+      const typeWrap = document.getElementById('typeFilterWrap');
+      if (obsWrap && !obsWrap.contains(e.target)) { const m = obsWrap.querySelector('.multi-select-menu'); if (m) m.classList.remove('open'); }
+      if (typeWrap && !typeWrap.contains(e.target)) { const m = typeWrap.querySelector('.multi-select-menu'); if (m) m.classList.remove('open'); }
     });
 
     // Filter toggle button for mobile
