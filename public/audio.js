@@ -88,11 +88,13 @@
 
   function sonifyPacket(pkt) {
     if (!audioEnabled || !currentVoice) return;
-    // Lazy-init AudioContext on first actual packet (may not have user gesture,
-    // but browser will auto-resume when it gets one)
     if (!audioCtx) initAudio();
     if (!audioCtx) return;
-    if (audioCtx.state === 'suspended') audioCtx.resume();
+    if (audioCtx.state === 'suspended') {
+      // Show unlock overlay if not already showing
+      _showUnlockOverlay();
+      return; // don't schedule notes on suspended context
+    }
     if (activeVoices >= MAX_VOICES) return;
 
     const parsed = parsePacketBytes(pkt);
@@ -175,20 +177,26 @@
     const savedVoice = localStorage.getItem('live-audio-voice');
     if (savedVoice) setVoice(savedVoice);
 
-    // If audio was enabled, create context now and try to resume.
-    // Browsers with prior engagement will auto-allow; gesture listener is fallback.
+    // If audio was enabled, create context eagerly. If browser suspends it,
+    // the unlock overlay will appear when the first packet arrives.
     if (audioEnabled) {
       initAudio();
-      const unlockAudio = () => {
-        if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
-        document.removeEventListener('click', unlockAudio, true);
-        document.removeEventListener('touchstart', unlockAudio, true);
-        document.removeEventListener('keydown', unlockAudio, true);
-      };
-      document.addEventListener('click', unlockAudio, true);
-      document.addEventListener('touchstart', unlockAudio, true);
-      document.addEventListener('keydown', unlockAudio, true);
     }
+  }
+
+  let _overlayShown = false;
+
+  function _showUnlockOverlay() {
+    if (_overlayShown) return;
+    _overlayShown = true;
+    const overlay = document.createElement('div');
+    overlay.className = 'audio-unlock-overlay';
+    overlay.innerHTML = '<div class="audio-unlock-prompt">🔊 Tap to enable audio</div>';
+    overlay.addEventListener('click', () => {
+      if (audioCtx) audioCtx.resume();
+      overlay.remove();
+    }, { once: true });
+    document.body.appendChild(overlay);
   }
 
   // Export engine + helpers for voice modules

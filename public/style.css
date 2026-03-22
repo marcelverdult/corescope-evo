@@ -1640,3 +1640,31 @@ tr[data-hops]:hover { background: rgba(59,130,246,0.1); }
   color: #00ff41 !important;
   border-color: #00ff4130 !important;
 }
+
+/* Audio unlock overlay */
+.audio-unlock-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.6);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.audio-unlock-prompt {
+  background: #1f2937;
+  color: #e5e7eb;
+  padding: 24px 40px;
+  border-radius: 12px;
+  font-size: 20px;
+  font-weight: 600;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+  user-select: none;
+}
+.matrix-theme .audio-unlock-prompt {
+  background: #001a00;
+  color: #00ff41;
+  box-shadow: 0 0 30px rgba(0,255,65,0.2);
+}
