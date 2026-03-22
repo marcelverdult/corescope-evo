@@ -442,7 +442,7 @@ class PacketStore {
       this._evict();
       this.stats.inserts++;
     }
-    return id;
+    return observationId || transmissionId;
   }
 
   /**
