@@ -1556,11 +1556,6 @@ tr[data-hops]:hover { background: rgba(59,130,246,0.1); }
 .matrix-scanlines {
   position: absolute; inset: 0; z-index: 9999; pointer-events: none;
   background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,255,65,0.02) 2px, rgba(0,255,65,0.02) 4px);
-  animation: matrix-flicker 0.15s infinite alternate;
-}
-@keyframes matrix-flicker {
-  from { opacity: 0.8; }
-  to { opacity: 1; }
 }
 
 /* Feed panel in matrix mode */
