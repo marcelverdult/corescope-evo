@@ -1469,10 +1469,11 @@
     // Favorites filter: skip if none of the packets involve a favorite
     if (showOnlyFavorites && !packets.some(p => packetInvolvesFavorite(p))) return;
 
-    if (window.MeshAudio) MeshAudio.sonifyPacket(first);
+    const consolidated = Object.assign({}, first, { observation_count: packets.length });
+    if (window.MeshAudio) MeshAudio.sonifyPacket(consolidated);
     // Add single consolidated feed item for the group
     const allHops = (decoded.path?.hops) || [];
-    addFeedItem(icon, typeName, payload, allHops, color, Object.assign({}, first, { observation_count: packets.length }));
+    addFeedItem(icon, typeName, payload, allHops, color, consolidated);
     // Rain drop per observation in the group
     packets.forEach((p, i) => setTimeout(() => addRainDrop(p), i * 150));
 
