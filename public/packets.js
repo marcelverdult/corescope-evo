@@ -16,6 +16,8 @@
   { const o = localStorage.getItem('meshcore-observer-filter'); if (o) filters.observer = o;
     const t = localStorage.getItem('meshcore-type-filter'); if (t) filters.type = t; }
   let wsHandler = null;
+  let packetsPaused = false;
+  let pauseBuffer = [];
   let observers = [];
   let regionMap = {};
   const TYPE_NAMES = { 0:'Request', 1:'Response', 2:'Direct Msg', 3:'ACK', 4:'Advert', 5:'Channel Msg', 7:'Anon Req', 8:'Path', 9:'Trace', 11:'Control' };
@@ -209,6 +211,17 @@
       else if (btn.dataset.action === 'pkt-byop') showBYOP();
     });
 
+    document.getElementById('pktPauseBtn').addEventListener('click', function() {
+      packetsPaused = !packetsPaused;
+      this.textContent = packetsPaused ? '▶' : '⏸';
+      this.title = packetsPaused ? 'Resume live updates' : 'Pause live updates';
+      this.classList.toggle('active', packetsPaused);
+      if (!packetsPaused && pauseBuffer.length) {
+        pauseBuffer.forEach(msg => wsHandler(msg));
+        pauseBuffer = [];
+      }
+    });
+
     // If linked directly to a packet by ID, load its detail and filter list
     if (directPacketId) {
       const pktId = Number(directPacketId);
@@ -241,6 +254,12 @@
       } catch {}
     }
     wsHandler = debouncedOnWS(function (msgs) {
+      if (packetsPaused) {
+        pauseBuffer.push(...msgs);
+        const btn = document.getElementById('pktPauseBtn');
+        if (btn) btn.textContent = '▶ ' + pauseBuffer.length;
+        return;
+      }
       const newPkts = msgs
         .filter(m => m.type === 'packet' && m.data?.packet)
         .map(m => m.data.packet);
@@ -431,6 +450,7 @@
         <h2>Latest Packets <span class="count">(${totalCount})</span></h2>
         <div>
           <button class="btn-icon" data-action="pkt-refresh" title="Refresh">🔄</button>
+          <button class="btn-icon" id="pktPauseBtn" title="Pause live updates">⏸</button>
           <button class="btn-icon" data-action="pkt-byop" title="Bring Your Own Packet" aria-label="Bring Your Own Packet - paste raw packet hex for analysis" aria-haspopup="dialog">📦 BYOP</button>
         </div>
       </div>
