@@ -1738,37 +1738,39 @@
 
         // Head position
         const headY = progress * drop.maxY;
-        // Trail length in pixels — proportional to hops
-        const trailPx = Math.min(H * 0.4, drop.hops * 30);
-
+        // Trail shows all packet bytes, scrolling through them
         const CHAR_H = 18;
-        const numChars = Math.min(drop.bytes.length, Math.floor(trailPx / CHAR_H));
+        const VISIBLE_CHARS = Math.min(drop.bytes.length, 20); // up to 20 visible at once
+        const trailPx = VISIBLE_CHARS * CHAR_H;
 
-        for (let c = 0; c < numChars; c++) {
+        // Scroll offset — cycles through all bytes over the drop lifetime
+        const scrollOffset = Math.floor(progress * drop.bytes.length);
+
+        for (let c = 0; c < VISIBLE_CHARS; c++) {
           const charY = headY - c * CHAR_H;
           if (charY < -CHAR_H || charY > H) continue;
 
+          const byteIdx = (scrollOffset + c) % drop.bytes.length;
+
           // Fade: head is bright, tail fades
-          const fadeFactor = 1 - (c / numChars);
+          const fadeFactor = 1 - (c / VISIBLE_CHARS);
           // Also fade entire drop near end of life
           const lifeFade = progress > 0.7 ? 1 - (progress - 0.7) / 0.3 : 1;
           const alpha = Math.max(0, fadeFactor * lifeFade);
 
           if (c === 0) {
-            // Leading char: bright white with green glow
             rainCtx.font = 'bold 16px "Courier New", monospace';
             rainCtx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
             rainCtx.shadowColor = '#00ff41';
             rainCtx.shadowBlur = 12;
           } else {
-            // Trail chars: green, dimmer
             rainCtx.font = '14px "Courier New", monospace';
             rainCtx.fillStyle = `rgba(0, 255, 65, ${alpha * 0.8})`;
             rainCtx.shadowColor = '#00ff41';
             rainCtx.shadowBlur = 4;
           }
 
-          rainCtx.fillText(drop.bytes[c % drop.bytes.length], drop.x, charY);
+          rainCtx.fillText(drop.bytes[byteIdx], drop.x, charY);
         }
 
         // Remove finished drops
