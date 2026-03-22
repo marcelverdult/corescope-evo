@@ -29,6 +29,9 @@ Big batch: observation drill-down, distance analytics, regional filters on all t
 - HTTPS support (lincomatic PR #105)
 - Graceful shutdown (lincomatic PR #109)
 - Filter bar: logical grouping, consistent 34px height, help tooltips
+- Multi-select Observer and Type filters (checkbox dropdowns, OR logic)
+- Hex Paths toggle: show raw hex hash prefixes vs resolved node names
+- localStorage persistence for all filter/view preferences
 
 ### Changed
 - Channel keys: plain `String(channelHash)`, `hashChannels` for auto-derived SHA256
@@ -39,6 +42,11 @@ Big batch: observation drill-down, distance analytics, regional filters on all t
 - Channels page hides encrypted messages, shows only decrypted
 - Dark mode: active filter buttons retain accent styling
 - Region dropdown: `IATA - Friendly Name` format, proper sizing
+- Observer/Type filters are pure client-side (no API calls on filter change)
+
+### Removed
+- Legacy `packets` and `paths` database tables (auto-migrated on startup)
+- Redundant server-side type/observer filtering (client filters in-memory)
 
 ### Fixed
 - Header row showed longest path instead of first observer's path
