@@ -427,7 +427,7 @@
             <option value="chrono-asc">Sort: Time ↑ (earliest)</option>
             <option value="chrono-desc">Sort: Time ↓ (latest)</option>
           </select>
-          <span class="sort-help" title="Sort controls how observations within a packet group are ordered, and which observation's data (observer, path) appears in the header row.\n\nObserver — Groups observations by observer station. Earliest observer appears first. Within each observer, sorted by time.\n\nPath ↑ (shortest) — Shortest paths first, then alphabetical by observer.\nPath ↓ (longest) — Longest paths first.\n\nTime ↑ (earliest) — Chronological order, first observation at top.\nTime ↓ (latest) — Reverse chronological, most recent first.">ⓘ</span>
+          <span class="sort-help" title="Sort controls how observations within a packet group are ordered, and which observation's data (observer, path) appears in the header row.&#10;&#10;Observer — Groups by observer station, earliest first.&#10;Path ↑ — Shortest paths first.&#10;Path ↓ — Longest paths first.&#10;Time ↑ — Earliest observation first.&#10;Time ↓ — Most recent first.">ⓘ</span>
         </div>
         <div class="filter-group">
           <div class="col-toggle-wrap">

@@ -715,6 +715,7 @@ button.ch-item.selected { background: var(--selected-bg); }
 [data-theme="dark"] .trace-search input,
 [data-theme="dark"] .mc-jump-btn,
 [data-theme="dark"] .filter-bar .btn { background: var(--input-bg); color: var(--text); border-color: var(--border); }
+[data-theme="dark"] .filter-bar .btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 [data-theme="dark"] .ch-item.selected,
 [data-theme="dark"] .data-table tbody tr.selected { background: var(--selected-bg); }
 [data-theme="dark"] .tl-bar-container { background: #334155; }
@@ -1280,6 +1281,7 @@ tr[data-hops]:hover { background: rgba(59,130,246,0.1); }
 .col-toggle-menu { display: none; position: absolute; top: 100%; left: 0; z-index: 50; background: var(--card-bg); border: 1px solid var(--border); border-radius: 6px; padding: 6px 0; min-width: 150px; box-shadow: 0 4px 12px rgba(0,0,0,.15); }
 .col-toggle-menu.open { display: block; }
 .col-toggle-menu label { display: flex; align-items: center; gap: 6px; padding: 4px 12px; font-size: .82rem; cursor: pointer; color: var(--text); }
+.col-toggle-menu label input[type="checkbox"] { width: 14px; height: 14px; margin: 0; flex-shrink: 0; }
 .col-toggle-menu label:hover { background: var(--row-hover); }
 
 /* Column hide classes */
@@ -1456,7 +1458,7 @@ tr[data-hops]:hover { background: rgba(59,130,246,0.1); }
 
 /* ─── Region filter bar ─── */
 .region-filter-bar { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 0; }
-.region-filter-container { margin-bottom: 4px; }
+.region-filter-container { margin: 0; padding: 0; display: inline-flex; align-items: center; }
 .region-pill {
   display: inline-flex; align-items: center; padding: 4px 12px; border-radius: 16px;
   font-size: 12px; font-weight: 500; cursor: pointer; border: 1.5px solid var(--border);
