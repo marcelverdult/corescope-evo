@@ -433,9 +433,15 @@
             <input type="text" placeholder="Node name…" id="fNode" autocomplete="off" role="combobox" aria-expanded="false" aria-owns="fNodeDropdown" aria-activedescendant="" aria-autocomplete="list" title="Filter packets involving this node (sender or path)">
             <div class="node-filter-dropdown hidden" id="fNodeDropdown" role="listbox"></div>
           </div>
-          <select id="fObserver" aria-label="Filter by observer" title="Show only packets seen by this observer station"><option value="">All Observers</option></select>
+          <div class="multi-select-wrap" id="observerFilterWrap">
+            <button class="multi-select-trigger" id="observerTrigger" title="Show only packets seen by selected observer stations">All Observers ▾</button>
+            <div class="multi-select-menu" id="observerMenu"></div>
+          </div>
           <div id="packetsRegionFilter" class="region-filter-container" style="display:inline-block;vertical-align:middle"></div>
-          <select id="fType" aria-label="Filter by packet type" title="Filter by packet type (Advert, Channel Msg, etc.)"><option value="">All Types</option></select>
+          <div class="multi-select-wrap" id="typeFilterWrap">
+            <button class="multi-select-trigger" id="typeTrigger" title="Filter by packet type">All Types ▾</button>
+            <div class="multi-select-menu" id="typeMenu"></div>
+          </div>
         </div>
         <div class="filter-group">
           <button class="btn ${groupByHash ? 'active' : ''}" id="fGroup" title="Collapse duplicate observations of the same packet into expandable groups">Group by Hash</button>
@@ -471,15 +477,92 @@
     RegionFilter.init(document.getElementById('packetsRegionFilter'), { dropdown: true });
     RegionFilter.onChange(function() { loadPackets(); });
 
-    const obsSel = document.getElementById('fObserver');
-    for (const o of observers) {
-      obsSel.innerHTML += `<option value="${o.id}" ${filters.observer === o.id ? 'selected' : ''}>${o.name || o.id}</option>`;
+    // --- Observer multi-select ---
+    const obsMenu = document.getElementById('observerMenu');
+    const obsTrigger = document.getElementById('observerTrigger');
+    const selectedObservers = new Set(filters.observer ? filters.observer.split(',') : []);
+    function buildObserverMenu() {
+      const allChecked = selectedObservers.size === 0;
+      let html = `<label class="multi-select-item"><input type="checkbox" data-obs-id="__all__" ${allChecked ? 'checked' : ''}> All Observers</label>`;
+      for (const o of observers) {
+        const checked = selectedObservers.has(String(o.id)) ? 'checked' : '';
+        html += `<label class="multi-select-item"><input type="checkbox" data-obs-id="${o.id}" ${checked}> ${o.name || o.id}</label>`;
+      }
+      obsMenu.innerHTML = html;
     }
+    function updateObsTrigger() {
+      if (selectedObservers.size === 0 || selectedObservers.size === observers.length) {
+        obsTrigger.textContent = 'All Observers ▾';
+      } else if (selectedObservers.size === 1) {
+        const id = [...selectedObservers][0];
+        const o = observers.find(x => String(x.id) === id);
+        obsTrigger.textContent = (o ? (o.name || o.id) : id) + ' ▾';
+      } else {
+        obsTrigger.textContent = selectedObservers.size + ' Observers ▾';
+      }
+    }
+    buildObserverMenu();
+    updateObsTrigger();
+    obsTrigger.addEventListener('click', (e) => { e.stopPropagation(); obsMenu.classList.toggle('open'); typeMenu.classList.remove('open'); });
+    obsMenu.addEventListener('change', (e) => {
+      const id = e.target.dataset.obsId;
+      if (id === '__all__') {
+        selectedObservers.clear();
+      } else {
+        if (e.target.checked) selectedObservers.add(id); else selectedObservers.delete(id);
+      }
+      filters.observer = selectedObservers.size > 0 ? [...selectedObservers].join(',') : undefined;
+      buildObserverMenu();
+      updateObsTrigger();
+      loadPackets();
+    });
 
-    const typeSel = document.getElementById('fType');
-    for (const [k, v] of Object.entries({0:'Request',1:'Response',2:'Direct Msg',3:'ACK',4:'Advert',5:'Channel Msg',7:'Anon Req',8:'Path',9:'Trace'})) {
-      typeSel.innerHTML += `<option value="${k}" ${String(filters.type) === k ? 'selected' : ''}>${v}</option>`;
+    // --- Type multi-select ---
+    const typeMenu = document.getElementById('typeMenu');
+    const typeTrigger = document.getElementById('typeTrigger');
+    const typeMap = {0:'Request',1:'Response',2:'Direct Msg',3:'ACK',4:'Advert',5:'Channel Msg',7:'Anon Req',8:'Path',9:'Trace'};
+    const selectedTypes = new Set(filters.type ? String(filters.type).split(',') : []);
+    function buildTypeMenu() {
+      const allChecked = selectedTypes.size === 0;
+      let html = `<label class="multi-select-item"><input type="checkbox" data-type-id="__all__" ${allChecked ? 'checked' : ''}> All Types</label>`;
+      for (const [k, v] of Object.entries(typeMap)) {
+        const checked = selectedTypes.has(k) ? 'checked' : '';
+        html += `<label class="multi-select-item"><input type="checkbox" data-type-id="${k}" ${checked}> ${v}</label>`;
+      }
+      typeMenu.innerHTML = html;
     }
+    function updateTypeTrigger() {
+      const total = Object.keys(typeMap).length;
+      if (selectedTypes.size === 0 || selectedTypes.size === total) {
+        typeTrigger.textContent = 'All Types ▾';
+      } else if (selectedTypes.size === 1) {
+        const k = [...selectedTypes][0];
+        typeTrigger.textContent = (typeMap[k] || k) + ' ▾';
+      } else {
+        typeTrigger.textContent = selectedTypes.size + ' Types ▾';
+      }
+    }
+    buildTypeMenu();
+    updateTypeTrigger();
+    typeTrigger.addEventListener('click', (e) => { e.stopPropagation(); typeMenu.classList.toggle('open'); obsMenu.classList.remove('open'); });
+    typeMenu.addEventListener('change', (e) => {
+      const id = e.target.dataset.typeId;
+      if (id === '__all__') {
+        selectedTypes.clear();
+      } else {
+        if (e.target.checked) selectedTypes.add(id); else selectedTypes.delete(id);
+      }
+      filters.type = selectedTypes.size > 0 ? [...selectedTypes].join(',') : undefined;
+      buildTypeMenu();
+      updateTypeTrigger();
+      loadPackets();
+    });
+
+    // Close multi-select menus on outside click
+    document.addEventListener('click', (e) => {
+      if (!document.getElementById('observerFilterWrap').contains(e.target)) obsMenu.classList.remove('open');
+      if (!document.getElementById('typeFilterWrap').contains(e.target)) typeMenu.classList.remove('open');
+    });
 
     // Filter toggle button for mobile
     document.getElementById('filterToggleBtn').addEventListener('click', function() {
@@ -491,8 +574,6 @@
     // Filter event listeners
     document.getElementById('fHash').value = filters.hash || '';
     document.getElementById('fHash').addEventListener('input', debounce((e) => { filters.hash = e.target.value || undefined; loadPackets(); }, 300));
-    document.getElementById('fObserver').addEventListener('change', (e) => { filters.observer = e.target.value || undefined; loadPackets(); });
-    document.getElementById('fType').addEventListener('change', (e) => { filters.type = e.target.value !== '' ? e.target.value : undefined; loadPackets(); });
     document.getElementById('fGroup').addEventListener('click', () => { groupByHash = !groupByHash; loadPackets(); });
     document.getElementById('fMyNodes').addEventListener('click', function () {
       filters.myNodes = !filters.myNodes;
@@ -771,7 +852,13 @@
         </tr>`;
         // Child rows (loaded async when expanded)
         if (isExpanded && p._children) {
-          for (const c of p._children) {
+          let visibleChildren = p._children;
+          // Filter children by selected observers
+          if (filters.observer) {
+            const obsSet = new Set(filters.observer.split(','));
+            visibleChildren = visibleChildren.filter(c => obsSet.has(String(c.observer_id)));
+          }
+          for (const c of visibleChildren) {
             const typeName = payloadTypeName(c.payload_type);
             const typeClass = payloadTypeColor(c.payload_type);
             const size = c.raw_hex ? Math.floor(c.raw_hex.length / 2) : 0;
