@@ -98,17 +98,33 @@ This connects the visual and auditory — you SEE which byte is playing RIGHT NO
 
 Once you can hear individual packets clearly, add override sliders to shape the sound:
 
-- **Scale override** — force any scale regardless of packet type
-- **Instrument override** — force oscillator type (sine/triangle/square/sawtooth)
-- **ADSR sliders** — attack, decay, sustain, release
-- **Filter cutoff** — manual override of hop-based cutoff
-- **Voice count** — force 1-4 voices regardless of observation count
-- **Detune amount** — how much chord spread per voice
-- **Pan lock** — force stereo position
+### Envelope & Tone
+- **Oscillator type** — sine / triangle / square / sawtooth
+- **ADSR sliders** — attack, decay, sustain, release (with real-time envelope visualizer curve)
+- **Scale override** — force any scale regardless of packet type (C maj pent, A min pent, E nat minor, D whole tone, chromatic, etc.)
+- **Root note** — base MIDI note for the scale
 
-Each override has a "lock" toggle — locked = your value, unlocked = data-driven.
+### Spatial & Filter
+- **Filter type** — lowpass / highpass / bandpass
+- **Filter cutoff** — manual override of hop-based cutoff (Hz slider + "data-driven" toggle)
+- **Filter Q/resonance** — 0.1 to 20
+- **Pan lock** — force stereo position (-1 to +1)
 
-The voice module's `play()` would accept an `overrides` object from the workbench.
+### Voicing & Dynamics
+- **Voice count** — force 1-8 voices regardless of observation count
+- **Detune spread** — cents per voice (0-50)
+- **Volume** — manual override of observation-based volume
+- **Limiter threshold** — per-packet compressor threshold (dB)
+- **Limiter ratio** — 1:1 to 20:1
+
+### Note Timing
+- **Note duration range** — min/max duration mapped from byte value
+- **Note gap range** — min/max gap mapped from byte delta
+- **Lookahead** — scheduling buffer (ms)
+
+Each override has a "lock 🔒" toggle — locked = your value, unlocked = data-driven. Unlocked shows the computed value in real-time so you can see what the data would produce.
+
+The voice module's `play()` accepts an `overrides` object from the workbench. Locked parameters override computed values; unlocked ones pass through.
 
 ---
 
