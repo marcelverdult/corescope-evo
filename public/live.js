@@ -1694,9 +1694,9 @@
       // Re-tint existing node markers green
       for (const [key, marker] of Object.entries(nodeMarkers)) {
         marker._matrixPrevColor = marker._baseColor;
-        marker._baseColor = '#00aa2a';
-        marker.setStyle({ fillColor: '#00aa2a', color: '#00aa2a' });
-        if (marker._glowMarker) marker._glowMarker.setStyle({ fillColor: '#00aa2a' });
+        marker._baseColor = '#005f15';
+        marker.setStyle({ fillColor: '#005f15', color: '#005f15', fillOpacity: 0.4, opacity: 0.4 });
+        if (marker._glowMarker) marker._glowMarker.setStyle({ fillColor: '#005f15', fillOpacity: 0.1 });
       }
     } else {
       container.classList.remove('matrix-theme');

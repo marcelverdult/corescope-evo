@@ -1537,11 +1537,15 @@ tr[data-hops]:hover { background: rgba(59,130,246,0.1); }
 
 /* === Matrix Theme === */
 .matrix-theme .leaflet-tile-pane {
-  filter: brightness(0.55) contrast(1.5) sepia(1) hue-rotate(70deg) saturate(2.5);
+  filter: grayscale(1) brightness(0.7) contrast(1.8);
 }
-.matrix-theme .leaflet-tile-pane::after {
-  content: ''; position: absolute; inset: 0; z-index: 1;
-  background: rgba(0, 255, 65, 0.03); mix-blend-mode: overlay; pointer-events: none;
+.matrix-theme .leaflet-container::before {
+  content: ''; position: absolute; inset: 0; z-index: 401;
+  background: rgba(0, 60, 10, 0.35); mix-blend-mode: multiply; pointer-events: none;
+}
+.matrix-theme .leaflet-container::after {
+  content: ''; position: absolute; inset: 0; z-index: 402;
+  background: rgba(0, 255, 65, 0.06); mix-blend-mode: screen; pointer-events: none;
 }
 .matrix-theme { background: #000 !important; }
 .matrix-theme .leaflet-control-zoom a { background: #0a0a0a !important; color: #00ff41 !important; border-color: #00ff4130 !important; }
@@ -1592,4 +1596,4 @@ tr[data-hops]:hover { background: rgba(59,130,246,0.1); }
 
 /* Node labels on map */
 .matrix-theme .node-label { color: #00ff41 !important; text-shadow: 0 0 4px #00ff41 !important; }
-.matrix-theme .leaflet-marker-icon:not(.matrix-char) { filter: hue-rotate(90deg) saturate(2) brightness(0.6); }
+.matrix-theme .leaflet-marker-icon:not(.matrix-char) { filter: hue-rotate(90deg) saturate(1) brightness(0.35) opacity(0.5); }
