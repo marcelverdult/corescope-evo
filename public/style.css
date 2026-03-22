@@ -1537,13 +1537,13 @@ tr[data-hops]:hover { background: rgba(59,130,246,0.1); }
 
 /* === Matrix Theme === */
 .matrix-theme .leaflet-tile-pane {
-  filter: grayscale(1) brightness(0.7) contrast(1.8);
+  filter: brightness(1.4) contrast(1.2) sepia(0.6) hue-rotate(70deg) saturate(2);
 }
-.matrix-theme .leaflet-container::before {
+.matrix-theme.leaflet-container::before {
   content: ''; position: absolute; inset: 0; z-index: 401;
   background: rgba(0, 60, 10, 0.35); mix-blend-mode: multiply; pointer-events: none;
 }
-.matrix-theme .leaflet-container::after {
+.matrix-theme.leaflet-container::after {
   content: ''; position: absolute; inset: 0; z-index: 402;
   background: rgba(0, 255, 65, 0.06); mix-blend-mode: screen; pointer-events: none;
 }
