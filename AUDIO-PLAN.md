@@ -14,8 +14,16 @@
 | `RSSI` | dBm value | ~~mostly unavailable~~ — skip |
 | `hash_size` | 1-4 bytes | — |
 | `observation_count` | 1-40+ | Chord voicing / polyphony |
-| `channel_hash` | 0-255 | Root bass note / key |
+| `channel_hash` | 0-255 | Only on GRP_TXT — skip as primary |
 | `arrival_rate` | packets/min | Tempo (BPM) |
+
+## What Every Packet Has (guaranteed)
+- `raw_hex` — melody source
+- `hop_count` — duration + filter
+- `observation_count` — volume/polyphony  
+- `payload_type` — instrument + scale + root key
+- `packet_hash` — unique identifier
+- `timestamp` — arrival timing
 | `node_lat/lon` | coordinates | Stereo pan |
 
 ## Mapping Design
@@ -59,10 +67,13 @@
 - Each observer slightly detuned (chorus effect) — more observers = richer, more "present"
 - Alternative: observation count triggers arpeggiation speed
 
-### Bass from Channel Hash
-- Channel hash (0-255) sets root bass note
-- Different channels naturally play in different keys
-- Creates harmonic separation between channel traffic
+### Root Key from Payload Type
+- Each payload type gets a fixed root note — always available, clean separation:
+  - **ADVERT** → C (beacons, foundation)
+  - **GRP_TXT** → A (conversation, warm)
+  - **TXT_MSG** → E (direct, bright)
+  - **TRACE** → D (searching, modal)
+- This replaces channel hash (only available on GRP_TXT)
 
 ### Ambient Layer from ADVERTs
 - ADVERTs are constant background heartbeats → generative ambient drone
