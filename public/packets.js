@@ -1202,7 +1202,7 @@
             let oDec;
             try { oDec = JSON.parse(o.decoded_json || '{}'); } catch { oDec = decoded; }
             replayPackets.push({
-              id: o.id, hash: pkt.hash,
+              id: o.id, hash: pkt.hash, raw: o.raw_hex || pkt.raw_hex,
               _ts: new Date(o.timestamp).getTime(),
               decoded: { header: { payloadTypeName: typeName }, payload: oDec, path: { hops: oPath } },
               snr: o.snr, rssi: o.rssi, observer: obsName(o.observer_id)
@@ -1210,7 +1210,7 @@
           }
         } else {
           replayPackets.push({
-            id: pkt.id, hash: pkt.hash,
+            id: pkt.id, hash: pkt.hash, raw: pkt.raw_hex,
             _ts: new Date(pkt.timestamp).getTime(),
             decoded: { header: { payloadTypeName: typeName }, payload: decoded, path: { hops: pathHops } },
             snr: pkt.snr, rssi: pkt.rssi, observer: obsName(pkt.observer_id)
