@@ -504,7 +504,12 @@
     const obsSortSel = document.getElementById('fObsSort');
     obsSortSel.value = obsSortMode;
     const sortHelpEl = document.getElementById('sortHelpIcon');
-    if (sortHelpEl) sortHelpEl.setAttribute('data-tip', "Sort controls how observations are ordered within packet groups and which observation appears in the header row.\n\nObserver — Groups by observer station, earliest first.\nPath ↑ — Shortest paths first.\nPath ↓ — Longest paths first.\nTime ↑ — Earliest observation first.\nTime ↓ — Most recent first.");
+    if (sortHelpEl) {
+      const tip = document.createElement('span');
+      tip.className = 'sort-help-tip';
+      tip.textContent = "Sort controls how observations are ordered within packet groups and which observation appears in the header row.\n\nObserver — Groups by observer station, earliest first.\nPath \u2191 — Shortest paths first.\nPath \u2193 — Longest paths first.\nTime \u2191 — Earliest observation first.\nTime \u2193 — Most recent first.";
+      sortHelpEl.appendChild(tip);
+    }
     obsSortSel.addEventListener('change', async function () {
       obsSortMode = this.value;
       localStorage.setItem('meshcore-obs-sort', obsSortMode);
