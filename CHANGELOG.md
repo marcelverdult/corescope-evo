@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.4.1] — 2026-03-22
+
+Hotfix release for regressions introduced in v2.4.0.
+
+### Fixed
+- Packet ingestion broken: `insert()` returned undefined after legacy table removal, causing all MQTT packets to fail silently
+- Live packet updates not working: pause button `addEventListener` on null element crashed `init()`, preventing WS handler registration
+- WS broadcast had null packet data when observation was deduped (2nd+ observer of same packet)
+- Multi-select filter menu close handler crashed on null `observerFilterWrap`/`typeFilterWrap` elements
+- Live map animation cleanup crashed with null `animLayer`/`pathsLayer` after navigating away (setInterval kept firing)
+
 ## [2.4.0] — 2026-03-22
 
 UI polish, client-side filtering, time window selector, DB cleanup, and bug fixes.
