@@ -422,6 +422,7 @@
     const typeName = raw.type || pkt.payload_type_name || 'UNKNOWN';
     return {
       id: pkt.id, hash: pkt.hash,
+      raw: pkt.raw_hex,
       _ts: new Date(pkt.timestamp || pkt.created_at).getTime(),
       decoded: { header: { payloadTypeName: typeName }, payload: raw, path: { hops } },
       snr: pkt.snr, rssi: pkt.rssi, observer: pkt.observer_name
@@ -1796,7 +1797,6 @@
   function addRainDrop(pkt) {
     if (!rainCanvas || !matrixRain) return;
     const rawHex = pkt.raw || pkt.raw_hex || (pkt.packet && pkt.packet.raw_hex) || '';
-    console.log('[rain] pkt keys:', Object.keys(pkt), 'raw:', !!pkt.raw, 'raw_hex:', !!pkt.raw_hex, 'packet.raw_hex:', !!(pkt.packet && pkt.packet.raw_hex), 'rawHex len:', rawHex.length);
     if (!rawHex) return;
     const decoded = pkt.decoded || {};
     const hops = decoded.path?.hops || [];
