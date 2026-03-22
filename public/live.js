@@ -794,7 +794,9 @@
     matrixToggle.addEventListener('change', (e) => {
       matrixMode = e.target.checked;
       localStorage.setItem('live-matrix-mode', matrixMode);
+      applyMatrixTheme(matrixMode);
     });
+    applyMatrixTheme(matrixMode);
 
     // Feed show/hide
     const feedEl = document.getElementById('liveFeed');
@@ -1662,6 +1664,41 @@
     setTimeout(() => marker.setStyle({ fillColor: baseColor, fillOpacity: 0.85, radius: baseSize, color: '#fff', weight: marker._baseSize > 6 ? 1.5 : 0.5 }), 700);
 
     nodeActivity[key] = (nodeActivity[key] || 0) + 1;
+  }
+
+  function applyMatrixTheme(on) {
+    const container = document.getElementById('liveMap');
+    if (!container) return;
+    if (on) {
+      container.classList.add('matrix-theme');
+      // Add scanline overlay if not present
+      if (!document.getElementById('matrixScanlines')) {
+        const scanlines = document.createElement('div');
+        scanlines.id = 'matrixScanlines';
+        scanlines.className = 'matrix-scanlines';
+        container.appendChild(scanlines);
+      }
+      // Re-tint existing node markers green
+      for (const [key, marker] of Object.entries(nodeMarkers)) {
+        marker._matrixPrevColor = marker._baseColor;
+        marker._baseColor = '#00ff41';
+        marker.setStyle({ fillColor: '#00ff41', color: '#00ff41' });
+        if (marker._glowMarker) marker._glowMarker.setStyle({ fillColor: '#00ff41' });
+      }
+    } else {
+      container.classList.remove('matrix-theme');
+      const scanlines = document.getElementById('matrixScanlines');
+      if (scanlines) scanlines.remove();
+      // Restore node marker colors
+      for (const [key, marker] of Object.entries(nodeMarkers)) {
+        if (marker._matrixPrevColor) {
+          marker._baseColor = marker._matrixPrevColor;
+          marker.setStyle({ fillColor: marker._matrixPrevColor, color: '#fff' });
+          if (marker._glowMarker) marker._glowMarker.setStyle({ fillColor: marker._matrixPrevColor });
+          delete marker._matrixPrevColor;
+        }
+      }
+    }
   }
 
   function drawMatrixLine(from, to, color, onComplete, rawHex) {

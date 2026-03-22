@@ -1534,3 +1534,60 @@ tr[data-hops]:hover { background: rgba(59,130,246,0.1); }
 /* Matrix mode hex animation */
 .matrix-char { background: none !important; border: none !important; }
 .matrix-char span { display: block; text-align: center; white-space: nowrap; line-height: 1; }
+
+/* === Matrix Theme === */
+.matrix-theme .leaflet-tile-pane { filter: saturate(0) brightness(0.15) contrast(1.2); }
+.matrix-theme .leaflet-tile-pane::after {
+  content: ''; position: absolute; inset: 0; z-index: 1;
+  background: rgba(0, 255, 65, 0.03); mix-blend-mode: overlay; pointer-events: none;
+}
+.matrix-theme { background: #000 !important; }
+.matrix-theme .leaflet-control-zoom a { background: #0a0a0a !important; color: #00ff41 !important; border-color: #00ff4130 !important; }
+.matrix-theme .leaflet-control-attribution { background: rgba(0,0,0,0.8) !important; color: #00ff4180 !important; }
+.matrix-theme .leaflet-control-attribution a { color: #00ff4160 !important; }
+
+/* Scanline overlay */
+.matrix-scanlines {
+  position: absolute; inset: 0; z-index: 9999; pointer-events: none;
+  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,255,65,0.02) 2px, rgba(0,255,65,0.02) 4px);
+  animation: matrix-flicker 0.15s infinite alternate;
+}
+@keyframes matrix-flicker {
+  from { opacity: 0.8; }
+  to { opacity: 1; }
+}
+
+/* Feed panel in matrix mode */
+.matrix-theme .live-feed {
+  background: rgba(0, 10, 0, 0.92) !important;
+  border-color: #00ff4130 !important;
+  font-family: 'Courier New', monospace !important;
+}
+.matrix-theme .live-feed .live-feed-item { color: #00ff41 !important; border-color: #00ff4115 !important; }
+.matrix-theme .live-feed .live-feed-item:hover { background: rgba(0,255,65,0.08) !important; }
+.matrix-theme .live-feed .feed-hide-btn { color: #00ff41 !important; }
+
+/* Controls in matrix mode */
+.matrix-theme .live-controls {
+  background: rgba(0, 10, 0, 0.9) !important;
+  border-color: #00ff4130 !important;
+  color: #00ff41 !important;
+}
+.matrix-theme .live-controls label,
+.matrix-theme .live-controls span,
+.matrix-theme .live-controls .lcd-display { color: #00ff41 !important; }
+.matrix-theme .live-controls button { color: #00ff41 !important; border-color: #00ff4130 !important; }
+.matrix-theme .live-controls input[type="range"] { accent-color: #00ff41; }
+
+/* Node detail panel in matrix mode */
+.matrix-theme .live-node-detail {
+  background: rgba(0, 10, 0, 0.95) !important;
+  border-color: #00ff4130 !important;
+  color: #00ff41 !important;
+}
+.matrix-theme .live-node-detail a { color: #00ff41 !important; }
+.matrix-theme .live-node-detail .feed-hide-btn { color: #00ff41 !important; }
+
+/* Node labels on map */
+.matrix-theme .node-label { color: #00ff41 !important; text-shadow: 0 0 4px #00ff41 !important; }
+.matrix-theme .leaflet-marker-icon:not(.matrix-char) { filter: hue-rotate(90deg) saturate(3) brightness(1.2); }
