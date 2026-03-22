@@ -1396,6 +1396,11 @@
     playSound(typeName);
     addFeedItem(icon, typeName, payload, hops, color, pkt);
     addRainDrop(pkt);
+    // Spawn extra rain columns for multiple observations
+    const obsCount = pkt.observation_count || (pkt.packet && pkt.packet.observation_count) || 1;
+    for (let i = 1; i < obsCount; i++) {
+      setTimeout(() => addRainDrop(pkt), i * 150); // stagger slightly
+    }
 
     // Favorites filter: skip animation if packet doesn't involve a favorited node
     if (showOnlyFavorites && !packetInvolvesFavorite(pkt)) return;
@@ -1435,7 +1440,8 @@
     if (showOnlyFavorites && !packets.some(p => packetInvolvesFavorite(p))) return;
 
     playSound(typeName);
-    addRainDrop(first);
+    // Rain drop per observation in the group
+    packets.forEach((p, i) => setTimeout(() => addRainDrop(p), i * 150));
 
     // Ensure ADVERT nodes appear
     for (const pkt of packets) {
