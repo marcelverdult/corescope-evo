@@ -282,7 +282,7 @@
             const newHops = hops.filter(h => !(h in hopNameCache));
             if (newHops.length) await resolveHops(newHops);
           } catch {}
-          renderDetail(content, data);
+          await renderDetail(content, data);
           initPanelResize();
         }
       } catch {}
@@ -1113,14 +1113,14 @@
       panel.innerHTML = isMobileNow ? '' : '<div class="panel-resize-handle" id="pktResizeHandle"></div>';
       const content = document.createElement('div');
       panel.appendChild(content);
-      renderDetail(content, data);
+      await renderDetail(content, data);
       if (!isMobileNow) initPanelResize();
     } catch (e) {
       panel.innerHTML = `<div class="text-muted">Error: ${e.message}</div>`;
     }
   }
 
-  function renderDetail(panel, data) {
+  async function renderDetail(panel, data) {
     const pkt = data.packet;
     const breakdown = data.breakdown || {};
     const ranges = breakdown.ranges || [];
@@ -1176,18 +1176,40 @@
       }
     }
 
-    // Location: from ADVERT lat/lon, or from known node
+    // Location: from ADVERT lat/lon, or from known node via pubkey/sender name
     let locationHtml = '—';
+    let locationNodeKey = null;
     if (decoded.lat != null && decoded.lon != null && !(decoded.lat === 0 && decoded.lon === 0)) {
-      const nodeKey = decoded.pubKey || decoded.srcPubKey || '';
+      locationNodeKey = decoded.pubKey || decoded.srcPubKey || '';
       const nodeName = decoded.name || '';
       locationHtml = `${decoded.lat.toFixed(5)}, ${decoded.lon.toFixed(5)}`;
       if (nodeName) locationHtml = `${escapeHtml(nodeName)} — ${locationHtml}`;
-      if (nodeKey) locationHtml += ` <a href="#/map?node=${encodeURIComponent(nodeKey)}" style="font-size:0.85em">📍map</a>`;
-    } else if (decoded.srcPubKey || decoded.pubKey) {
-      // Try to look up sender node location from HopResolver's node list
-      const senderKey = decoded.srcPubKey || decoded.pubKey;
-      const senderNode = (window.HopResolver && HopResolver.ready()) ? null : null; // could look up but keep simple
+      if (locationNodeKey) locationHtml += ` <a href="#/map?node=${encodeURIComponent(locationNodeKey)}" style="font-size:0.85em">📍map</a>`;
+    } else {
+      // Try to resolve sender node location from nodes list
+      const senderKey = decoded.pubKey || decoded.srcPubKey;
+      const senderName = decoded.sender || decoded.name;
+      if (senderKey || senderName) {
+        try {
+          const nodeData = senderKey ? await api(`/nodes/${senderKey}`, { ttl: 30000 }).catch(() => null) : null;
+          if (nodeData && nodeData.node && nodeData.node.lat && nodeData.node.lon) {
+            locationNodeKey = nodeData.node.public_key;
+            locationHtml = `${nodeData.node.lat.toFixed(5)}, ${nodeData.node.lon.toFixed(5)}`;
+            if (nodeData.node.name) locationHtml = `${escapeHtml(nodeData.node.name)} — ${locationHtml}`;
+            locationHtml += ` <a href="#/map?node=${encodeURIComponent(locationNodeKey)}" style="font-size:0.85em">📍map</a>`;
+          } else if (senderName && !senderKey) {
+            // Search by name
+            const searchData = await api(`/nodes/search?q=${encodeURIComponent(senderName)}`, { ttl: 30000 }).catch(() => null);
+            const match = searchData && searchData.nodes && searchData.nodes[0];
+            if (match && match.lat && match.lon) {
+              locationNodeKey = match.public_key;
+              locationHtml = `${match.lat.toFixed(5)}, ${match.lon.toFixed(5)}`;
+              locationHtml = `${escapeHtml(match.name)} — ${locationHtml}`;
+              locationHtml += ` <a href="#/map?node=${encodeURIComponent(locationNodeKey)}" style="font-size:0.85em">📍map</a>`;
+            }
+          }
+        } catch {}
+      }
     }
 
     panel.innerHTML = `
@@ -1670,7 +1692,7 @@
         container.innerHTML = `<div style="margin-bottom:16px"><a href="#/packets" style="color:var(--primary);text-decoration:none">← Back to packets</a></div>`;
         const detail = document.createElement('div');
         container.appendChild(detail);
-        renderDetail(detail, data);
+        await renderDetail(detail, data);
         app.innerHTML = '';
         app.appendChild(container);
       } catch (e) {
