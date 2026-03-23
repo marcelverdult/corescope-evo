@@ -510,8 +510,11 @@ window.addEventListener('DOMContentLoaded', () => {
   fetch('/api/config/theme').then(r => r.json()).then(cfg => {
     window.SITE_CONFIG = cfg;
 
-    // Apply CSS variable overrides from theme.*
-    if (cfg.theme) {
+    // User's localStorage preferences take priority over server config
+    const userTheme = (() => { try { return JSON.parse(localStorage.getItem('meshcore-user-theme') || '{}'); } catch { return {}; } })();
+
+    // Apply CSS variable overrides from theme.* (server config, skipped if user has local overrides)
+    if (cfg.theme && !userTheme.theme && !userTheme.themeDark) {
       const root = document.documentElement.style;
       const varMap = {
         accent: '--accent', accentHover: '--accent-hover',
@@ -533,16 +536,16 @@ window.addEventListener('DOMContentLoaded', () => {
       }
     }
 
-    // Apply node color overrides to ROLE_COLORS and ROLE_STYLE
-    if (cfg.nodeColors) {
+    // Apply node color overrides (skip if user has local preferences)
+    if (cfg.nodeColors && !userTheme.nodeColors) {
       for (const [role, color] of Object.entries(cfg.nodeColors)) {
         if (window.ROLE_COLORS && role in window.ROLE_COLORS) window.ROLE_COLORS[role] = color;
         if (window.ROLE_STYLE && window.ROLE_STYLE[role]) window.ROLE_STYLE[role].color = color;
       }
     }
 
-    // Apply branding
-    if (cfg.branding) {
+    // Apply branding (skip if user has local preferences)
+    if (cfg.branding && !userTheme.branding) {
       if (cfg.branding.siteName) {
         document.title = cfg.branding.siteName;
         const brandText = document.querySelector('.brand-text');
