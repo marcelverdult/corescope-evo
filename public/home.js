@@ -512,10 +512,10 @@
 
   function checklist(homeCfg) {
     if (homeCfg?.checklist) {
-      return homeCfg.checklist.map(i => `<div class="checklist-item"><div class="checklist-q" role="button" tabindex="0" aria-expanded="false">${escapeHtml(i.question)}</div><div class="checklist-a"><p>${escapeHtml(i.answer)}</p></div></div>`).join('');
+      return homeCfg.checklist.map(i => `<div class="checklist-item"><div class="checklist-q" role="button" tabindex="0" aria-expanded="false">${escapeHtml(i.question)}</div><div class="checklist-a">${window.miniMarkdown ? miniMarkdown(i.answer) : escapeHtml(i.answer)}</div></div>`).join('');
     }
     if (homeCfg?.steps) {
-      return homeCfg.steps.map(s => `<div class="checklist-item"><div class="checklist-q" role="button" tabindex="0" aria-expanded="false">${escapeHtml(s.emoji || '')} ${escapeHtml(s.title)}</div><div class="checklist-a"><p>${escapeHtml(s.description)}</p></div></div>`).join('');
+      return homeCfg.steps.map(s => `<div class="checklist-item"><div class="checklist-q" role="button" tabindex="0" aria-expanded="false">${escapeHtml(s.emoji || '')} ${escapeHtml(s.title)}</div><div class="checklist-a">${window.miniMarkdown ? miniMarkdown(s.description) : escapeHtml(s.description)}</div></div>`).join('');
     }
     const items = [
       { q: '💬 First: Join the Bay Area MeshCore Discord',

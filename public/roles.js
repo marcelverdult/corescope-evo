@@ -337,4 +337,22 @@
     'CMN': 'Casablanca, MA',
     'LOS': 'Lagos, NG'
   };
+
+  // Simple markdown → HTML (bold, italic, links, code, lists, line breaks)
+  window.miniMarkdown = function(text) {
+    if (!text) return '';
+    var html = text
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.+?)\*/g, '<em>$1</em>')
+      .replace(/`(.+?)`/g, '<code>$1</code>')
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener" style="color:var(--accent)">$1</a>')
+      .replace(/^- (.+)/gm, '<li>$1</li>')
+      .replace(/\n/g, '<br>');
+    // Wrap consecutive <li> in <ul>
+    html = html.replace(/((?:<li>.*?<\/li><br>?)+)/g, function(m) {
+      return '<ul>' + m.replace(/<br>/g, '') + '</ul>';
+    });
+    return html;
+  };
 })();

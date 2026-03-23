@@ -460,7 +460,7 @@
           '<button class="cust-list-btn" data-move-step="' + i + '" data-dir="down" title="Move down">↓</button>' +
           '<button class="cust-list-btn danger" data-rm-step="' + i + '" title="Remove">✕</button>' +
         '</div>' +
-        '<input data-step-field="description" data-idx="' + i + '" value="' + escAttr(s.description) + '" placeholder="Description">' +
+        '<textarea data-step-field="description" data-idx="' + i + '" placeholder="Description (supports **bold**, *italic*, `code`, [links](url), - lists)" rows="2" style="resize:vertical;font-size:11px">' + esc(s.description) + '</textarea>' +
       '</div>';
     }).join('');
 
@@ -470,7 +470,7 @@
           '<input data-check-field="question" data-idx="' + i + '" value="' + escAttr(c.question) + '" placeholder="Question">' +
           '<button class="cust-list-btn danger" data-rm-check="' + i + '" title="Remove">✕</button>' +
         '</div>' +
-        '<input data-check-field="answer" data-idx="' + i + '" value="' + escAttr(c.answer) + '" placeholder="Answer">' +
+        '<textarea data-check-field="answer" data-idx="' + i + '" placeholder="Answer (supports markdown)" rows="2" style="resize:vertical;font-size:11px">' + esc(c.answer) + '</textarea>' +
       '</div>';
     }).join('');
 
