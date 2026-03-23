@@ -433,18 +433,8 @@
           }
         } catch {}
       }
-      // Batch resolve — one API call per observer (typically 4-5 observers)
-      await Promise.all(Object.entries(hopsByObserver).map(async ([obsId, hopsSet]) => {
-        try {
-          const params = new URLSearchParams({ hops: [...hopsSet].join(','), observer: obsId });
-          const result = await api(`/resolve-hops?${params}`);
-          if (result?.resolved) {
-            for (const [k, v] of Object.entries(result.resolved)) {
-              hopNameCache[k + ':' + obsId] = v;
-            }
-          }
-        } catch {}
-      }));
+      // Ambiguous hops are already resolved by HopResolver client-side
+      // No need for per-observer server API calls
 
       // Restore expanded group children
       if (groupByHash && expandedHashes.size > 0) {
@@ -1206,18 +1196,14 @@
       } catch {}
     }
 
-    // Re-resolve hops using SERVER-SIDE API with sender GPS + observer
+    // Re-resolve hops using client-side HopResolver with sender GPS context
     if (pathHops.length) {
       try {
-        const params = new URLSearchParams({ hops: pathHops.join(',') });
-        if (pkt.observer_id) params.set('observer', pkt.observer_id);
-        if (senderLat != null) params.set('originLat', senderLat);
-        if (senderLon != null) params.set('originLon', senderLon);
-        const serverResolved = await api(`/resolve-hops?${params}`);
-        if (serverResolved?.resolved) {
-          for (const [k, v] of Object.entries(serverResolved.resolved)) {
+        await ensureHopResolver();
+        const resolved = HopResolver.resolve(pathHops);
+        if (resolved) {
+          for (const [k, v] of Object.entries(resolved)) {
             hopNameCache[k] = v;
-            // Also store observer-scoped key for list view
             if (pkt.observer_id) hopNameCache[k + ':' + pkt.observer_id] = v;
           }
         }
