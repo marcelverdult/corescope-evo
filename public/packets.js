@@ -492,6 +492,13 @@
           <button class="btn-icon" data-action="pkt-byop" title="Bring Your Own Packet" aria-label="Bring Your Own Packet - paste raw packet hex for analysis" aria-haspopup="dialog">📦 BYOP</button>
         </div>
       </div>
+      <div class="filter-group" style="flex:1;margin-bottom:8px">
+        <input type="text" id="packetFilterInput" class="packet-filter-input"
+          placeholder='Filter: type == Advert && snr > 5 · payload.name contains "Gilroy"'
+          style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-family:var(--mono);font-size:13px;background:var(--input-bg);color:var(--text)">
+        <div id="packetFilterError" style="color:var(--status-red);font-size:11px;margin-top:2px;display:none"></div>
+        <div id="packetFilterCount" style="color:var(--text-muted);font-size:11px;margin-top:2px;display:none"></div>
+      </div>
       <div class="filter-bar" id="pktFilters">
         <button class="btn filter-toggle-btn" id="filterToggleBtn">Filters ▾</button>
         <div class="filter-group">
@@ -556,6 +563,45 @@
     // Init shared RegionFilter component
     RegionFilter.init(document.getElementById('packetsRegionFilter'), { dropdown: true });
     RegionFilter.onChange(function() { loadPackets(); });
+
+    // --- Packet Filter Language ---
+    (function() {
+      var pfInput = document.getElementById('packetFilterInput');
+      var pfError = document.getElementById('packetFilterError');
+      var pfCount = document.getElementById('packetFilterCount');
+      if (!pfInput || !window.PacketFilter) return;
+      var pfTimer = null;
+      pfInput.addEventListener('input', function() {
+        clearTimeout(pfTimer);
+        pfTimer = setTimeout(function() {
+          var expr = pfInput.value.trim();
+          if (!expr) {
+            pfInput.classList.remove('filter-error', 'filter-active');
+            pfError.style.display = 'none';
+            pfCount.style.display = 'none';
+            filters._packetFilter = null;
+            renderTableRows();
+            return;
+          }
+          var compiled = PacketFilter.compile(expr);
+          if (compiled.error) {
+            pfInput.classList.add('filter-error');
+            pfInput.classList.remove('filter-active');
+            pfError.textContent = compiled.error;
+            pfError.style.display = 'block';
+            pfCount.style.display = 'none';
+            filters._packetFilter = null;
+            renderTableRows();
+          } else {
+            pfInput.classList.remove('filter-error');
+            pfInput.classList.add('filter-active');
+            pfError.style.display = 'none';
+            filters._packetFilter = compiled.filter;
+            renderTableRows();
+          }
+        }, 300);
+      });
+    })();
 
     // --- Observer multi-select ---
     const obsMenu = document.getElementById('observerMenu');
@@ -929,6 +975,19 @@
     if (filters.observer) {
       const obsIds = new Set(filters.observer.split(','));
       displayPackets = displayPackets.filter(p => obsIds.has(p.observer_id));
+    }
+
+    // Packet Filter Language
+    const pfCount = document.getElementById('packetFilterCount');
+    if (filters._packetFilter) {
+      const beforeCount = displayPackets.length;
+      displayPackets = displayPackets.filter(filters._packetFilter);
+      if (pfCount) {
+        pfCount.textContent = 'Showing ' + displayPackets.length.toLocaleString() + ' of ' + beforeCount.toLocaleString() + ' packets';
+        pfCount.style.display = 'block';
+      }
+    } else if (pfCount) {
+      pfCount.style.display = 'none';
     }
 
     if (countEl) countEl.textContent = `(${displayPackets.length})`;

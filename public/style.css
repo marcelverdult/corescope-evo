@@ -1706,3 +1706,10 @@ tr[data-hops]:hover { background: rgba(59,130,246,0.1); }
   color: #00ff41;
   box-shadow: 0 0 30px rgba(0,255,65,0.2);
 }
+
+
+/* Packet Filter Language */
+.packet-filter-input { transition: border-color 0.2s; }
+.packet-filter-input:focus { border-color: var(--accent); outline: none; }
+.packet-filter-input.filter-error { border-color: var(--status-red); }
+.packet-filter-input.filter-active { border-color: var(--status-green); }
