@@ -1,5 +1,36 @@
 # CUSTOMIZATION-PLAN.md — White-Label / Multi-Instance Theming
 
+## Status: Phase 1 Complete (v2.6.0+)
+
+### What's Built
+- Floating draggable customizer panel (🎨 in nav)
+- Basic (7 colors) + Advanced (12 colors + fonts) with light/dark mode
+- Node role colors + packet type colors
+- Branding (site name, logo, favicon)
+- Home page content editor with markdown support
+- Auto-save to localStorage + admin JSON export
+- Colors restore on page load before any rendering
+
+### Known Bugs to Fix
+- Nav background sometimes doesn't repaint (gradient caching)
+- Some pages may flash default colors before customization applies
+- Color picker dragging can still feel sluggish on complex pages
+- Reset preview may not fully restore all derived variables
+
+### Next Round: Phase 2
+- **Click-to-identify**: Click any UI element → customizer scrolls to the setting that controls it (like DevTools inspect but for theme colors)
+- **Theme presets**: Built-in themes (Default, Cascadia Navy, Forest Green, Midnight) — one-click switch
+- **Import config**: Paste JSON to load a theme (reverse of export)
+- **Preview home page changes live** without navigating away
+- Fix remaining 8 hardcoded colors from audit (nav stats, trace labels, rec-dot)
+- Hex viewer color customization (Advanced section)
+
+### Architecture Notes
+- `customize.js` MUST load right after `roles.js`, before `app.js` — color restore timing is critical
+- `syncBadgeColors()` in roles.js is the single source for badge CSS
+- `ROLE_STYLE[role].color` must be updated alongside `ROLE_COLORS[role]`
+- Auto-save debounced 500ms, theme-refresh debounced 300ms
+
 ## Problem
 
 Regional mesh admins (e.g. CascadiaMesh) fork the analyzer and manually edit CSS/HTML to customize branding, colors, and content. This is fragile — every upstream update requires re-applying customizations.
