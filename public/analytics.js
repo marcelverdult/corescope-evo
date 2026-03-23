@@ -6,6 +6,14 @@
   const sf = (v, d) => (v != null ? v.toFixed(d) : '–'); // safe toFixed
   function esc(s) { return s ? String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') : ''; }
 
+  // --- Status color helpers (read from CSS variables for theme support) ---
+  function cssVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+  function statusGreen() { return cssVar('--status-green') || '#22c55e'; }
+  function statusYellow() { return cssVar('--status-yellow') || '#eab308'; }
+  function statusRed() { return cssVar('--status-red') || '#ef4444'; }
+  function accentColor() { return cssVar('--accent') || '#4a9eff'; }
+  function snrColor(snr) { return snr > 6 ? statusGreen() : snr > 0 ? statusYellow() : statusRed(); }
+
   // --- SVG helpers ---
   function sparkSvg(data, color, w = 120, h = 32) {
     if (!data.length) return '';
@@ -247,8 +255,8 @@
 
   // ===================== RF / SIGNAL =====================
   function renderRF(el, rf) {
-    const snrHist = histogram(rf.snrValues, 20, '#22c55e');
-    const rssiHist = histogram(rf.rssiValues, 20, '#3b82f6');
+    const snrHist = histogram(rf.snrValues, 20, statusGreen());
+    const rssiHist = histogram(rf.rssiValues, 20, accentColor());
 
     el.innerHTML = `
       <div class="analytics-row">
@@ -329,20 +337,21 @@
       svg += `<text x="${pad-4}" y="${y+3}" text-anchor="end" font-size="9" fill="var(--text-muted)">${rssi}</text>`;
     }
     // Quality zones
+    const _sg = statusGreen(), _sy = statusYellow(), _sr = statusRed();
     const zones = [
-      { label: 'Excellent', snr: [6, 15], rssi: [-80, -5], color: '#22c55e20' },
-      { label: 'Good', snr: [0, 6], rssi: [-100, -80], color: '#f59e0b15' },
-      { label: 'Weak', snr: [-12, 0], rssi: [-130, -100], color: '#ef444410' },
+      { label: 'Excellent', snr: [6, 15], rssi: [-80, -5], color: _sg + '20' },
+      { label: 'Good', snr: [0, 6], rssi: [-100, -80], color: _sy + '15' },
+      { label: 'Weak', snr: [-12, 0], rssi: [-130, -100], color: _sr + '10' },
     ];
     // Define patterns for color-blind accessibility
     svg += `<defs>`;
-    svg += `<pattern id="pat-excellent" patternUnits="userSpaceOnUse" width="8" height="8"><line x1="0" y1="8" x2="8" y2="0" stroke="#22c55e" stroke-width="0.5" opacity="0.4"/></pattern>`;
-    svg += `<pattern id="pat-good" patternUnits="userSpaceOnUse" width="6" height="6"><circle cx="3" cy="3" r="1" fill="#f59e0b" opacity="0.4"/></pattern>`;
-    svg += `<pattern id="pat-weak" patternUnits="userSpaceOnUse" width="8" height="8"><line x1="0" y1="0" x2="8" y2="8" stroke="#ef4444" stroke-width="0.5" opacity="0.4"/><line x1="0" y1="8" x2="8" y2="0" stroke="#ef4444" stroke-width="0.5" opacity="0.4"/></pattern>`;
+    svg += `<pattern id="pat-excellent" patternUnits="userSpaceOnUse" width="8" height="8"><line x1="0" y1="8" x2="8" y2="0" stroke="${_sg}" stroke-width="0.5" opacity="0.4"/></pattern>`;
+    svg += `<pattern id="pat-good" patternUnits="userSpaceOnUse" width="6" height="6"><circle cx="3" cy="3" r="1" fill="${_sy}" opacity="0.4"/></pattern>`;
+    svg += `<pattern id="pat-weak" patternUnits="userSpaceOnUse" width="8" height="8"><line x1="0" y1="0" x2="8" y2="8" stroke="${_sr}" stroke-width="0.5" opacity="0.4"/><line x1="0" y1="8" x2="8" y2="0" stroke="${_sr}" stroke-width="0.5" opacity="0.4"/></pattern>`;
     svg += `</defs>`;
     const zonePatterns = { 'Excellent': 'pat-excellent', 'Good': 'pat-good', 'Weak': 'pat-weak' };
     const zoneDash = { 'Excellent': '4,2', 'Good': '6,3', 'Weak': '2,2' };
-    const zoneBorder = { 'Excellent': '#22c55e', 'Good': '#f59e0b', 'Weak': '#ef4444' };
+    const zoneBorder = { 'Excellent': _sg, 'Good': _sy, 'Weak': _sr };
     zones.forEach(z => {
       const x1 = pad + (z.snr[0] - snrMin) / (snrMax - snrMin) * (w - pad * 2);
       const x2 = pad + (z.snr[1] - snrMin) / (snrMax - snrMin) * (w - pad * 2);
@@ -369,7 +378,7 @@
     let html = '<table class="analytics-table"><thead><tr><th>Type</th><th>Packets</th><th>Avg SNR</th><th>Min</th><th>Max</th><th>Distribution</th></tr></thead><tbody>';
     snrByType.forEach(t => {
       const barPct = Math.max(((t.avg - (-12)) / 27) * 100, 2);
-      const color = t.avg > 6 ? '#22c55e' : t.avg > 0 ? '#f59e0b' : '#ef4444';
+      const color = t.avg > 6 ? statusGreen() : t.avg > 0 ? statusYellow() : statusRed();
       html += `<tr>
         <td><strong>${t.name}</strong></td>
         <td>${t.count}</td>
@@ -392,7 +401,7 @@
       const y = h - pad - ((d.avgSnr + 12) / 27) * (h - pad * 2);
       return `${x},${y}`;
     }).join(' ');
-    svg += `<polyline points="${snrPts}" fill="none" stroke="#22c55e" stroke-width="2"/>`;
+    svg += `<polyline points="${snrPts}" fill="none" stroke="${statusGreen()}" stroke-width="2"/>`;
     // Packet count as area
     const areaPts = data.map((d, i) => {
       const x = pad + i * ((w - pad * 2) / Math.max(data.length - 1, 1));
@@ -411,7 +420,7 @@
       svg += `<text x="${x}" y="${h-pad+14}" text-anchor="middle" font-size="9" fill="var(--text-muted)">${data[i].hour.slice(11)}h</text>`;
     }
     svg += '</svg>';
-    svg += `<div class="timeline-legend"><span><span class="legend-dot" style="background:#22c55e"></span>Avg SNR</span><span><span class="legend-dot" style="background:var(--accent);opacity:0.3"></span>Volume</span></div>`;
+    svg += `<div class="timeline-legend"><span><span class="legend-dot" style="background:${statusGreen()}"></span>Avg SNR</span><span><span class="legend-dot" style="background:var(--accent);opacity:0.3"></span>Volume</span></div>`;
     return svg;
   }
 
@@ -526,7 +535,7 @@
       const x = pad + (d.hops / maxHop) * (w - pad * 2);
       const y = h - pad - ((d.avgSnr + 12) / 27) * (h - pad * 2);
       const r = Math.min(Math.sqrt(d.count) * 1.5, 12);
-      const color = d.avgSnr > 6 ? '#22c55e' : d.avgSnr > 0 ? '#f59e0b' : '#ef4444';
+      const color = d.avgSnr > 6 ? statusGreen() : d.avgSnr > 0 ? statusYellow() : statusRed();
       svg += `<circle cx="${x}" cy="${y}" r="${r}" fill="${color}" opacity="0.6"/>`;
       svg += `<text x="${x}" y="${y-r-3}" text-anchor="middle" font-size="9" fill="var(--text-muted)">${d.hops}h</text>`;
     });
@@ -927,13 +936,13 @@
         <tbody>${collisions.map(c => {
           let badge, tooltip;
           if (c.classification === 'local') {
-            badge = '<span class="badge" style="background:#22c55e;color:#fff" title="All nodes within 50km — likely true collision, same RF neighborhood">🏘️ Local</span>';
+            badge = '<span class="badge" style="background:var(--status-green);color:#fff" title="All nodes within 50km — likely true collision, same RF neighborhood">🏘️ Local</span>';
             tooltip = 'Nodes close enough for direct RF — probably genuine prefix collision';
           } else if (c.classification === 'regional') {
-            badge = '<span class="badge" style="background:#f59e0b;color:#fff" title="Nodes 50–200km apart — edge of LoRa range, could be atmospheric">⚡ Regional</span>';
+            badge = '<span class="badge" style="background:var(--status-yellow);color:#fff" title="Nodes 50–200km apart — edge of LoRa range, could be atmospheric">⚡ Regional</span>';
             tooltip = 'At edge of 915MHz range — could indicate atmospheric ducting or hilltop-to-hilltop links';
           } else if (c.classification === 'distant') {
-            badge = '<span class="badge" style="background:#ef4444;color:#fff" title="Nodes >200km apart — beyond typical 915MHz range">🌐 Distant</span>';
+            badge = '<span class="badge" style="background:var(--status-red);color:#fff" title="Nodes >200km apart — beyond typical 915MHz range">🌐 Distant</span>';
             tooltip = 'Beyond typical LoRa range — likely internet bridging, MQTT gateway, or separate mesh networks sharing prefix';
           } else {
             badge = '<span class="badge" style="background:#6b7280;color:#fff">❓ Unknown</span>';
@@ -993,7 +1002,7 @@
               <td>${routeDisplay}${hasSelfLoop ? ' <span title="Contains self-loop — likely 1-byte prefix collision" style="cursor:help">🔄</span>' : ''}<br><span class="hop-prefix mono">${esc(prefixDisplay)}</span></td>
               <td>${s.count.toLocaleString()}</td>
               <td>${s.pct}%</td>
-              <td><div style="background:${hasSelfLoop ? '#f59e0b' : 'var(--accent,#3b82f6)'};height:14px;border-radius:3px;width:${barW}%;opacity:0.7"></div></td>
+              <td><div style="background:${hasSelfLoop ? 'var(--status-yellow)' : 'var(--accent)'};height:14px;border-radius:3px;width:${barW}%;opacity:0.7"></div></td>
             </tr>`;
           }).join('')}
           </tbody></table>`;
@@ -1093,7 +1102,7 @@
                 const dLon = (a.lon - b.lon) * 85;
                 const km = Math.sqrt(dLat*dLat + dLon*dLon);
                 total += km;
-                const cls = km > 200 ? 'color:#ef4444;font-weight:bold' : km > 50 ? 'color:#f59e0b' : 'color:#22c55e';
+                const cls = km > 200 ? 'color:var(--status-red);font-weight:bold' : km > 50 ? 'color:var(--status-yellow)' : 'color:var(--status-green)';
                 dists.push(`<div style="padding:2px 0"><span style="${cls}">${km < 1 ? (km*1000).toFixed(0)+'m' : km.toFixed(1)+'km'}</span> <span class="text-muted">${esc(a.name)} → ${esc(b.name)}</span></div>`);
               } else {
                 dists.push(`<div style="padding:2px 0"><span class="text-muted">? ${esc(a.name)} → ${esc(b.name)} (no coords)</span></div>`);
@@ -1155,13 +1164,13 @@
         const isEnd = i === 0 || i === nodesWithLoc.length - 1;
         L.circleMarker(ll, {
           radius: isEnd ? 8 : 5,
-          color: isEnd ? (i === 0 ? '#22c55e' : '#ef4444') : '#f59e0b',
-          fillColor: isEnd ? (i === 0 ? '#22c55e' : '#ef4444') : '#f59e0b',
+          color: isEnd ? (i === 0 ? statusGreen() : statusRed()) : statusYellow(),
+          fillColor: isEnd ? (i === 0 ? statusGreen() : statusRed()) : statusYellow(),
           fillOpacity: 0.9, weight: 2
         }).bindTooltip(n.name, { permanent: false }).addTo(map);
       });
 
-      L.polyline(latlngs, { color: '#f59e0b', weight: 3, dashArray: '8,6', opacity: 0.8 }).addTo(map);
+      L.polyline(latlngs, { color: statusYellow(), weight: 3, dashArray: '8,6', opacity: 0.8 }).addTo(map);
       map.fitBounds(L.latLngBounds(latlngs).pad(0.3));
     }
   }
@@ -1207,15 +1216,15 @@
           <h3>🔍 Network Status</h3>
           <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:20px">
             <div class="analytics-stat-card" style="flex:1;min-width:120px;text-align:center;padding:16px;background:var(--card-bg);border:1px solid var(--border);border-radius:8px">
-              <div style="font-size:28px;font-weight:700;color:#22c55e">${active}</div>
+              <div style="font-size:28px;font-weight:700;color:var(--status-green)">${active}</div>
               <div style="font-size:11px;text-transform:uppercase;color:var(--text-muted)">🟢 Active</div>
             </div>
             <div class="analytics-stat-card" style="flex:1;min-width:120px;text-align:center;padding:16px;background:var(--card-bg);border:1px solid var(--border);border-radius:8px">
-              <div style="font-size:28px;font-weight:700;color:#eab308">${degraded}</div>
+              <div style="font-size:28px;font-weight:700;color:var(--status-yellow)">${degraded}</div>
               <div style="font-size:11px;text-transform:uppercase;color:var(--text-muted)">🟡 Degraded</div>
             </div>
             <div class="analytics-stat-card" style="flex:1;min-width:120px;text-align:center;padding:16px;background:var(--card-bg);border:1px solid var(--border);border-radius:8px">
-              <div style="font-size:28px;font-weight:700;color:#ef4444">${silent}</div>
+              <div style="font-size:28px;font-weight:700;color:var(--status-red)">${silent}</div>
               <div style="font-size:11px;text-transform:uppercase;color:var(--text-muted)">🔴 Silent</div>
             </div>
             <div class="analytics-stat-card" style="flex:1;min-width:120px;text-align:center;padding:16px;background:var(--card-bg);border:1px solid var(--border);border-radius:8px">
@@ -1340,7 +1349,7 @@
       if (data.distHistogram && data.distHistogram.bins) {
         const buckets = data.distHistogram.bins.map(b => b.count);
         const labels = data.distHistogram.bins.map(b => b.x.toFixed(1));
-        html += `<div class="analytics-section"><h3>Hop Distance Distribution</h3>${barChart(buckets, labels, '#22c55e')}</div>`;
+        html += `<div class="analytics-section"><h3>Hop Distance Distribution</h3>${barChart(buckets, labels, statusGreen())}</div>`;
       }
 
       // Distance over time

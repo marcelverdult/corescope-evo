@@ -1,6 +1,10 @@
 (function() {
   'use strict';
 
+  // Status color helpers (read from CSS variables for theme support)
+  function cssVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+  function statusGreen() { return cssVar('--status-green') || '#22c55e'; }
+
   let map, ws, nodesLayer, pathsLayer, animLayer, heatLayer;
   let nodeMarkers = {};
   let nodeData = {};
@@ -348,7 +352,7 @@
     const hh = String(d.getHours()).padStart(2, '0');
     const mm = String(d.getMinutes()).padStart(2, '0');
     const ss = String(d.getSeconds()).padStart(2, '0');
-    drawLcdText(`${hh}:${mm}:${ss}`, '#4ade80');
+    drawLcdText(`${hh}:${mm}:${ss}`, statusGreen());
   }
 
   function updateVCRLcd() {
@@ -644,11 +648,11 @@
         <div class="live-overlay live-legend" id="liveLegend" role="region" aria-label="Map legend">
           <h3 class="legend-title">PACKET TYPES</h3>
           <ul class="legend-list">
-            <li><span class="live-dot" style="background:#22c55e" aria-hidden="true"></span> Advert — Node advertisement</li>
-            <li><span class="live-dot" style="background:#3b82f6" aria-hidden="true"></span> Message — Group text</li>
-            <li><span class="live-dot" style="background:#f59e0b" aria-hidden="true"></span> Direct — Direct message</li>
-            <li><span class="live-dot" style="background:#a855f7" aria-hidden="true"></span> Request — Data request</li>
-            <li><span class="live-dot" style="background:#ec4899" aria-hidden="true"></span> Trace — Route trace</li>
+            <li><span class="live-dot" style="background:${TYPE_COLORS.ADVERT}" aria-hidden="true"></span> Advert — Node advertisement</li>
+            <li><span class="live-dot" style="background:${TYPE_COLORS.GRP_TXT}" aria-hidden="true"></span> Message — Group text</li>
+            <li><span class="live-dot" style="background:${TYPE_COLORS.TXT_MSG}" aria-hidden="true"></span> Direct — Direct message</li>
+            <li><span class="live-dot" style="background:${TYPE_COLORS.REQUEST}" aria-hidden="true"></span> Request — Data request</li>
+            <li><span class="live-dot" style="background:${TYPE_COLORS.TRACE}" aria-hidden="true"></span> Trace — Route trace</li>
           </ul>
           <h3 class="legend-title" style="margin-top:8px">NODE ROLES</h3>
           <ul class="legend-list" id="roleLegendList"></ul>

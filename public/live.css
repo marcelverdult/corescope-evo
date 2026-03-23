@@ -50,7 +50,7 @@
 .live-beacon {
   width: 8px;
   height: 8px;
-  background: #ef4444;
+  background: var(--status-red);
   border-radius: 50%;
   display: inline-block;
   animation: beaconPulse 1.5s ease-in-out infinite;
@@ -541,7 +541,7 @@
 }
 .vcr-lcd-mode {
   font-size: 0.65rem;
-  color: #4ade80;
+  color: var(--status-green);
   text-shadow: 0 0 6px rgba(74, 222, 128, 0.6);
   font-weight: 700;
 }
