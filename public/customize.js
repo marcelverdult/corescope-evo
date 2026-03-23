@@ -257,7 +257,11 @@
     if (_autoSaveTimer) clearTimeout(_autoSaveTimer);
     _autoSaveTimer = setTimeout(function() {
       _autoSaveTimer = null;
-      try { localStorage.setItem('meshcore-user-theme', JSON.stringify(buildExport())); } catch {}
+      try {
+        var data = buildExport();
+        console.log('[customize] autoSave:', Object.keys(data), data.nodeColors, data.typeColors);
+        localStorage.setItem('meshcore-user-theme', JSON.stringify(data));
+      } catch (e) { console.error('[customize] autoSave error:', e); }
     }, 500);
   }
 
@@ -906,6 +910,7 @@
           }
         }
         if (userTheme.nodeColors) {
+          console.log('[customize] restore nodeColors:', userTheme.nodeColors);
           if (window.ROLE_COLORS) Object.assign(window.ROLE_COLORS, userTheme.nodeColors);
           if (window.ROLE_STYLE) {
             for (const [role, color] of Object.entries(userTheme.nodeColors)) {
