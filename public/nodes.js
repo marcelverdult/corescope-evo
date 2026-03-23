@@ -120,7 +120,7 @@
         ${hasLoc ? `<div id="nodeFullMap" class="node-detail-map" style="border-radius:8px;overflow:hidden;margin-bottom:16px"></div>` : ''}
         <div class="node-full-card">
           <div class="node-detail-name" style="font-size:20px">${escapeHtml(n.name || '(unnamed)')}</div>
-          <div style="margin:6px 0 12px"><span class="badge" style="background:${roleColor}20;color:${roleColor}">${n.role}</span> ${statusLabel}</div>
+          <div style="margin:6px 0 12px"><span class="badge" style="background:${roleColor}20;color:${roleColor}">${n.role}</span> ${n.hash_size ? `<span class="badge" style="background:var(--nav-bg);color:var(--nav-text);font-family:var(--mono)">${n.hash_size}-byte hash</span>` : ''} ${statusLabel}</div>
           <div class="node-detail-key mono" style="font-size:11px;word-break:break-all;margin-bottom:8px">${n.public_key}</div>
           <div style="margin-bottom:12px">
             <button class="btn-primary" id="copyUrlBtn" style="font-size:12px;padding:4px 10px">📋 Copy URL</button>
@@ -139,6 +139,7 @@
             ${stats.avgSnr != null ? `<dt>Avg SNR</dt><dd>${stats.avgSnr.toFixed(1)} dB</dd>` : ''}
             ${stats.avgHops ? `<dt>Avg Hops</dt><dd>${stats.avgHops}</dd>` : ''}
             ${hasLoc ? `<dt>Location</dt><dd>${n.lat.toFixed(5)}, ${n.lon.toFixed(5)}</dd>` : ''}
+            <dt>Hash Size</dt><dd>${n.hash_size ? n.hash_size + '-byte (' + (n.hash_size * 2) + ' hex chars)' : 'Unknown'}</dd>
           </dl>
         </div>
 
@@ -500,8 +501,8 @@
       <div class="node-detail">
         ${hasLoc ? `<div class="node-map-container node-detail-map" id="nodeMap" style="border-radius:8px;overflow:hidden;"></div>` : ''}
         <div class="node-detail-name">${escapeHtml(n.name || '(unnamed)')}</div>
-        <div class="node-detail-role"><span class="badge" style="background:${roleColor}20;color:${roleColor}">${n.role}</span> ${statusLabel}
-          <button class="btn-primary" id="copyUrlBtn" style="font-size:11px;padding:2px 8px;margin-left:8px">📋 URL</button>
+        <div class="node-detail-role"><span class="badge" style="background:${roleColor}20;color:${roleColor}">${n.role}</span> ${n.hash_size ? `<span class="badge" style="background:var(--nav-bg);color:var(--nav-text);font-family:var(--mono)">${n.hash_size}-byte hash</span>` : ''} ${statusLabel}
+          <a href="#/nodes/${encodeURIComponent(n.public_key)}" class="btn-primary" style="display:inline-block;text-decoration:none;font-size:11px;padding:2px 8px;margin-left:8px">🔍 Details</a>
           <a href="#/nodes/${encodeURIComponent(n.public_key)}/analytics" class="btn-primary" style="display:inline-block;margin-left:4px;text-decoration:none;font-size:11px;padding:2px 8px">📊 Analytics</a>
         </div>
 
@@ -592,15 +593,6 @@
         if (svg) { svg.style.display = 'block'; svg.style.margin = '0 auto'; }
       } catch {}
     }
-
-    // Copy URL
-    document.getElementById('copyUrlBtn').addEventListener('click', () => {
-      navigator.clipboard.writeText(nodeUrl).then(() => {
-        const btn = document.getElementById('copyUrlBtn');
-        btn.textContent = '✅ Copied!';
-        setTimeout(() => btn.textContent = '📋 Copy URL', 2000);
-      }).catch(() => {});
-    });
 
     // Fetch paths through this node
     api('/nodes/' + encodeURIComponent(n.public_key) + '/paths', { ttl: CLIENT_TTL.nodeDetail }).then(pathData => {
