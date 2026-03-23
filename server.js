@@ -427,16 +427,7 @@ app.get('/api/config/theme', (req, res) => {
   });
 });
 
-app.post('/api/config/theme', express.json(), (req, res) => {
-  try {
-    const data = req.body;
-    if (!data || typeof data !== 'object') return res.status(400).json({ error: 'Invalid JSON' });
-    fs.writeFileSync(THEME_PATH, JSON.stringify(data, null, 2), 'utf8');
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
+
 
 app.get('/api/config/map', (req, res) => {
   const defaults = config.mapDefaults || {};

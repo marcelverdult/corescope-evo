@@ -597,17 +597,13 @@
         (hasUserTheme ? '<button class="cust-reset-user" id="custResetUser">🗑️ Reset my theme</button>' : '') +
       '</div>' +
       '<hr style="border:none;border-top:1px solid var(--border);margin:16px 0">' +
-      '<p class="cust-section-title">Admin — Server Theme</p>' +
-      '<p style="font-size:12px;color:var(--text-muted);margin-bottom:8px">Save/load the theme on the server. Applies to all users who haven\'t set their own.</p>' +
+      '<p class="cust-section-title">Admin</p>' +
+      '<p style="font-size:12px;color:var(--text-muted);margin-bottom:8px">Download or import a theme file. Admins place it as <code>theme.json</code> next to the server.</p>' +
       '<div class="cust-export-btns" style="margin-bottom:12px">' +
-        '<button class="cust-save-user" id="custSaveServer">📡 Save to Server</button>' +
-        '<button class="cust-dl-btn" id="custLoadServer">📥 Load from Server</button>' +
+        '<button class="cust-dl-btn" id="custDownload">💾 Download theme.json</button>' +
         '<button class="cust-dl-btn" id="custImportFile">📂 Import File</button>' +
         '<input type="file" id="custImportInput" accept=".json,application/json" style="display:none">' +
-      '</div>' +
-      '<div class="cust-export-btns">' +
         '<button class="cust-copy-btn" id="custCopy">📋 Copy</button>' +
-        '<button class="cust-dl-btn" id="custDownload">💾 Download</button>' +
       '</div>' +
       '<details style="margin-top:8px"><summary style="font-size:12px;font-weight:600;cursor:pointer;color:var(--text-muted)">Raw JSON</summary>' +
       '<textarea class="cust-export-area" id="custExportJson" style="margin-top:8px">' + esc(json) + '</textarea>' +
@@ -868,44 +864,7 @@
       applyThemePreview(); autoSave();
     });
 
-    // Save to server
-    var saveServerBtn = document.getElementById('custSaveServer');
-    if (saveServerBtn) saveServerBtn.addEventListener('click', function () {
-      var data = buildExport();
-      fetch('/api/config/theme', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
-      }).then(function (r) {
-        if (!r.ok) throw new Error('Server returned ' + r.status);
-        return r.json();
-      }).then(function () {
-        saveServerBtn.textContent = '✓ Saved to server!';
-        setTimeout(function () { saveServerBtn.textContent = '📡 Save to Server'; }, 2000);
-      }).catch(function (e) {
-        saveServerBtn.textContent = '✕ Failed: ' + e.message;
-        setTimeout(function () { saveServerBtn.textContent = '📡 Save to Server'; }, 3000);
-      });
-    });
-
-    // Load from server
-    var loadServerBtn = document.getElementById('custLoadServer');
-    if (loadServerBtn) loadServerBtn.addEventListener('click', function () {
-      fetch('/api/config/theme').then(function (r) { return r.json(); }).then(function (cfg) {
-        window.SITE_CONFIG = cfg;
-        resetPreview();
-        initState();
-        applyThemePreview();
-        render(container);
-        loadServerBtn.textContent = '✓ Loaded!';
-        setTimeout(function () { loadServerBtn.textContent = '📥 Load from Server'; }, 2000);
-      }).catch(function (e) {
-        loadServerBtn.textContent = '✕ Failed';
-        setTimeout(function () { loadServerBtn.textContent = '📥 Load from Server'; }, 3000);
-      });
-    });
-
-    // Import from file
+        // Import from file
     var importBtn = document.getElementById('custImportFile');
     var importInput = document.getElementById('custImportInput');
     if (importBtn && importInput) {
