@@ -20,6 +20,34 @@
     UNKNOWN: '#6b7280'
   };
 
+  // Badge CSS class name mapping
+  const TYPE_BADGE_MAP = {
+    ADVERT: 'advert', GRP_TXT: 'grp-txt', TXT_MSG: 'txt-msg', ACK: 'ack',
+    REQUEST: 'req', RESPONSE: 'response', TRACE: 'trace', PATH: 'path',
+    ANON_REQ: 'anon-req', UNKNOWN: 'unknown'
+  };
+
+  // Generate badge CSS from TYPE_COLORS — single source of truth
+  window.syncBadgeColors = function() {
+    var el = document.getElementById('type-color-badges');
+    if (!el) { el = document.createElement('style'); el.id = 'type-color-badges'; document.head.appendChild(el); }
+    var css = '';
+    for (var type in TYPE_BADGE_MAP) {
+      var color = window.TYPE_COLORS[type];
+      if (!color) continue;
+      var cls = TYPE_BADGE_MAP[type];
+      css += '.badge-' + cls + ' { background: ' + color + '20; color: ' + color + '; }\n';
+    }
+    el.textContent = css;
+  };
+
+  // Auto-sync on load
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', window.syncBadgeColors);
+  } else {
+    window.syncBadgeColors();
+  }
+
   window.ROLE_LABELS = {
     repeater: 'Repeaters', companion: 'Companions', room: 'Room Servers',
     sensor: 'Sensors', observer: 'Observers'

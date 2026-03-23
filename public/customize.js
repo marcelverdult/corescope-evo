@@ -237,28 +237,13 @@
       void nav.offsetHeight;
       nav.style.background = '';
     }
-    // Inject type color overrides for badges
-    applyTypeColorCSS();
+    // Sync badge CSS from TYPE_COLORS
+    if (window.syncBadgeColors) window.syncBadgeColors();
   }
 
-  let typeColorStyleEl = null;
   function applyTypeColorCSS() {
-    if (!typeColorStyleEl) {
-      typeColorStyleEl = document.createElement('style');
-      typeColorStyleEl.id = 'cust-type-colors';
-      document.head.appendChild(typeColorStyleEl);
-    }
-    var tc = state.typeColors || {};
-    var map = { ADVERT: 'advert', GRP_TXT: 'grp-txt', TXT_MSG: 'txt-msg', ACK: 'ack', REQUEST: 'req', RESPONSE: 'response', TRACE: 'trace', PATH: 'path' };
-    var css = '';
-    for (var type in map) {
-      if (tc[type]) {
-        var cls = map[type];
-        css += '.badge-' + cls + ' { background: ' + tc[type] + '22; color: ' + tc[type] + '; }\n';
-        css += '[data-theme="dark"] .badge-' + cls + ' { background: ' + tc[type] + '33; color: ' + tc[type] + '; }\n';
-      }
-    }
-    typeColorStyleEl.textContent = css;
+    // Now handled by syncBadgeColors in roles.js
+    if (window.syncBadgeColors) window.syncBadgeColors();
   }
 
   function resetPreview() {
