@@ -104,6 +104,18 @@
       renderTab(_currentTab);
     });
 
+    // Deep-link: #/analytics?tab=collisions
+    const hashParams = location.hash.split('?')[1] || '';
+    const urlTab = new URLSearchParams(hashParams).get('tab');
+    if (urlTab) {
+      const tabBtn = analyticsTabs.querySelector(`[data-tab="${urlTab}"]`);
+      if (tabBtn) {
+        analyticsTabs.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        tabBtn.classList.add('active');
+        _currentTab = urlTab;
+      }
+    }
+
     RegionFilter.init(document.getElementById('analyticsRegionFilter'));
     RegionFilter.onChange(function () { loadAnalytics(); });
 
