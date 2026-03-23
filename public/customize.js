@@ -189,18 +189,21 @@
 
   function initState() {
     const cfg = window.SITE_CONFIG || {};
+    // Merge: DEFAULTS → server config → localStorage saved values
+    var local = {};
+    try { var s = localStorage.getItem('meshcore-user-theme'); if (s) local = JSON.parse(s); } catch {}
     state = {
-      branding: Object.assign({}, DEFAULTS.branding, cfg.branding || {}),
-      theme: Object.assign({}, DEFAULTS.theme, cfg.theme || {}),
-      themeDark: Object.assign({}, DEFAULTS.themeDark, cfg.themeDark || {}),
-      nodeColors: Object.assign({}, DEFAULTS.nodeColors, cfg.nodeColors || {}),
-      typeColors: Object.assign({}, DEFAULTS.typeColors, cfg.typeColors || {}),
+      branding: Object.assign({}, DEFAULTS.branding, cfg.branding || {}, local.branding || {}),
+      theme: Object.assign({}, DEFAULTS.theme, cfg.theme || {}, local.theme || {}),
+      themeDark: Object.assign({}, DEFAULTS.themeDark, cfg.themeDark || {}, local.themeDark || {}),
+      nodeColors: Object.assign({}, DEFAULTS.nodeColors, cfg.nodeColors || {}, local.nodeColors || {}),
+      typeColors: Object.assign({}, DEFAULTS.typeColors, cfg.typeColors || {}, local.typeColors || {}),
       home: {
-        heroTitle: (cfg.home && cfg.home.heroTitle) || DEFAULTS.home.heroTitle,
-        heroSubtitle: (cfg.home && cfg.home.heroSubtitle) || DEFAULTS.home.heroSubtitle,
-        steps: deepClone((cfg.home && cfg.home.steps) || DEFAULTS.home.steps),
-        checklist: deepClone((cfg.home && cfg.home.checklist) || DEFAULTS.home.checklist),
-        footerLinks: deepClone((cfg.home && cfg.home.footerLinks) || DEFAULTS.home.footerLinks)
+        heroTitle: (local.home && local.home.heroTitle) || (cfg.home && cfg.home.heroTitle) || DEFAULTS.home.heroTitle,
+        heroSubtitle: (local.home && local.home.heroSubtitle) || (cfg.home && cfg.home.heroSubtitle) || DEFAULTS.home.heroSubtitle,
+        steps: deepClone((local.home && local.home.steps) || (cfg.home && cfg.home.steps) || DEFAULTS.home.steps),
+        checklist: deepClone((local.home && local.home.checklist) || (cfg.home && cfg.home.checklist) || DEFAULTS.home.checklist),
+        footerLinks: deepClone((local.home && local.home.footerLinks) || (cfg.home && cfg.home.footerLinks) || DEFAULTS.home.footerLinks)
       }
     };
   }
