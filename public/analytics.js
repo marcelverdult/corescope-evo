@@ -793,27 +793,27 @@
   async function renderCollisionTab(el, data) {
     el.innerHTML = `
       <nav id="hashIssuesToc" style="display:flex;gap:12px;margin-bottom:12px;font-size:13px;flex-wrap:wrap">
-        <a href="javascript:void(0)" onclick="document.getElementById('inconsistentHashSection').scrollIntoView({behavior:'smooth'})" style="color:var(--accent)">⚠️ Inconsistent Sizes</a>
+        <a href="#/analytics?tab=collisions&section=inconsistentHashSection" style="color:var(--accent)">⚠️ Inconsistent Sizes</a>
         <span style="color:var(--border)">|</span>
-        <a href="javascript:void(0)" onclick="document.getElementById('hashMatrixSection').scrollIntoView({behavior:'smooth'})" style="color:var(--accent)">🔢 Hash Matrix</a>
+        <a href="#/analytics?tab=collisions&section=hashMatrixSection" style="color:var(--accent)">🔢 Hash Matrix</a>
         <span style="color:var(--border)">|</span>
-        <a href="javascript:void(0)" onclick="document.getElementById('collisionRiskSection').scrollIntoView({behavior:'smooth'})" style="color:var(--accent)">💥 Collision Risk</a>
+        <a href="#/analytics?tab=collisions&section=collisionRiskSection" style="color:var(--accent)">💥 Collision Risk</a>
       </nav>
 
       <div class="analytics-card" id="inconsistentHashSection">
-        <div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0">⚠️ Inconsistent Hash Sizes</h3><a href="javascript:void(0)" onclick="document.getElementById('hashIssuesToc').scrollIntoView({behavior:'smooth'})" style="font-size:11px;color:var(--text-muted)">↑ top</a></div>
+        <div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0">⚠️ Inconsistent Hash Sizes</h3><a href="#/analytics?tab=collisions" style="font-size:11px;color:var(--text-muted)">↑ top</a></div>
         <p class="text-muted" style="margin:4px 0 8px;font-size:0.8em">Nodes sending adverts with varying hash sizes. Caused by a <a href="https://github.com/meshcore-dev/MeshCore/commit/fcfdc5f" target="_blank" style="color:var(--accent)">bug</a> where automatic adverts ignored the configured multibyte path setting. Fixed in <a href="https://github.com/meshcore-dev/MeshCore/releases/tag/repeater-v1.14.1" target="_blank" style="color:var(--accent)">repeater v1.14.1</a>.</p>
         <div id="inconsistentHashList"><div class="text-muted" style="padding:8px"><span class="spinner"></span> Loading…</div></div>
       </div>
 
       <div class="analytics-card" id="hashMatrixSection">
-        <div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0">🔢 1-Byte Hash Usage Matrix</h3><a href="javascript:void(0)" onclick="document.getElementById('hashIssuesToc').scrollIntoView({behavior:'smooth'})" style="font-size:11px;color:var(--text-muted)">↑ top</a></div>
+        <div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0">🔢 1-Byte Hash Usage Matrix</h3><a href="#/analytics?tab=collisions" style="font-size:11px;color:var(--text-muted)">↑ top</a></div>
         <p class="text-muted" style="margin:4px 0 8px;font-size:0.8em">Click a cell to see which nodes share that prefix. Green = available, yellow = taken, red = collision.</p>
         <div id="hashMatrix"></div>
       </div>
 
       <div class="analytics-card" id="collisionRiskSection">
-        <div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0">💥 1-Byte Collision Risk</h3><a href="javascript:void(0)" onclick="document.getElementById('hashIssuesToc').scrollIntoView({behavior:'smooth'})" style="font-size:11px;color:var(--text-muted)">↑ top</a></div>
+        <div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0">💥 1-Byte Collision Risk</h3><a href="#/analytics?tab=collisions" style="font-size:11px;color:var(--text-muted)">↑ top</a></div>
         <div id="collisionList"><div class="text-muted" style="padding:8px">Loading…</div></div>
       </div>
     `;
