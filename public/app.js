@@ -333,6 +333,43 @@ window.addEventListener('DOMContentLoaded', () => {
     document.documentElement.setAttribute('data-theme', theme);
     darkToggle.textContent = theme === 'dark' ? '🌙' : '☀️';
     localStorage.setItem('meshcore-theme', theme);
+    // Re-apply user theme CSS vars for the correct mode (light/dark)
+    reapplyUserThemeVars(theme === 'dark');
+  }
+  function reapplyUserThemeVars(dark) {
+    try {
+      var userTheme = JSON.parse(localStorage.getItem('meshcore-user-theme') || '{}');
+      if (!userTheme.theme && !userTheme.themeDark) {
+        // Fall back to server config
+        var cfg = window.SITE_CONFIG || {};
+        if (!cfg.theme && !cfg.themeDark) return;
+        userTheme = cfg;
+      }
+      var themeData = dark ? Object.assign({}, userTheme.theme || {}, userTheme.themeDark || {}) : (userTheme.theme || {});
+      if (!Object.keys(themeData).length) return;
+      var varMap = {
+        accent: '--accent', accentHover: '--accent-hover',
+        navBg: '--nav-bg', navBg2: '--nav-bg2', navText: '--nav-text', navTextMuted: '--nav-text-muted',
+        background: '--surface-0', text: '--text', textMuted: '--text-muted', border: '--border',
+        statusGreen: '--status-green', statusYellow: '--status-yellow', statusRed: '--status-red',
+        surface1: '--surface-1', surface2: '--surface-2', surface3: '--surface-3',
+        cardBg: '--card-bg', contentBg: '--content-bg', inputBg: '--input-bg',
+        rowStripe: '--row-stripe', rowHover: '--row-hover', detailBg: '--detail-bg',
+        selectedBg: '--selected-bg', sectionBg: '--section-bg',
+        font: '--font', mono: '--mono'
+      };
+      var root = document.documentElement.style;
+      for (var key in varMap) {
+        if (themeData[key]) root.setProperty(varMap[key], themeData[key]);
+      }
+      if (themeData.background) root.setProperty('--content-bg', themeData.contentBg || themeData.background);
+      if (themeData.surface1) root.setProperty('--card-bg', themeData.cardBg || themeData.surface1);
+      // Nav gradient
+      if (themeData.navBg) {
+        var nav = document.querySelector('.top-nav');
+        if (nav) { nav.style.background = ''; void nav.offsetHeight; }
+      }
+    } catch (e) { console.error('[theme] reapply error:', e); }
   }
   // On load: respect saved pref, else OS pref, else light
   if (savedTheme) {
@@ -507,7 +544,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // --- Theme Customization ---
   // Fetch theme config and apply branding/colors before first render
-  fetch('/api/config/theme').then(r => r.json()).then(cfg => {
+  fetch('/api/config/theme', { cache: 'no-store' }).then(r => r.json()).then(cfg => {
     window.SITE_CONFIG = cfg;
 
     // User's localStorage preferences take priority over server config
@@ -582,10 +619,10 @@ window.addEventListener('DOMContentLoaded', () => {
         if (favicon) favicon.href = cfg.branding.faviconUrl;
       }
     }
-  }).catch(() => { window.SITE_CONFIG = null; });
-
-  if (!location.hash || location.hash === '#/') location.hash = '#/home';
-  else navigate();
+  }).catch(() => { window.SITE_CONFIG = null; }).finally(() => {
+    if (!location.hash || location.hash === '#/') location.hash = '#/home';
+    else navigate();
+  });
 });
 
 /**
