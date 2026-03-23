@@ -81,7 +81,7 @@
             <button class="tab-btn" data-tab="topology">Topology</button>
             <button class="tab-btn" data-tab="channels">Channels</button>
             <button class="tab-btn" data-tab="hashsizes">Hash Stats</button>
-            <button class="tab-btn" data-tab="collisions">Hash Collisions</button>
+            <button class="tab-btn" data-tab="collisions">Hash Issues</button>
             <button class="tab-btn" data-tab="subpaths">Route Patterns</button>
             <button class="tab-btn" data-tab="nodes">Nodes</button>
             <button class="tab-btn" data-tab="distance">Distance</button>
@@ -772,6 +772,12 @@
 
   async function renderCollisionTab(el, data) {
     el.innerHTML = `
+      <div class="analytics-card" id="inconsistentHashSection">
+        <h3>⚠️ Inconsistent Hash Sizes</h3>
+        <p class="text-muted" style="margin:0 0 8px;font-size:0.8em">Nodes that have sent adverts with varying hash sizes — likely running firmware with a known bug (pre-1.14.1).</p>
+        <div id="inconsistentHashList"><div class="text-muted" style="padding:8px"><span class="spinner"></span> Loading…</div></div>
+      </div>
+
       <div class="analytics-card">
         <h3>1-Byte Hash Usage Matrix</h3>
         <p class="text-muted" style="margin:0 0 8px;font-size:0.8em">Click a cell to see which nodes share that prefix. Green = available, yellow = taken, red = collision.</p>
@@ -785,6 +791,33 @@
     `;
     let allNodes = [];
     try { const nd = await api('/nodes?limit=2000' + RegionFilter.regionQueryString(), { ttl: CLIENT_TTL.nodeList }); allNodes = nd.nodes || []; } catch {}
+
+    // Render inconsistent hash sizes
+    const inconsistent = allNodes.filter(n => n.hash_size_inconsistent);
+    const ihEl = document.getElementById('inconsistentHashList');
+    if (ihEl) {
+      if (!inconsistent.length) {
+        ihEl.innerHTML = '<div class="text-muted" style="padding:4px">✅ No inconsistencies detected — all nodes are reporting consistent hash sizes.</div>';
+      } else {
+        ihEl.innerHTML = `<table class="analytics-table">
+          <thead><tr><th>Node</th><th>Role</th><th>Current Hash</th><th>Sizes Seen</th><th>Status</th></tr></thead>
+          <tbody>${inconsistent.map(n => {
+            const roleColor = window.ROLE_COLORS?.[n.role] || '#6b7280';
+            const prefix = n.hash_size ? n.public_key.slice(0, n.hash_size * 2).toUpperCase() : '?';
+            const sizes = (n.hash_sizes_seen || []).map(s => s + 'B').join(', ');
+            return `<tr>
+              <td><a href="#/nodes/${encodeURIComponent(n.public_key)}?highlight=hashsize" style="font-weight:600">${esc(n.name || n.public_key.slice(0, 12))}</a></td>
+              <td><span class="badge" style="background:${roleColor}20;color:${roleColor}">${n.role}</span></td>
+              <td><code style="font-family:var(--mono);font-weight:700">${prefix}</code> (${n.hash_size || '?'}B)</td>
+              <td><span style="color:var(--status-yellow);font-weight:600">${sizes}</span></td>
+              <td><span class="badge" style="background:var(--status-yellow);color:#000;font-size:10px">⚠️ variable</span></td>
+            </tr>`;
+          }).join('')}</tbody>
+        </table>
+        <p class="text-muted" style="margin:8px 0 0;font-size:0.8em">${inconsistent.length} node${inconsistent.length > 1 ? 's' : ''} affected. Click a node name to see which adverts have different hash sizes.</p>`;
+      }
+    }
+
     renderHashMatrix(data.topHops, allNodes);
     renderCollisions(data.topHops, allNodes);
   }
