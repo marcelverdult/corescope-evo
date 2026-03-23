@@ -185,8 +185,9 @@
               if (n.hash_size_inconsistent && p.payload_type === 4 && p.raw_hex) {
                 const pb = parseInt(p.raw_hex.slice(2, 4), 16);
                 const hs = ((pb >> 6) & 0x3) + 1;
-                const isDefault = hs === n.hash_size;
-                hashSizeBadge = ` <span class="badge" style="background:${isDefault ? 'var(--surface-2)' : 'var(--status-yellow)'};color:${isDefault ? 'var(--text-muted)' : '#000'};font-size:9px;font-family:var(--mono)">${hs}B</span>`;
+                const hsColor = hs >= 3 ? '#16a34a' : hs === 2 ? '#86efac' : '#f97316';
+                const hsFg = hs === 2 ? '#064e3b' : '#fff';
+                hashSizeBadge = ` <span class="badge" style="background:${hsColor};color:${hsFg};font-size:9px;font-family:var(--mono)">${hs}B</span>`;
               }
               return `<div class="node-activity-item">
                 <span class="node-activity-time">${timeAgo(p.timestamp)}</span>
