@@ -891,38 +891,41 @@
     applyThemePreview(); autoSave();
   }
 
-  // Wire up toggle button
+  // Restore saved user theme IMMEDIATELY (before DOMContentLoaded, before map/app init)
+  // roles.js has already loaded ROLE_COLORS, ROLE_STYLE, TYPE_COLORS at this point
+  try {
+    const saved = localStorage.getItem('meshcore-user-theme');
+    if (saved) {
+      const userTheme = JSON.parse(saved);
+      const dark = document.documentElement.getAttribute('data-theme') === 'dark' ||
+        (document.documentElement.getAttribute('data-theme') !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      const themeData = dark ? (userTheme.themeDark || userTheme.theme) : userTheme.theme;
+      if (themeData) {
+        for (const [key, val] of Object.entries(themeData)) {
+          if (THEME_CSS_MAP[key]) document.documentElement.style.setProperty(THEME_CSS_MAP[key], val);
+        }
+        // Derived vars
+        if (themeData.background) document.documentElement.style.setProperty('--content-bg', themeData.background);
+        if (themeData.surface1) document.documentElement.style.setProperty('--card-bg', themeData.surface1);
+      }
+      if (userTheme.nodeColors) {
+        if (window.ROLE_COLORS) Object.assign(window.ROLE_COLORS, userTheme.nodeColors);
+        if (window.ROLE_STYLE) {
+          for (const [role, color] of Object.entries(userTheme.nodeColors)) {
+            if (window.ROLE_STYLE[role]) window.ROLE_STYLE[role].color = color;
+          }
+        }
+      }
+      if (userTheme.typeColors && window.TYPE_COLORS) {
+        Object.assign(window.TYPE_COLORS, userTheme.typeColors);
+        if (window.syncBadgeColors) window.syncBadgeColors();
+      }
+    }
+  } catch {}
+
+  // Wire up toggle button (needs DOM)
   document.addEventListener('DOMContentLoaded', () => {
     const btn = document.getElementById('customizeToggle');
     if (btn) btn.addEventListener('click', toggle);
-
-    // Auto-apply saved user theme from localStorage
-    try {
-      const saved = localStorage.getItem('meshcore-user-theme');
-      if (saved) {
-        const userTheme = JSON.parse(saved);
-        const dark = document.documentElement.getAttribute('data-theme') === 'dark' ||
-          (document.documentElement.getAttribute('data-theme') !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-        const themeData = dark ? (userTheme.themeDark || userTheme.theme) : userTheme.theme;
-        if (themeData) {
-          for (const [key, val] of Object.entries(themeData)) {
-            if (THEME_CSS_MAP[key]) document.documentElement.style.setProperty(THEME_CSS_MAP[key], val);
-          }
-        }
-        if (userTheme.nodeColors) {
-          console.log('[customize] restore nodeColors:', userTheme.nodeColors);
-          if (window.ROLE_COLORS) Object.assign(window.ROLE_COLORS, userTheme.nodeColors);
-          if (window.ROLE_STYLE) {
-            for (const [role, color] of Object.entries(userTheme.nodeColors)) {
-              if (window.ROLE_STYLE[role]) window.ROLE_STYLE[role].color = color;
-            }
-          }
-        }
-        if (userTheme.typeColors && window.TYPE_COLORS) {
-          Object.assign(window.TYPE_COLORS, userTheme.typeColors);
-          if (window.syncBadgeColors) window.syncBadgeColors();
-        }
-      }
-    } catch {}
   });
 })();
