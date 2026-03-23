@@ -298,11 +298,12 @@
       .cust-color-row .cust-reset-btn:hover { background: var(--surface-3); }
       .cust-node-dot { display: inline-block; width: 16px; height: 16px; border-radius: 50%; vertical-align: middle; }
       .cust-preview-img { max-width: 200px; max-height: 60px; margin-top: 6px; border-radius: 6px; border: 1px solid var(--border); }
-      .cust-list-item { display: flex; gap: 8px; align-items: flex-start; margin-bottom: 8px; padding: 8px;
+      .cust-list-item { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; padding: 8px;
         background: var(--surface-1); border: 1px solid var(--border); border-radius: 6px; }
-      .cust-list-item input { flex: 1; padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px;
-        font-size: 13px; background: var(--input-bg); color: var(--text); }
-      .cust-list-item .cust-emoji-input { max-width: 50px; text-align: center; }
+      .cust-list-row { display: flex; gap: 6px; align-items: center; }
+      .cust-list-item input { flex: 1; padding: 5px 8px; border: 1px solid var(--border); border-radius: 4px;
+        font-size: 12px; background: var(--input-bg); color: var(--text); min-width: 0; }
+      .cust-list-item .cust-emoji-input { max-width: 40px; text-align: center; flex: 0 0 40px; }
       .cust-list-btn { padding: 4px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-2);
         color: var(--text-muted); cursor: pointer; font-size: 12px; }
       .cust-list-btn:hover { background: var(--surface-3); }
@@ -452,28 +453,34 @@
     var h = state.home;
     var stepsHtml = h.steps.map(function (s, i) {
       return '<div class="cust-list-item" data-step="' + i + '">' +
-        '<input class="cust-emoji-input" data-step-field="emoji" data-idx="' + i + '" value="' + escAttr(s.emoji) + '" placeholder="📡">' +
-        '<input data-step-field="title" data-idx="' + i + '" value="' + escAttr(s.title) + '" placeholder="Title">' +
-        '<input data-step-field="description" data-idx="' + i + '" value="' + escAttr(s.description) + '" placeholder="Description" style="flex:2">' +
-        '<button class="cust-list-btn" data-move-step="' + i + '" data-dir="up" title="Move up">↑</button>' +
-        '<button class="cust-list-btn" data-move-step="' + i + '" data-dir="down" title="Move down">↓</button>' +
-        '<button class="cust-list-btn danger" data-rm-step="' + i + '" title="Remove">✕</button>' +
+        '<div class="cust-list-row">' +
+          '<input class="cust-emoji-input" data-step-field="emoji" data-idx="' + i + '" value="' + escAttr(s.emoji) + '" placeholder="📡">' +
+          '<input data-step-field="title" data-idx="' + i + '" value="' + escAttr(s.title) + '" placeholder="Title">' +
+          '<button class="cust-list-btn" data-move-step="' + i + '" data-dir="up" title="Move up">↑</button>' +
+          '<button class="cust-list-btn" data-move-step="' + i + '" data-dir="down" title="Move down">↓</button>' +
+          '<button class="cust-list-btn danger" data-rm-step="' + i + '" title="Remove">✕</button>' +
+        '</div>' +
+        '<input data-step-field="description" data-idx="' + i + '" value="' + escAttr(s.description) + '" placeholder="Description">' +
       '</div>';
     }).join('');
 
     var checkHtml = h.checklist.map(function (c, i) {
       return '<div class="cust-list-item" data-check="' + i + '">' +
-        '<input data-check-field="question" data-idx="' + i + '" value="' + escAttr(c.question) + '" placeholder="Question">' +
-        '<input data-check-field="answer" data-idx="' + i + '" value="' + escAttr(c.answer) + '" placeholder="Answer" style="flex:2">' +
-        '<button class="cust-list-btn danger" data-rm-check="' + i + '" title="Remove">✕</button>' +
+        '<div class="cust-list-row">' +
+          '<input data-check-field="question" data-idx="' + i + '" value="' + escAttr(c.question) + '" placeholder="Question">' +
+          '<button class="cust-list-btn danger" data-rm-check="' + i + '" title="Remove">✕</button>' +
+        '</div>' +
+        '<input data-check-field="answer" data-idx="' + i + '" value="' + escAttr(c.answer) + '" placeholder="Answer">' +
       '</div>';
     }).join('');
 
     var linksHtml = h.footerLinks.map(function (l, i) {
       return '<div class="cust-list-item" data-link="' + i + '">' +
-        '<input data-link-field="label" data-idx="' + i + '" value="' + escAttr(l.label) + '" placeholder="Label">' +
-        '<input data-link-field="url" data-idx="' + i + '" value="' + escAttr(l.url) + '" placeholder="URL" style="flex:2">' +
-        '<button class="cust-list-btn danger" data-rm-link="' + i + '" title="Remove">✕</button>' +
+        '<div class="cust-list-row">' +
+          '<input data-link-field="label" data-idx="' + i + '" value="' + escAttr(l.label) + '" placeholder="Label">' +
+          '<button class="cust-list-btn danger" data-rm-link="' + i + '" title="Remove">✕</button>' +
+        '</div>' +
+        '<input data-link-field="url" data-idx="' + i + '" value="' + escAttr(l.url) + '" placeholder="URL">' +
       '</div>';
     }).join('');
 
