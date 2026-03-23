@@ -7,7 +7,18 @@ const { WebSocketServer } = require('ws');
 const mqtt = require('mqtt');
 const path = require('path');
 const fs = require('fs');
-const config = require('./config.json');
+// Config: checks data/ dir first (Docker volume), then app dir
+const CONFIG_PATHS = [
+  path.join(__dirname, 'data', 'config.json'),
+  path.join(__dirname, 'config.json')
+];
+function loadConfigFile() {
+  for (const p of CONFIG_PATHS) {
+    try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch {}
+  }
+  return {};
+}
+const config = loadConfigFile();
 const decoder = require('./decoder');
 const PAYLOAD_TYPES = decoder.PAYLOAD_TYPES;
 const { nodeNearRegion, IATA_COORDS } = require('./iata-coords');
@@ -383,19 +394,26 @@ function getObserverIdsForRegions(regionParam) {
   return ids;
 }
 
-// Theme: load from separate theme.json (falls back to config.json keys for compat)
-const THEME_PATH = path.join(__dirname, 'theme.json');
+// Theme: hot-load from theme.json (checks data dir first, then app dir)
+const THEME_PATHS = [
+  path.join(__dirname, 'data', 'theme.json'),
+  path.join(__dirname, 'theme.json')
+];
 function loadThemeFile() {
-  try { return JSON.parse(fs.readFileSync(THEME_PATH, 'utf8')); } catch { return {}; }
+  for (const p of THEME_PATHS) {
+    try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch {}
+  }
+  return {};
 }
 
 app.get('/api/config/theme', (req, res) => {
+  const cfg = loadConfigFile();
   const theme = loadThemeFile();
   res.json({
     branding: {
       siteName: 'MeshCore Analyzer',
       tagline: 'Real-time MeshCore LoRa mesh network analyzer',
-      ...(config.branding || {}),
+      ...(cfg.branding || {}),
       ...(theme.branding || {})
     },
     theme: {
@@ -403,11 +421,11 @@ app.get('/api/config/theme', (req, res) => {
       accentHover: '#6db3ff',
       navBg: '#0f0f23',
       navBg2: '#1a1a2e',
-      ...(config.theme || {}),
+      ...(cfg.theme || {}),
       ...(theme.theme || {})
     },
     themeDark: {
-      ...(config.themeDark || {}),
+      ...(cfg.themeDark || {}),
       ...(theme.themeDark || {})
     },
     nodeColors: {
@@ -416,14 +434,14 @@ app.get('/api/config/theme', (req, res) => {
       room: '#16a34a',
       sensor: '#d97706',
       observer: '#8b5cf6',
-      ...(config.nodeColors || {}),
+      ...(cfg.nodeColors || {}),
       ...(theme.nodeColors || {})
     },
     typeColors: {
-      ...(config.typeColors || {}),
+      ...(cfg.typeColors || {}),
       ...(theme.typeColors || {})
     },
-    home: theme.home || config.home || null,
+    home: theme.home || cfg.home || null,
   });
 });
 
