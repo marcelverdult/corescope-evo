@@ -502,17 +502,19 @@
 
     panel.innerHTML = `
       <div class="node-detail">
-        ${hasLoc ? `<div class="node-map-container node-detail-map" id="nodeMap" style="border-radius:8px;overflow:hidden;"></div>` : ''}
         <div class="node-detail-name">${escapeHtml(n.name || '(unnamed)')}</div>
         <div class="node-detail-role"><span class="badge" style="background:${roleColor}20;color:${roleColor}">${n.role}</span> ${n.hash_size ? `<span class="badge" style="background:var(--nav-bg);color:var(--nav-text);font-family:var(--mono)">${n.public_key.slice(0, n.hash_size * 2).toUpperCase()}</span>` : ''} ${statusLabel}
           <a href="#/nodes/${encodeURIComponent(n.public_key)}" class="btn-primary" style="display:inline-block;text-decoration:none;font-size:11px;padding:2px 8px;margin-left:8px">🔍 Details</a>
           <a href="#/nodes/${encodeURIComponent(n.public_key)}/analytics" class="btn-primary" style="display:inline-block;margin-left:4px;text-decoration:none;font-size:11px;padding:2px 8px">📊 Analytics</a>
         </div>
 
+        ${hasLoc ? `<div class="node-map-qr-wrap">
+          <div class="node-map-container node-detail-map" id="nodeMap" style="border-radius:8px;overflow:hidden;"></div>
+          <div class="node-map-qr-overlay node-qr" id="nodeQrCode"></div>
+        </div>` : `<div class="node-qr" id="nodeQrCode" style="margin:8px 0"></div>`}
+
         <div class="node-detail-section">
-          <h4>Public Key</h4>
-          <div class="node-detail-key mono">${n.public_key}</div>
-          <div class="node-qr" id="nodeQrCode"></div>
+          <div class="node-detail-key mono" style="font-size:11px;word-break:break-all;margin-bottom:4px">${n.public_key}</div>
         </div>
 
         <div class="node-detail-section">
