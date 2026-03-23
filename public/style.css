@@ -1426,7 +1426,7 @@ tr[data-hops]:hover { background: rgba(59,130,246,0.1); }
 }
 
 .meshcore-marker { background: none !important; border: none !important; }
-.marker-stale { opacity: 0.35; filter: grayscale(70%); }
+.marker-stale { opacity: 0.7; filter: grayscale(90%) brightness(0.8); }
 .last-seen-active { color: var(--status-green); }
 .last-seen-stale { color: var(--text-muted); }
 
