@@ -66,7 +66,7 @@
     var hs = node.hash_size || 1;
     // Show the short mesh hash ID (first N bytes of pubkey, uppercased)
     var shortHash = node.public_key ? node.public_key.slice(0, hs * 2).toUpperCase() : '??';
-    var bgColor = node.hash_size ? s.color : '#888';
+    var bgColor = s.color;
     var html = '<div style="background:' + bgColor + ';color:#fff;font-weight:bold;font-size:11px;padding:2px 5px;border-radius:3px;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,0.4);text-align:center;line-height:1.2;white-space:nowrap;">' +
       shortHash + '</div>';
     return L.divIcon({
