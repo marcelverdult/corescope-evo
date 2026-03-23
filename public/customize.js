@@ -73,12 +73,30 @@
     statusRed: 'Status Red'
   };
 
+  const THEME_HINTS = {
+    accent: 'Active nav tab, buttons, links, selected rows, badges, chart bars',
+    accentHover: 'Button hover states, link hovers',
+    navBg: 'Top navigation bar background',
+    navBg2: 'Nav dropdown menus, darker nav areas',
+    statusGreen: 'Healthy nodes, online indicators, good SNR',
+    statusYellow: 'Degraded nodes, warning indicators, moderate SNR',
+    statusRed: 'Silent/offline nodes, error states, bad SNR'
+  };
+
   const NODE_LABELS = {
     repeater: 'Repeater',
     companion: 'Companion',
     room: 'Room Server',
     sensor: 'Sensor',
     observer: 'Observer'
+  };
+
+  const NODE_HINTS = {
+    repeater: 'Infrastructure nodes that relay packets — map markers, packet path badges, node list',
+    companion: 'End-user devices — map markers, packet detail, node list',
+    room: 'Room/chat server nodes — map markers, node list',
+    sensor: 'Sensor/telemetry nodes — map markers, node list',
+    observer: 'MQTT observer stations — map markers (purple stars), observer list, packet headers'
   };
 
   const NODE_EMOJI = { repeater: '◆', companion: '●', room: '■', sensor: '▲', observer: '★' };
@@ -146,8 +164,10 @@
       .cust-field input[type="text"], .cust-field textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--border);
         border-radius: 6px; font-size: 14px; background: var(--input-bg); color: var(--text); box-sizing: border-box; }
       .cust-field input[type="text"]:focus, .cust-field textarea:focus { outline: none; border-color: var(--accent); }
-      .cust-color-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
-      .cust-color-row label { min-width: 140px; font-size: 13px; font-weight: 500; margin: 0; }
+      .cust-color-row { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+      .cust-color-row > div:first-child { min-width: 220px; }
+      .cust-color-row label { font-size: 13px; font-weight: 600; margin: 0; display: block; }
+      .cust-hint { font-size: 11px; color: var(--text-muted); margin-top: 2px; line-height: 1.3; }
       .cust-color-row input[type="color"] { width: 40px; height: 32px; border: 1px solid var(--border);
         border-radius: 6px; cursor: pointer; padding: 2px; background: var(--input-bg); }
       .cust-color-row .cust-hex { font-family: var(--mono); font-size: 12px; color: var(--text-muted); min-width: 70px; }
@@ -231,7 +251,8 @@
       var val = state.theme[key];
       var def = DEFAULTS.theme[key];
       rows += '<div class="cust-color-row">' +
-        '<label>' + THEME_LABELS[key] + '</label>' +
+        '<div><label>' + THEME_LABELS[key] + '</label>' +
+        '<div class="cust-hint">' + (THEME_HINTS[key] || '') + '</div></div>' +
         '<input type="color" data-theme="' + key + '" value="' + val + '">' +
         '<span class="cust-hex" data-hex="' + key + '">' + val + '</span>' +
         (val !== def ? '<button class="cust-reset-btn" data-reset-theme="' + key + '">Reset</button>' : '') +
@@ -251,7 +272,8 @@
       var val = state.nodeColors[key];
       var def = DEFAULTS.nodeColors[key];
       rows += '<div class="cust-color-row">' +
-        '<label>' + NODE_EMOJI[key] + ' ' + NODE_LABELS[key] + '</label>' +
+        '<div><label>' + NODE_EMOJI[key] + ' ' + NODE_LABELS[key] + '</label>' +
+        '<div class="cust-hint">' + (NODE_HINTS[key] || '') + '</div></div>' +
         '<input type="color" data-node="' + key + '" value="' + val + '">' +
         '<span class="cust-node-dot" style="background:' + val + '" data-dot="' + key + '"></span>' +
         '<span class="cust-hex" data-nhex="' + key + '">' + val + '</span>' +
