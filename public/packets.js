@@ -129,13 +129,16 @@
     }
   }
 
-  function renderHop(h) {
-    return HopDisplay.renderHop(h, hopNameCache[h], { hexMode: showHexHashes });
+  function renderHop(h, observerId) {
+    // Use per-packet cache key if observer context available (ambiguous hops differ by region)
+    const cacheKey = observerId ? h + ':' + observerId : h;
+    const entry = hopNameCache[cacheKey] || hopNameCache[h];
+    return HopDisplay.renderHop(h, entry, { hexMode: showHexHashes });
   }
 
-  function renderPath(hops) {
+  function renderPath(hops, observerId) {
     if (!hops || !hops.length) return '—';
-    return hops.map(renderHop).join('<span class="arrow">→</span>');
+    return hops.map(h => renderHop(h, observerId)).join('<span class="arrow">→</span>');
   }
 
   let directPacketId = null;
@@ -417,6 +420,32 @@
         try { const path = JSON.parse(p.path_json || '[]'); path.forEach(h => allHops.add(h)); } catch {}
       }
       if (allHops.size) await resolveHops([...allHops]);
+
+      // Per-observer batch resolve for ambiguous hops (context-aware disambiguation)
+      const hopsByObserver = {};
+      for (const p of packets) {
+        if (!p.observer_id) continue;
+        try {
+          const path = JSON.parse(p.path_json || '[]');
+          const ambiguous = path.filter(h => hopNameCache[h]?.ambiguous);
+          if (ambiguous.length) {
+            if (!hopsByObserver[p.observer_id]) hopsByObserver[p.observer_id] = new Set();
+            ambiguous.forEach(h => hopsByObserver[p.observer_id].add(h));
+          }
+        } catch {}
+      }
+      // Batch resolve — one API call per observer (typically 4-5 observers)
+      await Promise.all(Object.entries(hopsByObserver).map(async ([obsId, hopsSet]) => {
+        try {
+          const params = new URLSearchParams({ hops: [...hopsSet].join(','), observer: obsId });
+          const result = await api(`/resolve-hops?${params}`);
+          if (result?.resolved) {
+            for (const [k, v] of Object.entries(result.resolved)) {
+              hopNameCache[k + ':' + obsId] = v;
+            }
+          }
+        } catch {}
+      }));
 
       // Restore expanded group children
       if (groupByHash && expandedHashes.size > 0) {
@@ -927,7 +956,7 @@
         const groupRegion = headerObserverId ? (observers.find(o => o.id === headerObserverId)?.iata || '') : '';
         let groupPath = [];
         try { groupPath = JSON.parse(headerPathJson || '[]'); } catch {}
-        const groupPathStr = renderPath(groupPath);
+        const groupPathStr = renderPath(groupPath, headerObserverId);
         const groupTypeName = payloadTypeName(p.payload_type);
         const groupTypeClass = payloadTypeColor(p.payload_type);
         const groupSize = p.raw_hex ? Math.floor(p.raw_hex.length / 2) : 0;
@@ -959,7 +988,7 @@
             const childRegion = c.observer_id ? (observers.find(o => o.id === c.observer_id)?.iata || '') : '';
             let childPath = [];
             try { childPath = JSON.parse(c.path_json || '[]'); } catch {}
-            const childPathStr = renderPath(childPath);
+            const childPathStr = renderPath(childPath, child.observer_id);
             html += `<tr class="group-child" data-id="${c.id}" data-hash="${c.hash || ''}" data-action="select-observation" data-value="${c.id}" data-parent-hash="${p.hash}" tabindex="0" role="row">
               <td></td><td class="col-region">${childRegion ? `<span class="badge-region">${childRegion}</span>` : '—'}</td>
               <td class="col-time">${timeAgo(c.timestamp)}</td>
@@ -987,8 +1016,7 @@
       const typeName = payloadTypeName(p.payload_type);
       const typeClass = payloadTypeColor(p.payload_type);
       const size = p.raw_hex ? Math.floor(p.raw_hex.length / 2) : 0;
-      const pathStr = renderPath(pathHops);
-      const detail = getDetailPreview(decoded);
+      const pathStr = renderPath(pathHops, p.observer_id);      const detail = getDetailPreview(decoded);
 
       return `<tr data-id="${p.id}" data-hash="${p.hash || ''}" data-action="select-hash" data-value="${p.hash || p.id}" tabindex="0" role="row" class="${selectedId === p.id ? 'selected' : ''}">
         <td></td><td class="col-region">${region ? `<span class="badge-region">${region}</span>` : '—'}</td>
@@ -1131,6 +1159,8 @@
         if (serverResolved?.resolved) {
           for (const [k, v] of Object.entries(serverResolved.resolved)) {
             hopNameCache[k] = v;
+            // Also store observer-scoped key for list view
+            if (pkt.observer_id) hopNameCache[k + ':' + pkt.observer_id] = v;
           }
         }
       } catch {}
@@ -1232,7 +1262,7 @@
         ${hashSize ? `<dt>Hash Size</dt><dd>${hashSize} byte${hashSize !== 1 ? 's' : ''}</dd>` : ''}
         <dt>Timestamp</dt><dd>${pkt.timestamp}</dd>
         <dt>Propagation</dt><dd>${propagationHtml}</dd>
-        <dt>Path</dt><dd>${pathHops.length ? renderPath(pathHops) : '—'}</dd>
+        <dt>Path</dt><dd>${pathHops.length ? renderPath(pathHops, pkt.observer_id) : '—'}</dd>
       </dl>
       <div class="detail-actions">
         <button class="copy-link-btn" data-packet-hash="${pkt.hash || ''}" data-packet-id="${pkt.id}" title="Copy link to this packet">🔗 Copy Link</button>
