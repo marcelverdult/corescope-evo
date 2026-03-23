@@ -774,7 +774,7 @@
     el.innerHTML = `
       <div class="analytics-card" id="inconsistentHashSection">
         <h3>⚠️ Inconsistent Hash Sizes</h3>
-        <p class="text-muted" style="margin:0 0 8px;font-size:0.8em">Nodes that have sent adverts with varying hash sizes — likely running firmware with a known bug (pre-1.14.1).</p>
+        <p class="text-muted" style="margin:0 0 8px;font-size:0.8em">Nodes sending adverts with varying hash sizes. Caused by a <a href="https://github.com/meshcore-dev/MeshCore/commit/fcfdc5f" target="_blank" style="color:var(--accent)">bug</a> where automatic adverts ignored the configured multibyte path setting. Fixed in <a href="https://github.com/meshcore-dev/MeshCore/releases/tag/repeater-v1.14.1" target="_blank" style="color:var(--accent)">repeater v1.14.1</a>.</p>
         <div id="inconsistentHashList"><div class="text-muted" style="padding:8px"><span class="spinner"></span> Loading…</div></div>
       </div>
 
