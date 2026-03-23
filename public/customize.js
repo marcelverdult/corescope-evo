@@ -251,9 +251,10 @@
     if (styleEl) return;
     styleEl = document.createElement('style');
     styleEl.textContent = `
-      .cust-overlay { position: fixed; top: 52px; right: 12px; z-index: 1050; width: 380px; max-height: calc(100vh - 64px);
+      .cust-overlay { position: fixed; top: 52px; right: 12px; z-index: 1050; width: 480px; max-height: calc(100vh - 64px);
         background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px;
-        box-shadow: 0 8px 32px rgba(0,0,0,0.3); display: flex; flex-direction: column; overflow: hidden; }
+        box-shadow: 0 8px 32px rgba(0,0,0,0.3); display: flex; flex-direction: column; overflow: hidden;
+        resize: both; min-width: 320px; min-height: 300px; }
       .cust-overlay.hidden { display: none; }
       .cust-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px;
         border-bottom: 1px solid var(--border); cursor: move; user-select: none; flex-shrink: 0; }
