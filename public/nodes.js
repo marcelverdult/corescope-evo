@@ -119,8 +119,8 @@
       body.innerHTML = `
         <div class="node-full-card" style="padding:12px 16px;margin-bottom:8px">
           <div class="node-detail-name" style="font-size:20px">${escapeHtml(n.name || '(unnamed)')}</div>
-          <div style="margin:4px 0 6px"><span class="badge" style="background:${roleColor}20;color:${roleColor}">${n.role}</span> ${n.hash_size ? `<span class="badge" style="background:var(--nav-bg);color:var(--nav-text);font-family:var(--mono)">${n.public_key.slice(0, n.hash_size * 2).toUpperCase()}</span>` : ''} ${n.hash_size_inconsistent ? `<span class="badge" style="background:var(--status-yellow);color:#000;font-size:10px;cursor:help" onclick="var el=this.parentElement.querySelector('.hash-mismatch-info');if(el)el.hidden=!el.hidden">⚠️ variable hash size</span>` : ''} ${statusLabel}</div>
-          ${n.hash_size_inconsistent ? `<div class="hash-mismatch-info" hidden style="font-size:11px;color:var(--text-muted);margin:-2px 0 6px;padding:6px 10px;background:var(--surface-2);border-radius:4px;border-left:3px solid var(--status-yellow)">This node has sent adverts with different hash sizes (<strong>${(n.hash_sizes_seen||[]).join('-byte, ')}-byte</strong>). Likely a firmware bug in MeshCore versions before 1.14.1. Update firmware to fix.</div>` : ''}
+          <div style="margin:4px 0 6px"><span class="badge" style="background:${roleColor}20;color:${roleColor}">${n.role}</span> ${n.hash_size ? `<span class="badge" style="background:var(--nav-bg);color:var(--nav-text);font-family:var(--mono)">${n.public_key.slice(0, n.hash_size * 2).toUpperCase()}</span>` : ''} ${n.hash_size_inconsistent ? `<a href="#/nodes/${encodeURIComponent(n.public_key)}?highlight=hashsize" class="badge" style="background:var(--status-yellow);color:#000;font-size:10px;cursor:pointer;text-decoration:none">⚠️ variable hash size</a>` : ''} ${statusLabel}</div>
+          ${n.hash_size_inconsistent ? `<div style="font-size:11px;color:var(--text-muted);margin:-2px 0 6px;padding:6px 10px;background:var(--surface-2);border-radius:4px;border-left:3px solid var(--status-yellow)">Adverts show varying hash sizes (<strong>${(n.hash_sizes_seen||[]).join('-byte, ')}-byte</strong>). Likely a firmware bug — update to MeshCore 1.14.1+. See advert details below.</div>` : ''}
           <div class="node-detail-key mono" style="font-size:11px;word-break:break-all;margin-bottom:6px">${n.public_key}</div>
           <div>
             <button class="btn-primary" id="copyUrlBtn" style="font-size:12px;padding:4px 10px">📋 Copy URL</button>
@@ -180,9 +180,17 @@
               const snr = p.snr != null ? ` · SNR ${p.snr}dB` : '';
               const rssi = p.rssi != null ? ` · RSSI ${p.rssi}dBm` : '';
               const obsBadge = p.observation_count > 1 ? ` <span class="badge badge-obs" title="Seen ${p.observation_count} times">👁 ${p.observation_count}</span>` : '';
+              // Show hash size per advert if inconsistent
+              let hashSizeBadge = '';
+              if (n.hash_size_inconsistent && p.payload_type === 4 && p.raw_hex) {
+                const pb = parseInt(p.raw_hex.slice(2, 4), 16);
+                const hs = ((pb >> 6) & 0x3) + 1;
+                const isDefault = hs === n.hash_size;
+                hashSizeBadge = ` <span class="badge" style="background:${isDefault ? 'var(--surface-2)' : 'var(--status-yellow)'};color:${isDefault ? 'var(--text-muted)' : '#000'};font-size:9px;font-family:var(--mono)">${hs}B</span>`;
+              }
               return `<div class="node-activity-item">
                 <span class="node-activity-time">${timeAgo(p.timestamp)}</span>
-                <span>${typeLabel}${detail}${obsBadge}${obs ? ' via ' + escapeHtml(obs) : ''}${snr}${rssi}</span>
+                <span>${typeLabel}${detail}${hashSizeBadge}${obsBadge}${obs ? ' via ' + escapeHtml(obs) : ''}${snr}${rssi}</span>
                 <a href="#/packets/${p.hash}" class="ch-analyze-link" style="margin-left:8px;font-size:0.8em">Analyze →</a>
               </div>`;
             }).join('') : '<div class="text-muted">No recent packets</div>'}
@@ -209,6 +217,12 @@
           setTimeout(() => btn.textContent = '📋 Copy URL', 2000);
         }).catch(() => {});
       });
+
+      // Auto-scroll to adverts if highlight=hashsize
+      if (location.hash.includes('highlight=hashsize')) {
+        const recentSection = body.querySelector('.node-activity-list');
+        if (recentSection) setTimeout(() => recentSection.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
+      }
 
       // QR code for full-screen view
       const qrFullEl = document.getElementById('nodeFullQrCode');
@@ -504,11 +518,10 @@
     panel.innerHTML = `
       <div class="node-detail">
         <div class="node-detail-name">${escapeHtml(n.name || '(unnamed)')}</div>
-        <div class="node-detail-role"><span class="badge" style="background:${roleColor}20;color:${roleColor}">${n.role}</span> ${n.hash_size ? `<span class="badge" style="background:var(--nav-bg);color:var(--nav-text);font-family:var(--mono)">${n.public_key.slice(0, n.hash_size * 2).toUpperCase()}</span>` : ''} ${n.hash_size_inconsistent ? `<span class="badge" style="background:var(--status-yellow);color:#000;font-size:10px;cursor:help" onclick="var el=this.closest('.node-detail').querySelector('.hash-mismatch-info');if(el)el.hidden=!el.hidden">⚠️ variable hash size</span>` : ''} ${statusLabel}
+        <div class="node-detail-role"><span class="badge" style="background:${roleColor}20;color:${roleColor}">${n.role}</span> ${n.hash_size ? `<span class="badge" style="background:var(--nav-bg);color:var(--nav-text);font-family:var(--mono)">${n.public_key.slice(0, n.hash_size * 2).toUpperCase()}</span>` : ''} ${n.hash_size_inconsistent ? `<a href="#/nodes/${encodeURIComponent(n.public_key)}?highlight=hashsize" class="badge" style="background:var(--status-yellow);color:#000;font-size:10px;cursor:pointer;text-decoration:none">⚠️ variable hash size</a>` : ''} ${statusLabel}
           <a href="#/nodes/${encodeURIComponent(n.public_key)}" class="btn-primary" style="display:inline-block;text-decoration:none;font-size:11px;padding:2px 8px;margin-left:8px">🔍 Details</a>
           <a href="#/nodes/${encodeURIComponent(n.public_key)}/analytics" class="btn-primary" style="display:inline-block;margin-left:4px;text-decoration:none;font-size:11px;padding:2px 8px">📊 Analytics</a>
         </div>
-        ${n.hash_size_inconsistent ? `<div class="hash-mismatch-info" hidden style="font-size:11px;color:var(--text-muted);margin:0 0 8px;padding:6px 10px;background:var(--surface-2);border-radius:4px;border-left:3px solid var(--status-yellow)">Adverts show hash sizes <strong>${(n.hash_sizes_seen||[]).join('-byte, ')}-byte</strong>. Likely a firmware bug — update to MeshCore 1.14.1+.</div>` : ''}
 
         ${hasLoc ? `<div class="node-map-qr-wrap">
           <div class="node-map-container node-detail-map" id="nodeMap" style="border-radius:8px;overflow:hidden;"></div>
