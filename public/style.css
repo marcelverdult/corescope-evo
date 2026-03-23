@@ -1117,8 +1117,8 @@ button.ch-item.ch-item-encrypted .ch-badge { filter: grayscale(0.6); }
 [data-theme="dark"] .node-qr svg rect[fill="#ffffff"] { fill: var(--card-bg); }
 [data-theme="dark"] .node-qr svg rect[fill="#000000"] { fill: var(--text); }
 .node-map-qr-wrap { position: relative; }
-.node-map-qr-overlay { position: absolute; bottom: 8px; right: 8px; z-index: 400; background: rgba(255,255,255,0.5); border-radius: 4px; padding: 4px; line-height: 0; }
-.node-map-qr-overlay svg { max-width: 64px; display: block; }
+.node-map-qr-overlay { position: absolute; bottom: 8px; right: 8px; z-index: 400; background: rgba(255,255,255,0.5); border-radius: 4px; padding: 4px; line-height: 0; margin: 0; text-align: center; }
+.node-map-qr-overlay svg { max-width: 56px !important; display: block; margin: 0; }
 [data-theme="dark"] .node-map-qr-overlay { background: rgba(255,255,255,0.4); }
 
 /* Replay on Live Map button in packet detail */
