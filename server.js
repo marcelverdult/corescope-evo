@@ -1377,6 +1377,7 @@ app.get('/api/nodes/:pubkey', (req, res) => {
   const _c = cache.get(_ck); if (_c) return res.json(_c);
   const node = db.db.prepare('SELECT * FROM nodes WHERE public_key = ?').get(pubkey);
   if (!node) return res.status(404).json({ error: 'Not found' });
+  node.hash_size = _hashSizeMap.get(pubkey) || null;
   const recentAdverts = (pktStore.byNode.get(pubkey) || []).slice(-20).reverse();
   const _nResult = { node, recentAdverts };
   cache.set(_ck, _nResult, TTL.nodeDetail);
