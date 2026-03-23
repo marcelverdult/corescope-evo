@@ -162,8 +162,8 @@
   const NODE_EMOJI = { repeater: '◆', companion: '●', room: '■', sensor: '▲', observer: '★' };
 
   const TYPE_LABELS = {
-    ADVERT: 'ADVERT', GRP_TXT: 'GRP_TXT', TXT_MSG: 'TXT_MSG', ACK: 'ACK',
-    REQUEST: 'REQUEST', RESPONSE: 'RESPONSE', TRACE: 'TRACE', PATH: 'PATH'
+    ADVERT: 'Advertisement', GRP_TXT: 'Channel Message', TXT_MSG: 'Direct Message', ACK: 'Acknowledgment',
+    REQUEST: 'Request', RESPONSE: 'Response', TRACE: 'Traceroute', PATH: 'Path'
   };
   const TYPE_HINTS = {
     ADVERT: 'Node advertisements — map, feed, packet list',
