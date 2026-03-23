@@ -41,7 +41,8 @@
     },
     typeColors: {
       ADVERT: '#22c55e', GRP_TXT: '#3b82f6', TXT_MSG: '#f59e0b', ACK: '#6b7280',
-      REQUEST: '#a855f7', RESPONSE: '#06b6d4', TRACE: '#ec4899', PATH: '#14b8a6'
+      REQUEST: '#a855f7', RESPONSE: '#06b6d4', TRACE: '#ec4899', PATH: '#14b8a6',
+      ANON_REQ: '#f43f5e'
     },
     home: {
       heroTitle: 'MeshCore Analyzer',
@@ -163,7 +164,8 @@
 
   const TYPE_LABELS = {
     ADVERT: 'Advertisement', GRP_TXT: 'Channel Message', TXT_MSG: 'Direct Message', ACK: 'Acknowledgment',
-    REQUEST: 'Request', RESPONSE: 'Response', TRACE: 'Traceroute', PATH: 'Path'
+    REQUEST: 'Request', RESPONSE: 'Response', TRACE: 'Traceroute', PATH: 'Path',
+    ANON_REQ: 'Anonymous Request'
   };
   const TYPE_HINTS = {
     ADVERT: 'Node advertisements — map, feed, packet list',
@@ -173,10 +175,11 @@
     REQUEST: 'Requests — packet list, feed',
     RESPONSE: 'Responses — packet list',
     TRACE: 'Traceroute — map, traces page',
-    PATH: 'Path packets — packet list'
+    PATH: 'Path packets — packet list',
+    ANON_REQ: 'Encrypted anonymous requests — sender identity hidden via ephemeral key'
   };
   const TYPE_EMOJI = {
-    ADVERT: '📡', GRP_TXT: '💬', TXT_MSG: '✉️', ACK: '✓', REQUEST: '❓', RESPONSE: '📨', TRACE: '🔍', PATH: '🛤️'
+    ADVERT: '📡', GRP_TXT: '💬', TXT_MSG: '✉️', ACK: '✓', REQUEST: '❓', RESPONSE: '📨', TRACE: '🔍', PATH: '🛤️', ANON_REQ: '🕵️'
   };
 
   // Current state
