@@ -7,10 +7,10 @@ const { WebSocketServer } = require('ws');
 const mqtt = require('mqtt');
 const path = require('path');
 const fs = require('fs');
-// Config: checks data/ dir first (Docker volume), then app dir
+// Config: bind-mounted config.json first, then fall back to data/ dir
 const CONFIG_PATHS = [
-  path.join(__dirname, 'data', 'config.json'),
-  path.join(__dirname, 'config.json')
+  path.join(__dirname, 'config.json'),
+  path.join(__dirname, 'data', 'config.json')
 ];
 function loadConfigFile() {
   for (const p of CONFIG_PATHS) {
