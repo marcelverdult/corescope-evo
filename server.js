@@ -394,10 +394,10 @@ function getObserverIdsForRegions(regionParam) {
   return ids;
 }
 
-// Theme: hot-load from theme.json (checks data dir first, then app dir)
+// Theme: hot-load from theme.json (same dir as config.json, or data/ dir)
 const THEME_PATHS = [
-  path.join(__dirname, 'data', 'theme.json'),
-  path.join(__dirname, 'theme.json')
+  path.join(__dirname, 'theme.json'),
+  path.join(__dirname, 'data', 'theme.json')
 ];
 function loadThemeFile() {
   for (const p of THEME_PATHS) {
@@ -3039,6 +3039,12 @@ const listenPort = process.env.PORT || config.port;
 server.listen(listenPort, () => {
   const protocol = isHttps ? 'https' : 'http';
   console.log(`MeshCore Analyzer running on ${protocol}://localhost:${listenPort}`);
+  // Log theme file location
+  let themeFound = false;
+  for (const p of THEME_PATHS) {
+    try { fs.accessSync(p); console.log(`[theme] Loaded from ${p}`); themeFound = true; break; } catch {}
+  }
+  if (!themeFound) console.log(`[theme] No theme.json found. Place it next to config.json or in data/ to customize.`);
   // Pre-warm expensive caches via self-requests (yields event loop between each)
   setTimeout(() => {
     const port = listenPort;

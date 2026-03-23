@@ -139,7 +139,7 @@ docker run -d \
 # Now edit ./data/config.json directly on the host
 ```
 
-**Theme customization:** Drop a `theme.json` in the same data directory (`/app/data/theme.json`) to override default colors, branding, and node/packet type colors for all users. Use the built-in customizer (Tools → Customize) to design your theme and download the file.
+**Theme customization:** Put `theme.json` next to `config.json` — wherever your config lives, that's where the theme goes. Use the built-in customizer (Tools → Customize) to design your theme, download the file, and drop it in. Changes are picked up on page refresh — no restart needed. The server logs where it's looking on startup.
 
 ### Manual Install
 
