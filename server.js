@@ -383,6 +383,32 @@ function getObserverIdsForRegions(regionParam) {
   return ids;
 }
 
+app.get('/api/config/theme', (req, res) => {
+  res.json({
+    branding: {
+      siteName: 'MeshCore Analyzer',
+      tagline: 'Real-time MeshCore LoRa mesh network analyzer',
+      ...(config.branding || {})
+    },
+    theme: {
+      accent: '#4a9eff',
+      accentHover: '#6db3ff',
+      navBg: '#0f0f23',
+      navBg2: '#1a1a2e',
+      ...(config.theme || {})
+    },
+    nodeColors: {
+      repeater: '#dc2626',
+      companion: '#2563eb',
+      room: '#16a34a',
+      sensor: '#d97706',
+      observer: '#8b5cf6',
+      ...(config.nodeColors || {})
+    },
+    home: config.home || null,
+  });
+});
+
 app.get('/api/config/map', (req, res) => {
   const defaults = config.mapDefaults || {};
   res.json({

@@ -497,6 +497,67 @@ window.addEventListener('DOMContentLoaded', () => {
   setInterval(updateNavStats, 15000);
   debouncedOnWS(function () { updateNavStats(); });
 
+  // --- Theme Customization ---
+  // Fetch theme config and apply branding/colors before first render
+  fetch('/api/config/theme').then(r => r.json()).then(cfg => {
+    window.SITE_CONFIG = cfg;
+
+    // Apply CSS variable overrides from theme.*
+    if (cfg.theme) {
+      const root = document.documentElement.style;
+      const varMap = {
+        accent: '--accent', accentHover: '--accent-hover',
+        navBg: '--nav-bg', navBg2: '--nav-bg2',
+        statusGreen: '--status-green', statusYellow: '--status-yellow', statusRed: '--status-red',
+        text: '--text', textMuted: '--text-muted', border: '--border',
+        surface0: '--surface-0', surface1: '--surface-1', surface2: '--surface-2', surface3: '--surface-3',
+        cardBg: '--card-bg', contentBg: '--content-bg', inputBg: '--input-bg',
+        rowStripe: '--row-stripe', rowHover: '--row-hover', detailBg: '--detail-bg',
+        selectedBg: '--selected-bg'
+      };
+      for (const [key, cssVar] of Object.entries(varMap)) {
+        if (cfg.theme[key]) root.setProperty(cssVar, cfg.theme[key]);
+      }
+      // Also update nav gradient if navBg is customized
+      if (cfg.theme.navBg) {
+        const nav = document.querySelector('.top-nav');
+        if (nav) nav.style.background = `linear-gradient(135deg, ${cfg.theme.navBg} 0%, ${cfg.theme.navBg2 || cfg.theme.navBg} 50%, ${cfg.theme.navBg} 100%)`;
+      }
+    }
+
+    // Apply node color overrides to ROLE_COLORS and ROLE_STYLE
+    if (cfg.nodeColors) {
+      for (const [role, color] of Object.entries(cfg.nodeColors)) {
+        if (window.ROLE_COLORS && role in window.ROLE_COLORS) window.ROLE_COLORS[role] = color;
+        if (window.ROLE_STYLE && window.ROLE_STYLE[role]) window.ROLE_STYLE[role].color = color;
+      }
+    }
+
+    // Apply branding
+    if (cfg.branding) {
+      if (cfg.branding.siteName) {
+        document.title = cfg.branding.siteName;
+        const brandText = document.querySelector('.brand-text');
+        if (brandText) brandText.textContent = cfg.branding.siteName;
+      }
+      if (cfg.branding.logoUrl) {
+        const brandIcon = document.querySelector('.brand-icon');
+        if (brandIcon) {
+          const img = document.createElement('img');
+          img.src = cfg.branding.logoUrl;
+          img.alt = cfg.branding.siteName || 'Logo';
+          img.style.height = '24px';
+          img.style.width = 'auto';
+          brandIcon.replaceWith(img);
+        }
+      }
+      if (cfg.branding.faviconUrl) {
+        const favicon = document.querySelector('link[rel="icon"]');
+        if (favicon) favicon.href = cfg.branding.faviconUrl;
+      }
+    }
+  }).catch(() => { window.SITE_CONFIG = null; });
+
   if (!location.hash || location.hash === '#/') location.hash = '#/home';
   else navigate();
 });

@@ -39,7 +39,7 @@
   function showChooser(container) {
     container.innerHTML = `
       <section class="home-chooser">
-        <h1>Welcome to Bay Area MeshCore Analyzer</h1>
+        <h1>Welcome to ${escapeHtml(window.SITE_CONFIG?.branding?.siteName || 'MeshCore Analyzer')}</h1>
         <p>How familiar are you with MeshCore?</p>
         <div class="chooser-options">
           <button class="chooser-btn new" id="chooseNew">
@@ -62,11 +62,13 @@
     const exp = isExperienced();
     const myNodes = getMyNodes();
     const hasNodes = myNodes.length > 0;
+    const homeCfg = window.SITE_CONFIG?.home || null;
+    const siteName = window.SITE_CONFIG?.branding?.siteName || 'MeshCore Analyzer';
 
     container.innerHTML = `
       <section class="home-hero">
-        <h1>${hasNodes ? 'My Mesh' : 'MeshCore Analyzer'}</h1>
-        <p>${hasNodes ? 'Your nodes at a glance. Add more by searching below.' : 'Find your nodes to start monitoring them.'}</p>
+        <h1>${hasNodes ? 'My Mesh' : escapeHtml(homeCfg?.heroTitle || siteName)}</h1>
+        <p>${hasNodes ? 'Your nodes at a glance. Add more by searching below.' : escapeHtml(homeCfg?.heroSubtitle || 'Find your nodes to start monitoring them.')}</p>
         <div class="home-search-wrap">
           <input type="text" id="homeSearch" placeholder="Search by node name or public key…" autocomplete="off" aria-label="Search nodes" role="combobox" aria-expanded="false" aria-owns="homeSuggest" aria-autocomplete="list" aria-activedescendant="">
           <div class="home-suggest" id="homeSuggest" role="listbox"></div>
@@ -92,17 +94,18 @@
 
       ${exp ? '' : `
       <section class="home-checklist">
-        <h2>🚀 Getting on the mesh — SF Bay Area</h2>
-        ${checklist()}
+        <h2>🚀 Getting on the mesh${homeCfg?.steps ? '' : ' — SF Bay Area'}</h2>
+        ${checklist(homeCfg)}
       </section>`}
 
       <section class="home-footer">
         <div class="home-footer-links">
+          ${homeCfg?.footerLinks ? homeCfg.footerLinks.map(l => `<a href="${escapeAttr(l.url)}" class="home-footer-link" target="_blank" rel="noopener">${escapeHtml(l.label)}</a>`).join('') : `
           <a href="#/packets" class="home-footer-link">📦 Packets</a>
           <a href="#/map" class="home-footer-link">🗺️ Network Map</a>
           <a href="#/live" class="home-footer-link">🔴 Live</a>
           <a href="#/nodes" class="home-footer-link">📡 All Nodes</a>
-          <a href="#/channels" class="home-footer-link">💬 Channels</a>
+          <a href="#/channels" class="home-footer-link">💬 Channels</a>`}
         </div>
         <div class="home-level-toggle">
           <small>${exp ? 'Want setup guides? ' : 'Already know MeshCore? '}
@@ -507,7 +510,13 @@
   function escapeAttr(s) { return String(s).replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
   function timeSinceMs(d) { return Date.now() - d.getTime(); }
 
-  function checklist() {
+  function checklist(homeCfg) {
+    if (homeCfg?.checklist) {
+      return homeCfg.checklist.map(i => `<div class="checklist-item"><div class="checklist-q" role="button" tabindex="0" aria-expanded="false">${escapeHtml(i.question)}</div><div class="checklist-a"><p>${escapeHtml(i.answer)}</p></div></div>`).join('');
+    }
+    if (homeCfg?.steps) {
+      return homeCfg.steps.map(s => `<div class="checklist-item"><div class="checklist-q" role="button" tabindex="0" aria-expanded="false">${escapeHtml(s.emoji || '')} ${escapeHtml(s.title)}</div><div class="checklist-a"><p>${escapeHtml(s.description)}</p></div></div>`).join('');
+    }
     const items = [
       { q: '💬 First: Join the Bay Area MeshCore Discord',
         a: '<p>The community Discord is the best place to get help and find local mesh enthusiasts.</p><p><a href="https://discord.gg/q59JzsYTst" target="_blank" rel="noopener" style="color:var(--accent);font-weight:600">Join the Discord ↗</a></p><p>Start with <strong>#intro-to-meshcore</strong> — it has detailed setup instructions.</p>' },
