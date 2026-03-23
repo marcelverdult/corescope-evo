@@ -96,6 +96,245 @@
     mono: '--mono',
   };
 
+  /* ── Theme Presets ── */
+  const THEME_COLOR_KEYS = ['accent', 'navBg', 'navText', 'background', 'text', 'statusGreen', 'statusYellow', 'statusRed',
+    'accentHover', 'navBg2', 'navTextMuted', 'textMuted', 'border', 'surface1', 'surface2', 'cardBg', 'contentBg',
+    'detailBg', 'inputBg', 'rowStripe', 'rowHover', 'selectedBg'];
+
+  const PRESETS = {
+    default: {
+      name: 'Default', desc: 'MeshCore blue',
+      preview: ['#4a9eff', '#0f0f23', '#f4f5f7', '#1a1a2e', '#22c55e'],
+      light: {
+        accent: '#4a9eff', navBg: '#0f0f23', navText: '#ffffff', background: '#f4f5f7', text: '#1a1a2e',
+        statusGreen: '#22c55e', statusYellow: '#eab308', statusRed: '#ef4444',
+        accentHover: '#6db3ff', navBg2: '#1a1a2e', navTextMuted: '#cbd5e1', textMuted: '#5b6370', border: '#e2e5ea',
+        surface1: '#ffffff', surface2: '#ffffff', cardBg: '#ffffff', contentBg: '#f4f5f7',
+        detailBg: '#ffffff', inputBg: '#ffffff', rowStripe: '#f9fafb', rowHover: '#eef2ff', selectedBg: '#dbeafe',
+      },
+      dark: {
+        accent: '#4a9eff', navBg: '#0f0f23', navText: '#ffffff', background: '#0f0f23', text: '#e2e8f0',
+        statusGreen: '#22c55e', statusYellow: '#eab308', statusRed: '#ef4444',
+        accentHover: '#6db3ff', navBg2: '#1a1a2e', navTextMuted: '#cbd5e1', textMuted: '#a8b8cc', border: '#334155',
+        surface1: '#1a1a2e', surface2: '#232340', cardBg: '#1a1a2e', contentBg: '#0f0f23',
+        detailBg: '#232340', inputBg: '#1e1e34', rowStripe: '#1e1e34', rowHover: '#2d2d50', selectedBg: '#1e3a5f',
+      }
+    },
+    ocean: {
+      name: 'Ocean', desc: 'Deep blues & teals',
+      preview: ['#0077b6', '#03045e', '#f0f7fa', '#48cae4', '#15803d'],
+      light: {
+        accent: '#0077b6', navBg: '#03045e', navText: '#ffffff', background: '#f0f7fa', text: '#0a1628',
+        statusGreen: '#15803d', statusYellow: '#a16207', statusRed: '#dc2626',
+        accentHover: '#0096d6', navBg2: '#023e8a', navTextMuted: '#90caf9', textMuted: '#4a6580', border: '#c8dce8',
+        surface1: '#ffffff', surface2: '#e8f4f8', cardBg: '#ffffff', contentBg: '#f0f7fa',
+        detailBg: '#ffffff', inputBg: '#ffffff', rowStripe: '#f5fafd', rowHover: '#e0f0f8', selectedBg: '#bde0fe',
+      },
+      dark: {
+        accent: '#48cae4', navBg: '#03045e', navText: '#ffffff', background: '#0a1929', text: '#e0e7ef',
+        statusGreen: '#4ade80', statusYellow: '#facc15', statusRed: '#f87171',
+        accentHover: '#76d7ea', navBg2: '#012a4a', navTextMuted: '#90caf9', textMuted: '#8eafc4', border: '#1e3a5f',
+        surface1: '#0d2137', surface2: '#122d4a', cardBg: '#0d2137', contentBg: '#0a1929',
+        detailBg: '#122d4a', inputBg: '#0d2137', rowStripe: '#0d2137', rowHover: '#153450', selectedBg: '#1a4570',
+      }
+    },
+    forest: {
+      name: 'Forest', desc: 'Greens & earth tones',
+      preview: ['#2d6a4f', '#1b3a2d', '#f2f7f4', '#52b788', '#15803d'],
+      light: {
+        accent: '#2d6a4f', navBg: '#1b3a2d', navText: '#ffffff', background: '#f2f7f4', text: '#1a2e24',
+        statusGreen: '#15803d', statusYellow: '#a16207', statusRed: '#dc2626',
+        accentHover: '#40916c', navBg2: '#2d6a4f', navTextMuted: '#a3c4b5', textMuted: '#557063', border: '#c8dcd2',
+        surface1: '#ffffff', surface2: '#e8f0eb', cardBg: '#ffffff', contentBg: '#f2f7f4',
+        detailBg: '#ffffff', inputBg: '#ffffff', rowStripe: '#f5faf7', rowHover: '#e4f0e8', selectedBg: '#c2e0cc',
+      },
+      dark: {
+        accent: '#52b788', navBg: '#1b3a2d', navText: '#ffffff', background: '#0d1f17', text: '#d8e8df',
+        statusGreen: '#4ade80', statusYellow: '#facc15', statusRed: '#f87171',
+        accentHover: '#74c69d', navBg2: '#14532d', navTextMuted: '#86b89a', textMuted: '#8aac9a', border: '#2d4a3a',
+        surface1: '#162e23', surface2: '#1d3a2d', cardBg: '#162e23', contentBg: '#0d1f17',
+        detailBg: '#1d3a2d', inputBg: '#162e23', rowStripe: '#162e23', rowHover: '#1f4030', selectedBg: '#265940',
+      }
+    },
+    sunset: {
+      name: 'Sunset', desc: 'Warm oranges & ambers',
+      preview: ['#c2410c', '#431407', '#fef7f2', '#fb923c', '#dc2626'],
+      light: {
+        accent: '#c2410c', navBg: '#431407', navText: '#ffffff', background: '#fef7f2', text: '#1c0f06',
+        statusGreen: '#15803d', statusYellow: '#a16207', statusRed: '#dc2626',
+        accentHover: '#ea580c', navBg2: '#7c2d12', navTextMuted: '#fdba74', textMuted: '#6b5344', border: '#e8d5c8',
+        surface1: '#ffffff', surface2: '#fef0e6', cardBg: '#ffffff', contentBg: '#fef7f2',
+        detailBg: '#ffffff', inputBg: '#ffffff', rowStripe: '#fefaf7', rowHover: '#fef0e0', selectedBg: '#fed7aa',
+      },
+      dark: {
+        accent: '#fb923c', navBg: '#431407', navText: '#ffffff', background: '#1a0f08', text: '#f0ddd0',
+        statusGreen: '#4ade80', statusYellow: '#facc15', statusRed: '#f87171',
+        accentHover: '#fdba74', navBg2: '#7c2d12', navTextMuted: '#c2855a', textMuted: '#b09080', border: '#4a2a18',
+        surface1: '#261a10', surface2: '#332214', cardBg: '#261a10', contentBg: '#1a0f08',
+        detailBg: '#332214', inputBg: '#261a10', rowStripe: '#261a10', rowHover: '#3a2818', selectedBg: '#5c3518',
+      }
+    },
+    mono: {
+      name: 'Monochrome', desc: 'Pure grays, no color',
+      preview: ['#525252', '#171717', '#f5f5f5', '#a3a3a3', '#737373'],
+      light: {
+        accent: '#525252', navBg: '#171717', navText: '#ffffff', background: '#f5f5f5', text: '#171717',
+        statusGreen: '#15803d', statusYellow: '#a16207', statusRed: '#dc2626',
+        accentHover: '#737373', navBg2: '#262626', navTextMuted: '#a3a3a3', textMuted: '#525252', border: '#d4d4d4',
+        surface1: '#ffffff', surface2: '#fafafa', cardBg: '#ffffff', contentBg: '#f5f5f5',
+        detailBg: '#ffffff', inputBg: '#ffffff', rowStripe: '#fafafa', rowHover: '#efefef', selectedBg: '#e5e5e5',
+      },
+      dark: {
+        accent: '#a3a3a3', navBg: '#171717', navText: '#ffffff', background: '#0a0a0a', text: '#e5e5e5',
+        statusGreen: '#4ade80', statusYellow: '#facc15', statusRed: '#f87171',
+        accentHover: '#d4d4d4', navBg2: '#1a1a1a', navTextMuted: '#737373', textMuted: '#a3a3a3', border: '#333333',
+        surface1: '#171717', surface2: '#1f1f1f', cardBg: '#171717', contentBg: '#0a0a0a',
+        detailBg: '#1f1f1f', inputBg: '#171717', rowStripe: '#141414', rowHover: '#222222', selectedBg: '#2a2a2a',
+      }
+    },
+    highContrast: {
+      name: 'High Contrast', desc: 'WCAG AAA, max readability',
+      preview: ['#0050a0', '#000000', '#ffffff', '#66b3ff', '#006400'],
+      light: {
+        accent: '#0050a0', navBg: '#000000', navText: '#ffffff', background: '#ffffff', text: '#000000',
+        statusGreen: '#006400', statusYellow: '#7a5900', statusRed: '#b30000',
+        accentHover: '#0068cc', navBg2: '#1a1a1a', navTextMuted: '#e0e0e0', textMuted: '#333333', border: '#000000',
+        surface1: '#ffffff', surface2: '#f0f0f0', cardBg: '#ffffff', contentBg: '#ffffff',
+        detailBg: '#ffffff', inputBg: '#ffffff', rowStripe: '#f0f0f0', rowHover: '#e0e8f5', selectedBg: '#cce0ff',
+      },
+      dark: {
+        accent: '#66b3ff', navBg: '#000000', navText: '#ffffff', background: '#000000', text: '#ffffff',
+        statusGreen: '#66ff66', statusYellow: '#ffff00', statusRed: '#ff6666',
+        accentHover: '#99ccff', navBg2: '#0a0a0a', navTextMuted: '#cccccc', textMuted: '#cccccc', border: '#ffffff',
+        surface1: '#111111', surface2: '#1a1a1a', cardBg: '#111111', contentBg: '#000000',
+        detailBg: '#1a1a1a', inputBg: '#111111', rowStripe: '#0d0d0d', rowHover: '#1a2a3a', selectedBg: '#003366',
+      },
+      nodeColors: { repeater: '#ff0000', companion: '#0066ff', room: '#009900', sensor: '#cc8800', observer: '#9933ff' },
+      typeColors: {
+        ADVERT: '#009900', GRP_TXT: '#0066ff', TXT_MSG: '#cc8800', ACK: '#666666',
+        REQUEST: '#9933ff', RESPONSE: '#0099cc', TRACE: '#cc0066', PATH: '#009999', ANON_REQ: '#cc3355'
+      }
+    },
+    midnight: {
+      name: 'Midnight', desc: 'Deep purples & indigos',
+      preview: ['#7c3aed', '#1e1045', '#f5f3ff', '#a78bfa', '#15803d'],
+      light: {
+        accent: '#7c3aed', navBg: '#1e1045', navText: '#ffffff', background: '#f5f3ff', text: '#1a1040',
+        statusGreen: '#15803d', statusYellow: '#a16207', statusRed: '#dc2626',
+        accentHover: '#8b5cf6', navBg2: '#2e1065', navTextMuted: '#c4b5fd', textMuted: '#5b5075', border: '#d8d0e8',
+        surface1: '#ffffff', surface2: '#ede9fe', cardBg: '#ffffff', contentBg: '#f5f3ff',
+        detailBg: '#ffffff', inputBg: '#ffffff', rowStripe: '#faf8ff', rowHover: '#ede9fe', selectedBg: '#ddd6fe',
+      },
+      dark: {
+        accent: '#a78bfa', navBg: '#1e1045', navText: '#ffffff', background: '#0f0a24', text: '#e2ddf0',
+        statusGreen: '#4ade80', statusYellow: '#facc15', statusRed: '#f87171',
+        accentHover: '#c4b5fd', navBg2: '#2e1065', navTextMuted: '#9d8abf', textMuted: '#9a90b0', border: '#352a55',
+        surface1: '#1a1338', surface2: '#221a48', cardBg: '#1a1338', contentBg: '#0f0a24',
+        detailBg: '#221a48', inputBg: '#1a1338', rowStripe: '#1a1338', rowHover: '#2a2050', selectedBg: '#352a6a',
+      }
+    },
+    ember: {
+      name: 'Ember', desc: 'Warm red/orange, cyberpunk',
+      preview: ['#dc2626', '#1a0a0a', '#faf5f5', '#ef4444', '#15803d'],
+      light: {
+        accent: '#dc2626', navBg: '#1a0a0a', navText: '#ffffff', background: '#faf5f5', text: '#1a0a0a',
+        statusGreen: '#15803d', statusYellow: '#a16207', statusRed: '#dc2626',
+        accentHover: '#ef4444', navBg2: '#2a1010', navTextMuted: '#f0a0a0', textMuted: '#6b4444', border: '#e0c8c8',
+        surface1: '#ffffff', surface2: '#faf0f0', cardBg: '#ffffff', contentBg: '#faf5f5',
+        detailBg: '#ffffff', inputBg: '#ffffff', rowStripe: '#fdf8f8', rowHover: '#fce8e8', selectedBg: '#fecaca',
+      },
+      dark: {
+        accent: '#ef4444', navBg: '#1a0505', navText: '#ffffff', background: '#0d0505', text: '#f0dada',
+        statusGreen: '#4ade80', statusYellow: '#facc15', statusRed: '#f87171',
+        accentHover: '#f87171', navBg2: '#2a0a0a', navTextMuted: '#c07070', textMuted: '#b09090', border: '#4a2020',
+        surface1: '#1a0d0d', surface2: '#261414', cardBg: '#1a0d0d', contentBg: '#0d0505',
+        detailBg: '#261414', inputBg: '#1a0d0d', rowStripe: '#1a0d0d', rowHover: '#301818', selectedBg: '#4a1a1a',
+      }
+    }
+  };
+
+  function detectActivePreset() {
+    for (var id in PRESETS) {
+      var p = PRESETS[id];
+      var match = true;
+      for (var i = 0; i < THEME_COLOR_KEYS.length; i++) {
+        var k = THEME_COLOR_KEYS[i];
+        if (state.theme[k] !== p.light[k] || state.themeDark[k] !== p.dark[k]) { match = false; break; }
+      }
+      if (match && p.nodeColors) {
+        for (var nk in p.nodeColors) { if (state.nodeColors[nk] !== p.nodeColors[nk]) { match = false; break; } }
+      }
+      if (match && p.typeColors) {
+        for (var tk in p.typeColors) { if (state.typeColors[tk] !== p.typeColors[tk]) { match = false; break; } }
+      }
+      if (match) return id;
+    }
+    return null;
+  }
+
+  function renderPresets(container) {
+    var active = detectActivePreset();
+    var html = '<div style="margin-bottom:16px">' +
+      '<p class="cust-section-title">Theme Presets</p>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">';
+    for (var id in PRESETS) {
+      var p = PRESETS[id];
+      var isActive = id === active;
+      var dots = '';
+      for (var di = 0; di < p.preview.length; di++) {
+        dots += '<span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:' + p.preview[di] + ';border:1px solid rgba(128,128,128,0.3)"></span>';
+      }
+      html += '<button class="cust-preset-btn" data-preset="' + id + '" style="' +
+        'display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 10px;' +
+        'border:2px solid ' + (isActive ? 'var(--accent)' : 'var(--border)') + ';' +
+        'border-radius:8px;background:' + (isActive ? 'var(--selected-bg)' : 'var(--surface-1)') + ';' +
+        'cursor:pointer;min-width:72px;color:var(--text)">' +
+        '<div style="display:flex;gap:3px">' + dots + '</div>' +
+        '<span style="font-size:11px;font-weight:' + (isActive ? '700' : '500') + '">' + esc(p.name) + '</span>' +
+        '<span style="font-size:9px;color:var(--text-muted)">' + esc(p.desc) + '</span>' +
+      '</button>';
+    }
+    html += '</div></div>';
+    return html;
+  }
+
+  function applyPreset(id, container) {
+    var p = PRESETS[id];
+    if (!p) return;
+    // Apply light theme colors
+    for (var i = 0; i < THEME_COLOR_KEYS.length; i++) {
+      var k = THEME_COLOR_KEYS[i];
+      state.theme[k] = p.light[k];
+      state.themeDark[k] = p.dark[k];
+    }
+    // Apply node/type colors
+    if (p.nodeColors) {
+      Object.assign(state.nodeColors, p.nodeColors);
+      if (window.ROLE_COLORS) Object.assign(window.ROLE_COLORS, p.nodeColors);
+      if (window.ROLE_STYLE) {
+        for (var role in p.nodeColors) {
+          if (window.ROLE_STYLE[role]) window.ROLE_STYLE[role].color = p.nodeColors[role];
+        }
+      }
+    } else {
+      // Reset to defaults
+      Object.assign(state.nodeColors, DEFAULTS.nodeColors);
+      if (window.ROLE_COLORS) Object.assign(window.ROLE_COLORS, DEFAULTS.nodeColors);
+    }
+    if (p.typeColors) {
+      Object.assign(state.typeColors, p.typeColors);
+      if (window.TYPE_COLORS) Object.assign(window.TYPE_COLORS, p.typeColors);
+    } else {
+      Object.assign(state.typeColors, DEFAULTS.typeColors);
+      if (window.TYPE_COLORS) Object.assign(window.TYPE_COLORS, DEFAULTS.typeColors);
+    }
+    applyThemePreview();
+    if (window.syncBadgeColors) window.syncBadgeColors();
+    window.dispatchEvent(new CustomEvent('theme-changed'));
+    autoSave();
+    render(container);
+  }
+
   const BASIC_KEYS = ['accent', 'navBg', 'navText', 'background', 'text', 'statusGreen', 'statusYellow', 'statusRed'];
   const ADVANCED_KEYS = ['accentHover', 'navBg2', 'navTextMuted', 'textMuted', 'border', 'surface1', 'surface2', 'cardBg', 'contentBg', 'detailBg', 'inputBg', 'rowStripe', 'rowHover', 'selectedBg'];
   const FONT_KEYS = ['font', 'mono'];
@@ -441,6 +680,7 @@
     }
 
     return '<div class="cust-panel' + (activeTab === 'theme' ? ' active' : '') + '" data-panel="theme">' +
+      renderPresets() +
       '<p class="cust-section-title">' + modeLabel + '</p>' +
       '<p style="font-size:11px;color:var(--text-muted);margin:0 0 10px">Toggle ☀️/🌙 in nav to edit the other mode.</p>' +
       basicRows +
@@ -632,6 +872,13 @@
       btn.addEventListener('click', function () {
         activeTab = btn.dataset.tab;
         render(container);
+      });
+    });
+
+    // Preset buttons
+    container.querySelectorAll('.cust-preset-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        applyPreset(btn.dataset.preset, container);
       });
     });
 
