@@ -315,7 +315,10 @@ function navigate() {
 }
 
 window.addEventListener('hashchange', navigate);
-window.addEventListener('theme-changed', () => { if (typeof navigate === 'function') navigate(); });
+window.addEventListener('theme-changed', () => {
+  // Notify current page to re-render without full teardown
+  window.dispatchEvent(new CustomEvent('theme-refresh'));
+});
 window.addEventListener('DOMContentLoaded', () => {
   connectWS();
 

@@ -2237,5 +2237,17 @@
     VCR.buffer = []; VCR.playhead = -1; VCR.mode = 'LIVE'; VCR.missedCount = 0; VCR.speed = 1;
   }
 
-  registerPage('live', { init, destroy });
+  let _themeRefreshHandler = null;
+
+  registerPage('live', {
+    init: function(app, routeParam) {
+      _themeRefreshHandler = () => { /* live map rebuilds on next packet */ };
+      window.addEventListener('theme-refresh', _themeRefreshHandler);
+      return init(app, routeParam);
+    },
+    destroy: function() {
+      if (_themeRefreshHandler) { window.removeEventListener('theme-refresh', _themeRefreshHandler); _themeRefreshHandler = null; }
+      return destroy();
+    }
+  });
 })();

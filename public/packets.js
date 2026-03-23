@@ -1695,7 +1695,19 @@
     } catch {}
   }
 
-  registerPage('packets', { init, destroy });
+  let _themeRefreshHandler = null;
+
+  registerPage('packets', {
+    init: function(app, routeParam) {
+      _themeRefreshHandler = () => { if (typeof renderTableRows === 'function') renderTableRows(); };
+      window.addEventListener('theme-refresh', _themeRefreshHandler);
+      return init(app, routeParam);
+    },
+    destroy: function() {
+      if (_themeRefreshHandler) { window.removeEventListener('theme-refresh', _themeRefreshHandler); _themeRefreshHandler = null; }
+      return destroy();
+    }
+  });
 
   // Standalone packet detail page: #/packet/123 or #/packet/HASH
   registerPage('packet-detail', {

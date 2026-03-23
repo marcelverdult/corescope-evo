@@ -680,5 +680,17 @@
     }
   }
 
-  registerPage('map', { init, destroy });
+  let _themeRefreshHandler = null;
+
+  registerPage('map', {
+    init: function(app, routeParam) {
+      _themeRefreshHandler = () => { if (markerLayer) renderMarkers(); };
+      window.addEventListener('theme-refresh', _themeRefreshHandler);
+      return init(app, routeParam);
+    },
+    destroy: function() {
+      if (_themeRefreshHandler) { window.removeEventListener('theme-refresh', _themeRefreshHandler); _themeRefreshHandler = null; }
+      return destroy();
+    }
+  });
 })();
