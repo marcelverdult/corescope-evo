@@ -117,31 +117,34 @@
       const statusLabel = statusAge < degradedMs ? '🟢 Active' : statusAge < silentMs ? '🟡 Degraded' : '🔴 Silent';
 
       body.innerHTML = `
-        ${hasLoc ? `<div id="nodeFullMap" class="node-detail-map" style="border-radius:8px;overflow:hidden;margin-bottom:16px"></div>` : ''}
-        <div class="node-full-card">
+        <div class="node-full-card" style="padding:12px 16px;margin-bottom:8px">
           <div class="node-detail-name" style="font-size:20px">${escapeHtml(n.name || '(unnamed)')}</div>
-          <div style="margin:6px 0 12px"><span class="badge" style="background:${roleColor}20;color:${roleColor}">${n.role}</span> ${n.hash_size ? `<span class="badge" style="background:var(--nav-bg);color:var(--nav-text);font-family:var(--mono)">${n.hash_size}-byte hash</span>` : ''} ${statusLabel}</div>
-          <div class="node-detail-key mono" style="font-size:11px;word-break:break-all;margin-bottom:8px">${n.public_key}</div>
-          <div style="margin-bottom:12px">
+          <div style="margin:4px 0 6px"><span class="badge" style="background:${roleColor}20;color:${roleColor}">${n.role}</span> ${n.hash_size ? `<span class="badge" style="background:var(--nav-bg);color:var(--nav-text);font-family:var(--mono)">${n.hash_size}-byte hash</span>` : ''} ${statusLabel}</div>
+          <div class="node-detail-key mono" style="font-size:11px;word-break:break-all;margin-bottom:6px">${n.public_key}</div>
+          <div>
             <button class="btn-primary" id="copyUrlBtn" style="font-size:12px;padding:4px 10px">📋 Copy URL</button>
             <a href="#/nodes/${encodeURIComponent(n.public_key)}/analytics" class="btn-primary" style="display:inline-block;margin-left:6px;text-decoration:none;font-size:12px;padding:4px 10px">📊 Analytics</a>
           </div>
-          <div class="node-qr" id="nodeFullQrCode"></div>
         </div>
 
-        <div class="node-full-card">
-          <h4>Stats</h4>
-          <dl class="detail-meta">
-            <dt>Last Heard</dt><dd>${lastHeard ? timeAgo(lastHeard) : (n.last_seen ? timeAgo(n.last_seen) : '—')}</dd>
-            <dt>First Seen</dt><dd>${n.first_seen ? new Date(n.first_seen).toLocaleString() : '—'}</dd>
-            <dt>Total Packets</dt><dd>${stats.totalTransmissions || stats.totalPackets || n.advert_count || 0}${stats.totalObservations && stats.totalObservations !== (stats.totalTransmissions || stats.totalPackets) ? ' <span class="text-muted" style="font-size:0.85em">(seen ' + stats.totalObservations + '×)</span>' : ''}</dd>
-            <dt>Packets Today</dt><dd>${stats.packetsToday || 0}</dd>
-            ${stats.avgSnr != null ? `<dt>Avg SNR</dt><dd>${stats.avgSnr.toFixed(1)} dB</dd>` : ''}
-            ${stats.avgHops ? `<dt>Avg Hops</dt><dd>${stats.avgHops}</dd>` : ''}
-            ${hasLoc ? `<dt>Location</dt><dd>${n.lat.toFixed(5)}, ${n.lon.toFixed(5)}</dd>` : ''}
-            <dt>Hash Size</dt><dd>${n.hash_size ? n.hash_size + '-byte (' + (n.hash_size * 2) + ' hex chars)' : 'Unknown'}</dd>
-          </dl>
+        <div class="node-top-row">
+          ${hasLoc ? `<div class="node-map-wrap"><div id="nodeFullMap" class="node-detail-map" style="height:100%;min-height:200px;border-radius:8px;overflow:hidden"></div></div>` : ''}
+          <div class="node-qr-wrap${hasLoc ? '' : ' node-qr-wrap--full'}">
+            <div class="node-qr" id="nodeFullQrCode"></div>
+            <div class="mono" style="font-size:10px;color:var(--text-muted);margin-top:8px;word-break:break-all;text-align:center;max-width:180px">${n.public_key.slice(0, 16)}…${n.public_key.slice(-8)}</div>
+          </div>
         </div>
+
+        <table class="node-stats-table">
+          <tr><td>Last Heard</td><td>${lastHeard ? timeAgo(lastHeard) : (n.last_seen ? timeAgo(n.last_seen) : '—')}</td></tr>
+          <tr><td>First Seen</td><td>${n.first_seen ? new Date(n.first_seen).toLocaleString() : '—'}</td></tr>
+          <tr><td>Total Packets</td><td>${stats.totalTransmissions || stats.totalPackets || n.advert_count || 0}${stats.totalObservations && stats.totalObservations !== (stats.totalTransmissions || stats.totalPackets) ? ' <span class="text-muted" style="font-size:0.85em">(seen ' + stats.totalObservations + '×)</span>' : ''}</td></tr>
+          <tr><td>Packets Today</td><td>${stats.packetsToday || 0}</td></tr>
+          ${stats.avgSnr != null ? `<tr><td>Avg SNR</td><td>${stats.avgSnr.toFixed(1)} dB</td></tr>` : ''}
+          ${stats.avgHops ? `<tr><td>Avg Hops</td><td>${stats.avgHops}</td></tr>` : ''}
+          ${hasLoc ? `<tr><td>Location</td><td>${n.lat.toFixed(5)}, ${n.lon.toFixed(5)}</td></tr>` : ''}
+          <tr><td>Hash Size</td><td>${n.hash_size ? n.hash_size + '-byte (' + (n.hash_size * 2) + ' hex chars)' : 'Unknown'}</td></tr>
+        </table>
 
         ${observers.length ? `<div class="node-full-card">
           ${(() => { const regions = [...new Set(observers.map(o => o.iata).filter(Boolean))]; return regions.length ? `<div style="margin-bottom:8px"><strong>Regions:</strong> ${regions.map(r => '<span class="badge" style="margin:0 2px">' + escapeHtml(r) + '</span>').join(' ')}</div>` : ''; })()}
