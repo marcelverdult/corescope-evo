@@ -1469,9 +1469,8 @@
         rows += fieldRow(off + 100, 'App Flags', '0x' + (decoded.flags.raw?.toString(16).padStart(2,'0') || '??'), _flagDesc);
         let fOff = off + 101;
         if (decoded.flags.hasLocation) {
-          const _mapUrl = `https://www.google.com/maps?q=${decoded.lat},${decoded.lon}`;
           rows += fieldRow(fOff, 'Latitude', decoded.lat?.toFixed(6) || '', '');
-          rows += fieldRow(fOff + 4, 'Longitude', (decoded.lon?.toFixed(6) || '') + ` <a href="${_mapUrl}" target="_blank" rel="noopener" class="detail-map-link" style="margin-left:8px;padding:2px 8px;font-size:11px">📍 Map</a>`, '');
+          rows += fieldRow(fOff + 4, 'Longitude', decoded.lon?.toFixed(6) || '', '');
           fOff += 8;
         }
         if (decoded.flags.hasName) {
