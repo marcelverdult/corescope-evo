@@ -87,12 +87,12 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 /* === Nav === */
 .top-nav {
   display: flex; align-items: center; justify-content: space-between;
-  background: linear-gradient(135deg, var(--nav-bg) 0%, var(--nav-bg2) 100%); color: #fff; padding: 0 20px; height: 52px;
+  background: linear-gradient(135deg, var(--nav-bg) 0%, var(--nav-bg2) 100%); color: var(--nav-text, #fff); padding: 0 20px; height: 52px;
   position: sticky; top: 0; z-index: 1100;
   box-shadow: 0 2px 8px rgba(0,0,0,.3);
 }
 .nav-left { display: flex; align-items: center; gap: 24px; }
-.nav-brand { display: flex; align-items: center; gap: 8px; text-decoration: none; color: #fff; font-weight: 700; font-size: 16px; }
+.nav-brand { display: flex; align-items: center; gap: 8px; text-decoration: none; color: var(--nav-text, #fff); font-weight: 700; font-size: 16px; }
 .brand-icon { font-size: 20px; }
 .live-dot {
   width: 8px; height: 8px; border-radius: 50%; background: #555;
