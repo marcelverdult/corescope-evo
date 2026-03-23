@@ -178,6 +178,14 @@
         if (typeof makeColumnsResizable === 'function') makeColumnsResizable('#' + tbl.id, `meshcore-analytics-${tab}-${i}-col-widths`);
       });
     });
+    // Deep-link scroll to section within tab
+    const sectionId = new URLSearchParams((location.hash.split('?')[1] || '')).get('section');
+    if (sectionId) {
+      setTimeout(() => {
+        const target = document.getElementById(sectionId);
+        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 400);
+    }
   }
 
   // ===================== OVERVIEW =====================
@@ -790,13 +798,13 @@
         <div id="inconsistentHashList"><div class="text-muted" style="padding:8px"><span class="spinner"></span> Loading…</div></div>
       </div>
 
-      <div class="analytics-card">
+      <div class="analytics-card" id="hashMatrixSection">
         <h3>1-Byte Hash Usage Matrix</h3>
         <p class="text-muted" style="margin:0 0 8px;font-size:0.8em">Click a cell to see which nodes share that prefix. Green = available, yellow = taken, red = collision.</p>
         <div id="hashMatrix"></div>
       </div>
 
-      <div class="analytics-card">
+      <div class="analytics-card" id="collisionRiskSection">
         <h3>1-Byte Collision Risk</h3>
         <div id="collisionList"><div class="text-muted" style="padding:8px">Loading…</div></div>
       </div>
