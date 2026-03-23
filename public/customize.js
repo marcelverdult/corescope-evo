@@ -15,46 +15,22 @@
       faviconUrl: ''
     },
     theme: {
-      accent: '#4a9eff',
-      accentHover: '#6db3ff',
-      navBg: '#0f0f23',
-      navBg2: '#1a1a2e',
-      text: '#1a1a2e',
-      textMuted: '#5b6370',
-      border: '#e2e5ea',
-      surface0: '#f4f5f7',
-      surface1: '#ffffff',
-      surface2: '#ffffff',
-      cardBg: '#ffffff',
-      contentBg: '#f4f5f7',
-      inputBg: '#ffffff',
-      rowStripe: '#f9fafb',
-      rowHover: '#eef2ff',
-      selectedBg: '#dbeafe',
-      statusGreen: '#22c55e',
-      statusYellow: '#eab308',
-      statusRed: '#ef4444'
+      accent: '#4a9eff', navBg: '#0f0f23', background: '#f4f5f7', text: '#1a1a2e',
+      statusGreen: '#22c55e', statusYellow: '#eab308', statusRed: '#ef4444',
+      accentHover: '#6db3ff', navBg2: '#1a1a2e', textMuted: '#5b6370', border: '#e2e5ea',
+      surface1: '#ffffff', surface2: '#ffffff', cardBg: '#ffffff', contentBg: '#f4f5f7',
+      inputBg: '#ffffff', rowStripe: '#f9fafb', rowHover: '#eef2ff', selectedBg: '#dbeafe',
+      font: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+      mono: '"SF Mono", "Fira Code", "Cascadia Code", Consolas, monospace',
     },
     themeDark: {
-      accent: '#4a9eff',
-      accentHover: '#6db3ff',
-      navBg: '#0f0f23',
-      navBg2: '#1a1a2e',
-      text: '#e2e8f0',
-      textMuted: '#a8b8cc',
-      border: '#334155',
-      surface0: '#0f0f23',
-      surface1: '#1a1a2e',
-      surface2: '#232340',
-      cardBg: '#1a1a2e',
-      contentBg: '#0f0f23',
-      inputBg: '#1e1e34',
-      rowStripe: '#1e1e34',
-      rowHover: '#2d2d50',
-      selectedBg: '#1e3a5f',
-      statusGreen: '#22c55e',
-      statusYellow: '#eab308',
-      statusRed: '#ef4444'
+      accent: '#4a9eff', navBg: '#0f0f23', background: '#0f0f23', text: '#e2e8f0',
+      statusGreen: '#22c55e', statusYellow: '#eab308', statusRed: '#ef4444',
+      accentHover: '#6db3ff', navBg2: '#1a1a2e', textMuted: '#a8b8cc', border: '#334155',
+      surface1: '#1a1a2e', surface2: '#232340', cardBg: '#1a1a2e', contentBg: '#0f0f23',
+      inputBg: '#1e1e34', rowStripe: '#1e1e34', rowHover: '#2d2d50', selectedBg: '#1e3a5f',
+      font: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+      mono: '"SF Mono", "Fira Code", "Cascadia Code", Consolas, monospace',
     },
     nodeColors: {
       repeater: '#dc2626',
@@ -91,14 +67,19 @@
 
   // CSS variable name → theme key mapping
   const THEME_CSS_MAP = {
+    // Basic
     accent: '--accent',
-    accentHover: '--accent-hover',
     navBg: '--nav-bg',
-    navBg2: '--nav-bg2',
+    background: '--surface-0',
     text: '--text',
+    statusGreen: '--status-green',
+    statusYellow: '--status-yellow',
+    statusRed: '--status-red',
+    // Advanced (derived from basic by default)
+    accentHover: '--accent-hover',
+    navBg2: '--nav-bg2',
     textMuted: '--text-muted',
     border: '--border',
-    surface0: '--surface-0',
     surface1: '--surface-1',
     surface2: '--surface-2',
     cardBg: '--card-bg',
@@ -107,53 +88,59 @@
     rowStripe: '--row-stripe',
     rowHover: '--row-hover',
     selectedBg: '--selected-bg',
-    statusGreen: '--status-green',
-    statusYellow: '--status-yellow',
-    statusRed: '--status-red'
+    font: '--font',
+    mono: '--mono',
   };
 
+  const BASIC_KEYS = ['accent', 'navBg', 'background', 'text', 'statusGreen', 'statusYellow', 'statusRed'];
+  const ADVANCED_KEYS = ['accentHover', 'navBg2', 'textMuted', 'border', 'surface1', 'surface2', 'cardBg', 'contentBg', 'inputBg', 'rowStripe', 'rowHover', 'selectedBg', 'font', 'mono'];
+
   const THEME_LABELS = {
-    accent: 'Accent',
-    accentHover: 'Accent Hover',
-    navBg: 'Nav Background',
-    navBg2: 'Nav Background 2',
+    accent: 'Brand Color',
+    navBg: 'Navigation',
+    background: 'Background',
     text: 'Text',
+    statusGreen: 'Healthy',
+    statusYellow: 'Warning',
+    statusRed: 'Error',
+    accentHover: 'Accent Hover',
+    navBg2: 'Nav Gradient End',
     textMuted: 'Muted Text',
     border: 'Borders',
-    surface0: 'Page Background',
-    surface1: 'Card Background',
-    surface2: 'Surface 2',
-    cardBg: 'Card Background',
-    contentBg: 'Content Background',
-    inputBg: 'Input Background',
+    surface1: 'Cards',
+    surface2: 'Panels',
+    cardBg: 'Card Fill',
+    contentBg: 'Content Area',
+    inputBg: 'Inputs',
     rowStripe: 'Table Stripe',
     rowHover: 'Row Hover',
-    selectedBg: 'Selected Row',
-    statusGreen: 'Status Green',
-    statusYellow: 'Status Yellow',
-    statusRed: 'Status Red'
+    selectedBg: 'Selected',
+    font: 'Body Font',
+    mono: 'Mono Font',
   };
 
   const THEME_HINTS = {
-    accent: 'Active nav tab, buttons, links, selected rows, badges',
-    accentHover: 'Button and link hover states',
-    navBg: 'Top navigation bar gradient start',
-    navBg2: 'Top navigation bar gradient end',
-    text: 'Primary text color',
-    textMuted: 'Secondary/muted text, labels, timestamps',
-    border: 'Table borders, card borders, dividers',
-    surface0: 'Main page background',
-    surface1: 'Cards, panels, modals',
-    surface2: 'Nested surfaces, inputs, secondary panels',
-    cardBg: 'Card and detail panel backgrounds',
-    contentBg: 'Content area background',
-    inputBg: 'Text inputs, dropdowns, search boxes',
-    rowStripe: 'Alternating table row background',
-    rowHover: 'Table row hover highlight',
-    selectedBg: 'Selected/active row background',
-    statusGreen: 'Healthy nodes, online indicators',
-    statusYellow: 'Degraded nodes, warnings',
-    statusRed: 'Offline/silent nodes, errors'
+    accent: 'Buttons, links, active tabs, badges, charts — your primary brand color',
+    navBg: 'Top navigation bar',
+    background: 'Main page background',
+    text: 'Primary text — muted text auto-derives',
+    statusGreen: 'Healthy/online indicators',
+    statusYellow: 'Warning/degraded + hop conflicts',
+    statusRed: 'Error/offline indicators',
+    accentHover: 'Hover state for accent elements',
+    navBg2: 'Darker end of nav gradient',
+    textMuted: 'Labels, timestamps, secondary text',
+    border: 'Dividers, table borders, card borders',
+    surface1: 'Card and panel backgrounds',
+    surface2: 'Nested surfaces, secondary panels',
+    cardBg: 'Detail panels, modals',
+    contentBg: 'Content area behind cards',
+    inputBg: 'Text inputs, dropdowns',
+    rowStripe: 'Alternating table rows',
+    rowHover: 'Table row hover',
+    selectedBg: 'Selected/active rows',
+    font: 'System font stack for body text',
+    mono: 'Monospace font for hex, code, hashes',
   };
 
   const NODE_LABELS = {
@@ -360,28 +347,45 @@
     '</div>';
   }
 
+  function renderColorRow(key, val, def, dataAttr) {
+    var isFont = key === 'font' || key === 'mono';
+    var inputHtml = isFont
+      ? '<input type="text" data-' + dataAttr + '="' + key + '" value="' + escAttr(val) + '" style="width:160px;font-size:11px;font-family:var(--mono);padding:4px 6px;border:1px solid var(--border);border-radius:4px;background:var(--input-bg);color:var(--text)">'
+      : '<input type="color" data-' + dataAttr + '="' + key + '" value="' + val + '">' +
+        '<span class="cust-hex" data-hex="' + key + '">' + val + '</span>';
+    return '<div class="cust-color-row">' +
+      '<div><label>' + THEME_LABELS[key] + '</label>' +
+      '<div class="cust-hint">' + (THEME_HINTS[key] || '') + '</div></div>' +
+      inputHtml +
+      (val !== def ? '<button class="cust-reset-btn" data-reset-theme="' + key + '">Reset</button>' : '') +
+    '</div>';
+  }
+
   function renderTheme() {
     var dark = isDarkMode();
     var modeLabel = dark ? '🌙 Dark Mode' : '☀️ Light Mode';
-    var themeKey = dark ? 'themeDark' : 'theme';
     var defs = activeDefaults();
     var current = activeTheme();
-    var rows = '';
-    for (var key in THEME_LABELS) {
-      var val = current[key] || defs[key] || '#000000';
-      var def = defs[key] || '#000000';
-      rows += '<div class="cust-color-row">' +
-        '<div><label>' + THEME_LABELS[key] + '</label>' +
-        '<div class="cust-hint">' + (THEME_HINTS[key] || '') + '</div></div>' +
-        '<input type="color" data-theme="' + key + '" value="' + val + '">' +
-        '<span class="cust-hex" data-hex="' + key + '">' + val + '</span>' +
-        (val !== def ? '<button class="cust-reset-btn" data-reset-theme="' + key + '">Reset</button>' : '') +
-      '</div>';
+
+    var basicRows = '';
+    for (var i = 0; i < BASIC_KEYS.length; i++) {
+      var key = BASIC_KEYS[i];
+      basicRows += renderColorRow(key, current[key] || defs[key] || '#000000', defs[key] || '#000000', 'theme');
     }
+
+    var advancedRows = '';
+    for (var j = 0; j < ADVANCED_KEYS.length; j++) {
+      var akey = ADVANCED_KEYS[j];
+      advancedRows += renderColorRow(akey, current[akey] || defs[akey] || '#000000', defs[akey] || '#000000', 'theme');
+    }
+
     return '<div class="cust-panel' + (activeTab === 'theme' ? ' active' : '') + '" data-panel="theme">' +
-      '<p class="cust-section-title">' + modeLabel + ' Colors</p>' +
-      '<p style="font-size:11px;color:var(--text-muted);margin:0 0 12px">Editing ' + (dark ? 'dark' : 'light') + ' mode. Toggle ☀️/🌙 in nav to switch.</p>' +
-      rows +
+      '<p class="cust-section-title">' + modeLabel + '</p>' +
+      '<p style="font-size:11px;color:var(--text-muted);margin:0 0 10px">Toggle ☀️/🌙 in nav to edit the other mode.</p>' +
+      basicRows +
+      '<details class="cust-advanced"><summary style="font-size:12px;font-weight:600;cursor:pointer;color:var(--text-muted);margin:12px 0 8px">Advanced (' + ADVANCED_KEYS.length + ' options)</summary>' +
+      advancedRows +
+      '</details>' +
       '<button class="cust-reset-preview" id="custResetPreview">↩ Reset Preview</button>' +
     '</div>';
   }
