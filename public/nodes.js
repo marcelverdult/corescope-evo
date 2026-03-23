@@ -19,7 +19,58 @@
   let selectedKey = null;
   let activeTab = 'all';
   let search = '';
-  let sortBy = 'lastSeen';
+  // Sort state: column + direction, persisted to localStorage
+  let sortState = (function () {
+    try {
+      const saved = JSON.parse(localStorage.getItem('meshcore-nodes-sort'));
+      if (saved && saved.column && saved.direction) return saved;
+    } catch {}
+    return { column: 'last_seen', direction: 'desc' };
+  })();
+
+  function toggleSort(column) {
+    if (sortState.column === column) {
+      sortState.direction = sortState.direction === 'asc' ? 'desc' : 'asc';
+    } else {
+      // Default direction per column type
+      const descDefault = ['last_seen', 'advert_count'];
+      sortState = { column, direction: descDefault.includes(column) ? 'desc' : 'asc' };
+    }
+    localStorage.setItem('meshcore-nodes-sort', JSON.stringify(sortState));
+  }
+
+  function sortNodes(arr) {
+    const col = sortState.column;
+    const dir = sortState.direction === 'asc' ? 1 : -1;
+    return arr.sort(function (a, b) {
+      let va, vb;
+      if (col === 'name') {
+        va = (a.name || '').toLowerCase(); vb = (b.name || '').toLowerCase();
+        if (!a.name && b.name) return 1;
+        if (a.name && !b.name) return -1;
+        return va < vb ? -dir : va > vb ? dir : 0;
+      } else if (col === 'public_key') {
+        va = a.public_key || ''; vb = b.public_key || '';
+        return va < vb ? -dir : va > vb ? dir : 0;
+      } else if (col === 'role') {
+        va = (a.role || '').toLowerCase(); vb = (b.role || '').toLowerCase();
+        return va < vb ? -dir : va > vb ? dir : 0;
+      } else if (col === 'last_seen') {
+        va = a.last_seen ? new Date(a.last_seen).getTime() : 0;
+        vb = b.last_seen ? new Date(b.last_seen).getTime() : 0;
+        return (va - vb) * dir;
+      } else if (col === 'advert_count') {
+        va = a.advert_count || 0; vb = b.advert_count || 0;
+        return (va - vb) * dir;
+      }
+      return 0;
+    });
+  }
+
+  function sortArrow(col) {
+    if (sortState.column !== col) return '';
+    return '<span class="sort-arrow">' + (sortState.direction === 'asc' ? '▲' : '▼') + '</span>';
+  }
   let lastHeard = '';
   let wsHandler = null;
   let detailMap = null;
@@ -108,13 +159,27 @@
       const observers = h.observers || [];
       const recent = h.recentPackets || [];
       const lastHeard = stats.lastHeard;
-      const statusAge = lastHeard ? (Date.now() - new Date(lastHeard).getTime()) : Infinity;
       // Thresholds based on MeshCore advert intervals:
       // Repeaters/rooms: flood advert every 12-24h, so degraded after 24h, silent after 72h
       // Companions/sensors: user-initiated adverts, shorter thresholds
       const role = (n.role || '').toLowerCase();
-      const { degradedMs, silentMs } = getHealthThresholds(role);
-      const statusLabel = statusAge < degradedMs ? '🟢 Active' : statusAge < silentMs ? '🟡 Degraded' : '🔴 Silent';
+      const lastHeardMs = lastHeard ? new Date(lastHeard).getTime() : 0;
+      const status = getNodeStatus(role, lastHeardMs);
+      const statusLabel = status === 'active' ? '🟢 Active' : '⚪ Stale';
+      const statusAge = lastHeardMs ? (Date.now() - lastHeardMs) : Infinity;
+      let statusExplanation = '';
+      if (status === 'active') {
+        statusExplanation = 'Last heard ' + (lastHeard ? timeAgo(lastHeard) : 'unknown');
+      } else {
+        const ageDays = Math.floor(statusAge / 86400000);
+        const ageHours = Math.floor(statusAge / 3600000);
+        const ageStr = ageDays >= 1 ? ageDays + 'd' : ageHours + 'h';
+        const isInfra = role === 'repeater' || role === 'room';
+        const reason = isInfra
+          ? 'repeaters typically advertise every 12-24h'
+          : 'companions only advertise when user initiates, this may be normal';
+        statusExplanation = 'Not heard for ' + ageStr + ' — ' + reason;
+      }
 
       body.innerHTML = `
         <div class="node-full-card" style="padding:12px 16px;margin-bottom:8px">
@@ -137,6 +202,7 @@
         </div>
 
         <table class="node-stats-table" id="node-stats">
+          <tr><td>Status</td><td>${statusLabel} <span style="font-size:11px;color:var(--text-muted);margin-left:4px">${statusExplanation}</span></td></tr>
           <tr><td>Last Heard</td><td>${lastHeard ? timeAgo(lastHeard) : (n.last_seen ? timeAgo(n.last_seen) : '—')}</td></tr>
           <tr><td>First Seen</td><td>${n.first_seen ? new Date(n.first_seen).toLocaleString() : '—'}</td></tr>
           <tr><td>Total Packets</td><td>${stats.totalTransmissions || stats.totalPackets || n.advert_count || 0}${stats.totalObservations && stats.totalObservations !== (stats.totalTransmissions || stats.totalPackets) ? ' <span class="text-muted" style="font-size:0.85em">(seen ' + stats.totalObservations + '×)</span>' : ''}</td></tr>
@@ -304,7 +370,7 @@
 
   async function loadNodes() {
     try {
-      const params = new URLSearchParams({ limit: '200', sortBy });
+      const params = new URLSearchParams({ limit: '200' });
       if (activeTab !== 'all') params.set('role', activeTab);
       if (search) params.set('search', search);
       if (lastHeard) params.set('lastHeard', lastHeard);
@@ -375,20 +441,15 @@
             <option value="7d" ${lastHeard==='7d'?'selected':''}>7 days</option>
             <option value="30d" ${lastHeard==='30d'?'selected':''}>30 days</option>
           </select>
-          <select id="nodeSort" aria-label="Sort nodes">
-            <option value="lastSeen" ${sortBy==='lastSeen'?'selected':''}>Sort: Last Seen</option>
-            <option value="name" ${sortBy==='name'?'selected':''}>Sort: Name</option>
-            <option value="packetCount" ${sortBy==='packetCount'?'selected':''}>Sort: Adverts</option>
-          </select>
         </div>
       </div>
       <table class="data-table" id="nodesTable">
         <thead><tr>
-          <th class="sortable" data-sort="name" aria-sort="${sortBy === 'name' ? 'ascending' : 'none'}">Name</th>
-          <th>Public Key</th>
-          <th>Role</th>
-          <th class="sortable" data-sort="lastSeen" aria-sort="${sortBy === 'lastSeen' ? 'descending' : 'none'}">Last Seen</th>
-          <th class="sortable" data-sort="packetCount" aria-sort="${sortBy === 'packetCount' ? 'descending' : 'none'}">Adverts</th>
+          <th class="sortable${sortState.column==='name'?' sort-active':''}" data-sort="name">Name${sortArrow('name')}</th>
+          <th class="sortable${sortState.column==='public_key'?' sort-active':''}" data-sort="public_key">Public Key${sortArrow('public_key')}</th>
+          <th class="sortable${sortState.column==='role'?' sort-active':''}" data-sort="role">Role${sortArrow('role')}</th>
+          <th class="sortable${sortState.column==='last_seen'?' sort-active':''}" data-sort="last_seen">Last Seen${sortArrow('last_seen')}</th>
+          <th class="sortable${sortState.column==='advert_count'?' sort-active':''}" data-sort="advert_count">Adverts${sortArrow('advert_count')}</th>
         </tr></thead>
         <tbody id="nodesBody"></tbody>
       </table>`;
@@ -402,11 +463,10 @@
 
     // Filter changes
     document.getElementById('nodeLastHeard').addEventListener('change', e => { lastHeard = e.target.value; loadNodes(); });
-    document.getElementById('nodeSort').addEventListener('change', e => { sortBy = e.target.value; loadNodes(); });
 
     // Sortable column headers
     el.querySelectorAll('th.sortable').forEach(th => {
-      th.addEventListener('click', () => { sortBy = th.dataset.sort; loadNodes(); });
+      th.addEventListener('click', () => { toggleSort(th.dataset.sort); renderLeft(); });
     });
 
     // Delegated click/keyboard handler for table rows
@@ -448,11 +508,13 @@
       return;
     }
 
-    // Claimed ("My Mesh") nodes always on top, then favorites
+    // Claimed ("My Mesh") nodes always on top, then favorites, then sort
     const myNodes = JSON.parse(localStorage.getItem('meshcore-my-nodes') || '[]');
     const myKeys = new Set(myNodes.map(n => n.pubkey));
     const favs = getFavorites();
-    const sorted = [...nodes].sort((a, b) => {
+    const sorted = sortNodes([...nodes]);
+    // Stable re-sort: claimed first, then favorites, preserving sort within each group
+    sorted.sort((a, b) => {
       const aMy = myKeys.has(a.public_key) ? 0 : 1;
       const bMy = myKeys.has(b.public_key) ? 0 : 1;
       if (aMy !== bMy) return aMy - bMy;
@@ -464,11 +526,13 @@
     tbody.innerHTML = sorted.map(n => {
       const roleColor = ROLE_COLORS[n.role] || '#6b7280';
       const isClaimed = myKeys.has(n.public_key);
+      const status = getNodeStatus(n.role || 'companion', n.last_seen ? new Date(n.last_seen).getTime() : 0);
+      const lastSeenClass = status === 'active' ? 'last-seen-active' : 'last-seen-stale';
       return `<tr data-key="${n.public_key}" data-action="select" data-value="${n.public_key}" tabindex="0" role="row" class="${selectedKey === n.public_key ? 'selected' : ''}${isClaimed ? ' claimed-row' : ''}">
         <td>${favStar(n.public_key, 'node-fav')}${isClaimed ? '<span class="claimed-badge" title="My Mesh">★</span> ' : ''}<strong>${n.name || '(unnamed)'}</strong></td>
         <td class="mono">${truncate(n.public_key, 16)}</td>
         <td><span class="badge" style="background:${roleColor}20;color:${roleColor}">${n.role}</span></td>
-        <td>${timeAgo(n.last_seen)}</td>
+        <td class="${lastSeenClass}">${timeAgo(n.last_seen)}</td>
         <td>${n.advert_count || 0}</td>
       </tr>`;
     }).join('');
@@ -513,10 +577,10 @@
 
     // Status calculation
     const lastHeard = stats.lastHeard;
-    const statusAge = lastHeard ? (Date.now() - new Date(lastHeard).getTime()) : Infinity;
+    const lastHeardMs = lastHeard ? new Date(lastHeard).getTime() : 0;
     const role = (n.role || '').toLowerCase();
-    const { degradedMs, silentMs } = getHealthThresholds(role);
-    const statusLabel = statusAge < degradedMs ? '🟢 Active' : statusAge < silentMs ? '🟡 Degraded' : '🔴 Silent';
+    const status = getNodeStatus(role, lastHeardMs);
+    const statusLabel = status === 'active' ? '🟢 Active' : '⚪ Stale';
     const totalPackets = stats.totalTransmissions || stats.totalPackets || n.advert_count || 0;
 
     panel.innerHTML = `

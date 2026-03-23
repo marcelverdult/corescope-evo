@@ -779,6 +779,10 @@ button.ch-item.selected { background: var(--selected-bg); }
 }
 .data-table tbody tr.new-row { animation: row-flash 800ms ease-out; }
 
+.data-table th.sortable { cursor: pointer; user-select: none; }
+.data-table th.sortable:hover { color: var(--accent); }
+.data-table th.sort-active { color: var(--accent); }
+.data-table th .sort-arrow { font-size: 10px; margin-left: 4px; opacity: 0.7; }
 .data-table tbody tr { border-left: 3px solid transparent; transition: border-color 0.15s, background 0.15s; }
 .data-table tbody tr:hover { border-left-color: var(--accent); }
 
@@ -1422,6 +1426,9 @@ tr[data-hops]:hover { background: rgba(59,130,246,0.1); }
 }
 
 .meshcore-marker { background: none !important; border: none !important; }
+.marker-stale { opacity: 0.35; filter: grayscale(70%); }
+.last-seen-active { color: var(--status-green); }
+.last-seen-stale { color: var(--text-muted); }
 
 /* === Node Analytics === */
 .analytics-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 16px; }
