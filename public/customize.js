@@ -17,7 +17,7 @@
     theme: {
       accent: '#4a9eff', navBg: '#0f0f23', background: '#f4f5f7', text: '#1a1a2e',
       statusGreen: '#22c55e', statusYellow: '#eab308', statusRed: '#ef4444',
-      accentHover: '#6db3ff', navBg2: '#1a1a2e', navText: '#ffffff', textMuted: '#5b6370', border: '#e2e5ea',
+      accentHover: '#6db3ff', navBg2: '#1a1a2e', textMuted: '#5b6370', border: '#e2e5ea',
       surface1: '#ffffff', surface2: '#ffffff', cardBg: '#ffffff', contentBg: '#f4f5f7',
       inputBg: '#ffffff', rowStripe: '#f9fafb', rowHover: '#eef2ff', selectedBg: '#dbeafe',
       font: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
@@ -26,7 +26,7 @@
     themeDark: {
       accent: '#4a9eff', navBg: '#0f0f23', background: '#0f0f23', text: '#e2e8f0',
       statusGreen: '#22c55e', statusYellow: '#eab308', statusRed: '#ef4444',
-      accentHover: '#6db3ff', navBg2: '#1a1a2e', navText: '#ffffff', textMuted: '#a8b8cc', border: '#334155',
+      accentHover: '#6db3ff', navBg2: '#1a1a2e', textMuted: '#a8b8cc', border: '#334155',
       surface1: '#1a1a2e', surface2: '#232340', cardBg: '#1a1a2e', contentBg: '#0f0f23',
       inputBg: '#1e1e34', rowStripe: '#1e1e34', rowHover: '#2d2d50', selectedBg: '#1e3a5f',
       font: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
@@ -79,7 +79,6 @@
     // Advanced (derived from basic by default)
     accentHover: '--accent-hover',
     navBg2: '--nav-bg2',
-    navText: '--nav-text',
     textMuted: '--text-muted',
     border: '--border',
     surface1: '--surface-1',
@@ -95,7 +94,7 @@
   };
 
   const BASIC_KEYS = ['accent', 'navBg', 'background', 'text', 'statusGreen', 'statusYellow', 'statusRed'];
-  const ADVANCED_KEYS = ['accentHover', 'navBg2', 'navText', 'textMuted', 'border', 'surface1', 'surface2', 'cardBg', 'contentBg', 'inputBg', 'rowStripe', 'rowHover', 'selectedBg', 'font', 'mono'];
+  const ADVANCED_KEYS = ['accentHover', 'navBg2', 'textMuted', 'border', 'surface1', 'surface2', 'cardBg', 'contentBg', 'inputBg', 'rowStripe', 'rowHover', 'selectedBg', 'font', 'mono'];
 
   const THEME_LABELS = {
     accent: 'Brand Color',
@@ -107,7 +106,6 @@
     statusRed: 'Error',
     accentHover: 'Accent Hover',
     navBg2: 'Nav Gradient End',
-    navText: 'Nav Text',
     textMuted: 'Muted Text',
     border: 'Borders',
     surface1: 'Cards',
@@ -132,7 +130,6 @@
     statusRed: 'Error/offline indicators',
     accentHover: 'Hover state for accent elements',
     navBg2: 'Darker end of nav gradient',
-    navText: 'Navigation bar text, links, brand name',
     textMuted: 'Labels, timestamps, secondary text',
     border: 'Dividers, table borders, card borders',
     surface1: 'Card and panel backgrounds',
