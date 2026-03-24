@@ -33,22 +33,30 @@ jobs:
         run: |
           npx c8 --reporter=text-summary --reporter=text sh test-all.sh 2>&1 | tee test-output.txt
           
-          # Extract test counts
           TOTAL_PASS=$(grep -oP '\d+(?= passed)' test-output.txt | awk '{s+=$1} END {print s}')
           TOTAL_FAIL=$(grep -oP '\d+(?= failed)' test-output.txt | awk '{s+=$1} END {print s}')
           COVERAGE=$(grep 'Statements' test-output.txt | tail -1 | grep -oP '[\d.]+(?=%)')
           
-          # Generate badge JSON files
           mkdir -p .badges
           echo "{\"schemaVersion\":1,\"label\":\"tests\",\"message\":\"${TOTAL_PASS}/${TOTAL_PASS} passed\",\"color\":\"brightgreen\"}" > .badges/tests.json
-          echo "{\"schemaVersion\":1,\"label\":\"coverage\",\"message\":\"${COVERAGE}%\",\"color\":\"$([ $(echo "$COVERAGE > 80" | bc -l) -eq 1 ] && echo 'brightgreen' || ([ $(echo "$COVERAGE > 60" | bc -l) -eq 1 ] && echo 'yellow' || echo 'red'))\"}" > .badges/coverage.json
+          echo "{\"schemaVersion\":1,\"label\":\"coverage\",\"message\":\"${COVERAGE}%\",\"color\":\"$([ $(echo \"$COVERAGE > 80\" | bc -l) -eq 1 ] && echo 'brightgreen' || ([ $(echo \"$COVERAGE > 60\" | bc -l) -eq 1 ] && echo 'yellow' || echo 'red'))\"}" > .badges/coverage.json
           
-          # Job summary
           echo "## Test Results" >> $GITHUB_STEP_SUMMARY
           echo "**${TOTAL_PASS} tests passed, ${TOTAL_FAIL} failed** | Coverage: ${COVERAGE}%" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           grep -E 'passed|failed|Results|Statements|Branches|Functions|Lines' test-output.txt >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Install Playwright browser
+        run: npx playwright install chromium --with-deps 2>/dev/null || true
+
+      - name: E2E smoke tests (local server)
+        run: |
+          PORT=13581 node server.js &
+          SERVER_PID=$!
+          sleep 5
+          BASE_URL=http://localhost:13581 node test-e2e-playwright.js
+          kill $SERVER_PID 2>/dev/null || true
 
       - name: Publish badges
         if: success()
@@ -58,8 +66,7 @@ jobs:
           git config user.email "actions@github.com"
           git remote set-url origin https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git
           git add .badges/ -f
-          git diff --cached --quiet || (git commit -m "ci: update test badges [skip ci]" && git push) || echo "Badge push failed (permissions) — badges will be stale"
-          git diff --cached --quiet || (git commit -m "ci: update test badges [skip ci]" && git push)
+          git diff --cached --quiet || (git commit -m "ci: update test badges [skip ci]" && git push) || echo "Badge push failed — badges will be stale"
 
   deploy:
     needs: test
@@ -89,22 +96,3 @@ jobs:
             -v $HOME/meshcore-analyzer/Caddyfile:/etc/caddy/Caddyfile \
             meshcore-analyzer
           echo "Deployed $(git rev-parse --short HEAD)"
-
-      - name: Wait for site to be healthy
-        run: |
-          for i in $(seq 1 30); do
-            if curl -sf https://analyzer.00id.net/api/stats > /dev/null 2>&1; then
-              echo "Site is healthy after ${i}s"
-              break
-            fi
-            sleep 2
-          done
-
-      - name: Install dependencies for E2E
-        run: npm ci --production=false
-
-      - name: Install Playwright browser
-        run: npx playwright install chromium --with-deps 2>/dev/null || true
-
-      - name: E2E smoke tests
-        run: node test-e2e-playwright.js
