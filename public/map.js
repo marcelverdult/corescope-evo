@@ -722,27 +722,35 @@
   }
 
   function toggleHeatmap(on) {
-    if (heatLayer) { map.removeLayer(heatLayer); heatLayer = null; window._meshcoreHeatLayer = null; }
-    if (!on || !map) return;
+    if (!on || !map) {
+      if (heatLayer) { map.removeLayer(heatLayer); heatLayer = null; window._meshcoreHeatLayer = null; }
+      return;
+    }
     const points = nodes
       .filter(n => n.lat != null && n.lon != null)
       .map(n => {
         const weight = n.advert_count || 1;
         return [n.lat, n.lon, weight];
       });
-    if (points.length && typeof L.heatLayer === 'function') {
-      var savedOpacity = parseFloat(localStorage.getItem('meshcore-heatmap-opacity'));
-      if (isNaN(savedOpacity)) savedOpacity = 0.25;
-      heatLayer = L.heatLayer(points, {
-        radius: 25, blur: 15, maxZoom: 14, minOpacity: 0.05,
-        gradient: { 0.2: '#0d47a1', 0.4: '#1565c0', 0.6: '#42a5f5', 0.8: '#ffca28', 1.0: '#ff5722' }
-      }).addTo(map);
-      // Set overall layer opacity (affects all gradient colors, not just minimum)
-      heatLayer.getContainer && heatLayer.getContainer() ?
-        (heatLayer.getContainer().style.opacity = savedOpacity) :
-        setTimeout(function() { if (heatLayer._canvas) heatLayer._canvas.style.opacity = savedOpacity; }, 100);
-      window._meshcoreHeatLayer = heatLayer;
+    if (!points.length || typeof L.heatLayer !== 'function') return;
+    var savedOpacity = parseFloat(localStorage.getItem('meshcore-heatmap-opacity'));
+    if (isNaN(savedOpacity)) savedOpacity = 0.25;
+    // Update existing layer data without recreating (avoids opacity flash)
+    if (heatLayer) {
+      heatLayer.setLatLngs(points);
+      return;
     }
+    heatLayer = L.heatLayer(points, {
+      radius: 25, blur: 15, maxZoom: 14, minOpacity: 0.05,
+      gradient: { 0.2: '#0d47a1', 0.4: '#1565c0', 0.6: '#42a5f5', 0.8: '#ffca28', 1.0: '#ff5722' }
+    });
+    // Set opacity on canvas BEFORE it's visible — hook the 'add' event
+    heatLayer.on('add', function() {
+      var canvas = heatLayer._canvas || (heatLayer.getContainer && heatLayer.getContainer());
+      if (canvas) canvas.style.opacity = savedOpacity;
+    });
+    heatLayer.addTo(map);
+    window._meshcoreHeatLayer = heatLayer;
   }
 
   let _themeRefreshHandler = null;
