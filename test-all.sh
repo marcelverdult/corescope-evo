@@ -14,6 +14,8 @@ node test-packet-store.js
 node test-packet-filter.js
 node test-aging.js
 node test-regional-filter.js
+node test-server-helpers.js
+node test-db.js
 
 # Integration tests (spin up temp servers)
 echo ""
