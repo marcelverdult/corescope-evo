@@ -17,5 +17,9 @@
     "express": "^5.2.1",
     "mqtt": "^5.15.0",
     "ws": "^8.19.0"
+  },
+  "devDependencies": {
+    "playwright": "^1.58.2",
+    "supertest": "^7.2.2"
   }
 }
