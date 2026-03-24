@@ -172,7 +172,7 @@
     });
 
     map.on('zoomend', () => {
-      if (filters.hashLabels && !_renderingMarkers) renderMarkers();
+      if (!_renderingMarkers) renderMarkers();
     });
 
     map.on('resize', () => {
