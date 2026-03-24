@@ -91,24 +91,16 @@ The MeshCore firmware source is cloned at `firmware/` (gitignored — not part o
 
 ## MeshCore Protocol
 
-### Advert Flags
-The flags byte lower nibble is a **4-bit enum type**, NOT individual bit flags:
-- 0 = none, 1 = companion, 2 = repeater, 3 = room, 4 = sensor
-- Upper bits: 0x10 = hasLocation, 0x80 = hasName
-- `flags & 0x0F` gives the type. `flags & 0x04` does NOT mean "room."
+**Do not memorize or hardcode protocol details from this file.** Read the firmware source.
 
-### Hash Sizes
-- Path byte bits 7-6 encode hash size: `((pathByte >> 6) & 0x3) + 1` → 1-3 bytes
-- Firmware bug pre-1.14.1: automatic adverts could emit wrong hash size (0x00 path byte)
-- Use newest advert's hash size as current. Track all sizes to detect flip-flopping.
+- Packet format: `firmware/docs/packet_format.md`
+- Payload types & structures: `firmware/docs/payloads.md`
+- Advert flags & types: `firmware/src/helpers/AdvertDataHelpers.h`
+- Route types & constants: `firmware/src/Mesh.h`
+- CLI commands & behavior: `firmware/docs/cli_commands.md`
+- FAQ (advert intervals, etc.): `firmware/docs/faq.md`
 
-### Node Behavior
-- Repeaters/rooms flood-advertise every 12-24h (configurable)
-- Companions only advertise when user initiates — going silent is NORMAL
-- Room servers use ADV_TYPE 3 but have same advert interval as repeaters
-
-### Route Types
-- 0: TRANSPORT_FLOOD, 1: FLOOD, 2: DIRECT, 3: TRANSPORT_DIRECT
+If you need to know how something works — a flag, a field, a timing, a behavior — **open the file and read it.** Don't rely on comments in our code, don't rely on what someone told you, don't guess. The firmware C++ source is the only thing that matters.
 
 ## Frontend Conventions
 
