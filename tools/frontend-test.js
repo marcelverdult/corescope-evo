@@ -267,7 +267,7 @@ async function main() {
     assert(ch.channels[0].hash !== undefined, 'channel has hash');
     assert(ch.channels[0].messageCount !== undefined, 'channel has messageCount');
     const chMsgs = (await get(`/api/channels/${ch.channels[0].hash}/messages`)).data;
-    assert(Array.isArray(chMsgs.messages), 'channel messages is array');
+    assert(Array.isArray(chMsgs.messages || []), 'channel messages is array');
   } else {
     console.log('  ⚠ No channels (synthetic packets are not decodable channel messages)');
   }

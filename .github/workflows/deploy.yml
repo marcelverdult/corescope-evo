@@ -52,12 +52,13 @@ jobs:
 
       - name: Publish badges
         if: success()
+        continue-on-error: true
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
           git remote set-url origin https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git
           git add .badges/ -f
-          git diff --cached --quiet || (git commit -m "ci: update test badges [skip ci]" && git push)
+          git diff --cached --quiet || (git commit -m "ci: update test badges [skip ci]" && git push) || echo "Badge push failed (permissions) — badges will be stale"
           git diff --cached --quiet || (git commit -m "ci: update test badges [skip ci]" && git push)
 
   deploy:
