@@ -1,6 +1,8 @@
 # MeshCore Analyzer
 
-[![Tests](https://github.com/Kpa-clawbot/meshcore-analyzer/actions/workflows/deploy.yml/badge.svg)](https://github.com/Kpa-clawbot/meshcore-analyzer/actions/workflows/deploy.yml)
+[![Tests](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Kpa-clawbot/meshcore-analyzer/master/.badges/tests.json)](https://github.com/Kpa-clawbot/meshcore-analyzer/actions/workflows/deploy.yml)
+[![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Kpa-clawbot/meshcore-analyzer/master/.badges/coverage.json)](https://github.com/Kpa-clawbot/meshcore-analyzer/actions/workflows/deploy.yml)
+[![Deploy](https://github.com/Kpa-clawbot/meshcore-analyzer/actions/workflows/deploy.yml/badge.svg)](https://github.com/Kpa-clawbot/meshcore-analyzer/actions/workflows/deploy.yml)
 
 > Self-hosted, open-source MeshCore packet analyzer — a community alternative to the closed-source `analyzer.letsmesh.net`.
 
