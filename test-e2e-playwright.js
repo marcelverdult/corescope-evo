@@ -160,6 +160,94 @@ async function run() {
     assert(hasContent, 'Analytics page has no recognizable content');
   });
 
+  // Test 9: Map heat checkbox persists across reload
+  await test('Map heat checkbox persists in localStorage', async () => {
+    await page.goto(`${BASE}/#/map`, { waitUntil: 'networkidle' });
+    await page.waitForSelector('#mcHeatmap', { timeout: 5000 });
+    // Uncheck first to ensure clean state
+    await page.evaluate(() => localStorage.removeItem('meshcore-map-heatmap'));
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.waitForSelector('#mcHeatmap', { timeout: 5000 });
+    let checked = await page.$eval('#mcHeatmap', el => el.checked);
+    assert(!checked, 'Heat checkbox should be unchecked by default');
+    // Check it
+    await page.click('#mcHeatmap');
+    const stored = await page.evaluate(() => localStorage.getItem('meshcore-map-heatmap'));
+    assert(stored === 'true', `localStorage should be "true" but got "${stored}"`);
+    // Reload and verify persisted
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.waitForSelector('#mcHeatmap', { timeout: 5000 });
+    checked = await page.$eval('#mcHeatmap', el => el.checked);
+    assert(checked, 'Heat checkbox should be checked after reload');
+    // Clean up
+    await page.evaluate(() => localStorage.removeItem('meshcore-map-heatmap'));
+  });
+
+  // Test 10: Map heat checkbox is not disabled (unless matrix mode)
+  await test('Map heat checkbox is clickable', async () => {
+    await page.goto(`${BASE}/#/map`, { waitUntil: 'networkidle' });
+    await page.waitForSelector('#mcHeatmap', { timeout: 5000 });
+    const disabled = await page.$eval('#mcHeatmap', el => el.disabled);
+    assert(!disabled, 'Heat checkbox should not be disabled');
+    // Click and verify state changes
+    const before = await page.$eval('#mcHeatmap', el => el.checked);
+    await page.click('#mcHeatmap');
+    const after = await page.$eval('#mcHeatmap', el => el.checked);
+    assert(before !== after, 'Heat checkbox state should toggle on click');
+  });
+
+  // Test 11: Live page heat checkbox disabled by matrix/ghosts mode
+  await test('Live heat disabled when ghosts mode active', async () => {
+    await page.goto(`${BASE}/#/live`, { waitUntil: 'networkidle' });
+    await page.waitForSelector('#liveHeatToggle', { timeout: 10000 });
+    // Enable matrix mode if not already
+    const matrixEl = await page.$('#liveMatrixToggle');
+    if (matrixEl) {
+      await page.evaluate(() => {
+        const mt = document.getElementById('liveMatrixToggle');
+        if (mt && !mt.checked) mt.click();
+      });
+      await page.waitForTimeout(500);
+      const heatDisabled = await page.$eval('#liveHeatToggle', el => el.disabled);
+      assert(heatDisabled, 'Heat should be disabled when ghosts/matrix is on');
+      // Turn off matrix
+      await page.evaluate(() => {
+        const mt = document.getElementById('liveMatrixToggle');
+        if (mt && mt.checked) mt.click();
+      });
+      await page.waitForTimeout(500);
+      const heatEnabled = await page.$eval('#liveHeatToggle', el => !el.disabled);
+      assert(heatEnabled, 'Heat should be re-enabled when ghosts/matrix is off');
+    }
+  });
+
+  // Test 12: Heatmap opacity stored in localStorage
+  await test('Heatmap opacity persists in localStorage', async () => {
+    await page.goto(`${BASE}/#/map`, { waitUntil: 'networkidle' });
+    await page.evaluate(() => localStorage.setItem('meshcore-heatmap-opacity', '0.5'));
+    // Enable heat to trigger layer creation with saved opacity
+    await page.evaluate(() => localStorage.setItem('meshcore-map-heatmap', 'true'));
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.waitForTimeout(2000);
+    const opacity = await page.evaluate(() => localStorage.getItem('meshcore-heatmap-opacity'));
+    assert(opacity === '0.5', `Opacity should persist as "0.5" but got "${opacity}"`);
+    // Verify the canvas element has the opacity applied (if heat layer exists)
+    const canvasOpacity = await page.evaluate(() => {
+      if (window._meshcoreHeatLayer && window._meshcoreHeatLayer._canvas) {
+        return window._meshcoreHeatLayer._canvas.style.opacity;
+      }
+      return null; // no heat layer (no node data) — skip
+    });
+    if (canvasOpacity !== null) {
+      assert(canvasOpacity === '0.5', `Canvas opacity should be "0.5" but got "${canvasOpacity}"`);
+    }
+    // Clean up
+    await page.evaluate(() => {
+      localStorage.removeItem('meshcore-heatmap-opacity');
+      localStorage.removeItem('meshcore-map-heatmap');
+    });
+  });
+
   await browser.close();
 
   // Summary
