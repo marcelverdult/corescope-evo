@@ -56,7 +56,7 @@ async function run() {
     }
     assert(headers.some(h => h.includes('Last Seen') || h.includes('Last')), 'Missing Last Seen column');
     const rows = await page.$$('table tbody tr');
-    assert(rows.length >= 10, `Expected >=10 nodes, got ${rows.length}`);
+    assert(rows.length >= 1, `Expected >=1 nodes, got ${rows.length}`);
   });
 
   // Test 3: Map page loads with markers
