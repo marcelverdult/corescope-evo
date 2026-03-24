@@ -90,6 +90,16 @@ jobs:
             meshcore-analyzer
           echo "Deployed $(git rev-parse --short HEAD)"
 
+      - name: Wait for site to be healthy
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf https://analyzer.00id.net/api/stats > /dev/null 2>&1; then
+              echo "Site is healthy after ${i}s"
+              break
+            fi
+            sleep 2
+          done
+
       - name: Install dependencies for E2E
         run: npm ci --production=false
 
