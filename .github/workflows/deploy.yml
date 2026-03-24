@@ -14,7 +14,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  test:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm ci --production=false
+
+      - name: Unit tests
+        run: npm run test:unit
+
+      - name: Integration tests + coverage
+        run: npx c8 --reporter=text-summary sh test-all.sh
+
   deploy:
+    needs: test
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
