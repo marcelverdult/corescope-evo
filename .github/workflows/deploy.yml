@@ -39,7 +39,10 @@ jobs:
           
           mkdir -p .badges
           echo "{\"schemaVersion\":1,\"label\":\"backend tests\",\"message\":\"${TOTAL_PASS} passed\",\"color\":\"brightgreen\"}" > .badges/backend-tests.json
-          echo "{\"schemaVersion\":1,\"label\":\"backend coverage\",\"message\":\"${BE_COVERAGE}%\",\"color\":\"$([ $(echo \"$BE_COVERAGE > 80\" | bc -l) -eq 1 ] && echo 'brightgreen' || ([ $(echo \"$BE_COVERAGE > 60\" | bc -l) -eq 1 ] && echo 'yellow' || echo 'red'))\"}" > .badges/backend-coverage.json
+          BE_COLOR="red"
+          [ "$(echo "$BE_COVERAGE > 60" | bc -l 2>/dev/null)" = "1" ] && BE_COLOR="yellow"
+          [ "$(echo "$BE_COVERAGE > 80" | bc -l 2>/dev/null)" = "1" ] && BE_COLOR="brightgreen"
+          echo "{\"schemaVersion\":1,\"label\":\"backend coverage\",\"message\":\"${BE_COVERAGE}%\",\"color\":\"${BE_COLOR}\"}" > .badges/backend-coverage.json
           
           echo "## Backend Test Results" >> $GITHUB_STEP_SUMMARY
           echo "**${TOTAL_PASS} tests passed, ${TOTAL_FAIL} failed** | Coverage: ${BE_COVERAGE}%" >> $GITHUB_STEP_SUMMARY
@@ -62,7 +65,7 @@ jobs:
           
           # Run E2E tests
           BASE_URL=http://localhost:13581 node test-e2e-playwright.js 2>&1 | tee e2e-output.txt
-          E2E_PASS=$(grep -oP '\d+(?= passed)' e2e-output.txt | tail -1)
+          E2E_PASS=$(grep -oP '[0-9]+(?=/)' e2e-output.txt | tail -1)
           
           # Collect frontend coverage from browser
           BASE_URL=http://localhost:13581 node scripts/collect-frontend-coverage.js 2>&1 | tee fe-coverage-output.txt
