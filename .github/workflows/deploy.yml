@@ -38,8 +38,8 @@ jobs:
           COVERAGE=$(grep 'Statements' test-output.txt | tail -1 | grep -oP '[\d.]+(?=%)')
           
           mkdir -p .badges
-          echo "{\"schemaVersion\":1,\"label\":\"tests\",\"message\":\"${TOTAL_PASS}/${TOTAL_PASS} passed\",\"color\":\"brightgreen\"}" > .badges/tests.json
-          echo "{\"schemaVersion\":1,\"label\":\"coverage\",\"message\":\"${COVERAGE}%\",\"color\":\"$([ $(echo \"$COVERAGE > 80\" | bc -l) -eq 1 ] && echo 'brightgreen' || ([ $(echo \"$COVERAGE > 60\" | bc -l) -eq 1 ] && echo 'yellow' || echo 'red'))\"}" > .badges/coverage.json
+          echo "{\"schemaVersion\":1,\"label\":\"backend tests\",\"message\":\"${TOTAL_PASS} passed\",\"color\":\"brightgreen\"}" > .badges/backend-tests.json
+          echo "{\"schemaVersion\":1,\"label\":\"backend coverage\",\"message\":\"${COVERAGE}%\",\"color\":\"$([ $(echo \"$COVERAGE > 80\" | bc -l) -eq 1 ] && echo 'brightgreen' || ([ $(echo \"$COVERAGE > 60\" | bc -l) -eq 1 ] && echo 'yellow' || echo 'red'))\"}" > .badges/backend-coverage.json
           
           echo "## Test Results" >> $GITHUB_STEP_SUMMARY
           echo "**${TOTAL_PASS} tests passed, ${TOTAL_FAIL} failed** | Coverage: ${COVERAGE}%" >> $GITHUB_STEP_SUMMARY
@@ -55,7 +55,9 @@ jobs:
           PORT=13581 node server.js &
           SERVER_PID=$!
           sleep 5
-          BASE_URL=http://localhost:13581 node test-e2e-playwright.js
+          BASE_URL=http://localhost:13581 node test-e2e-playwright.js 2>&1 | tee e2e-output.txt
+          E2E_PASS=$(grep -oP '\d+(?= passed)' e2e-output.txt | tail -1)
+          echo "{\"schemaVersion\":1,\"label\":\"frontend tests\",\"message\":\"${E2E_PASS:-0} E2E passed\",\"color\":\"brightgreen\"}" > .badges/frontend-tests.json
           kill $SERVER_PID 2>/dev/null || true
 
       - name: Publish badges
