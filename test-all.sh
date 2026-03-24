@@ -14,6 +14,7 @@ node test-decoder-spec.js
 node test-packet-store.js
 node test-packet-filter.js
 node test-aging.js
+node test-frontend-helpers.js
 node test-regional-filter.js
 node test-server-helpers.js
 node test-db.js
