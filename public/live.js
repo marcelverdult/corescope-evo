@@ -2144,6 +2144,10 @@
     feed.appendChild(item);
   }
 
+  // Track recent feed items by hash for deduplication (hash -> {element, count, pkt})
+  const feedHashMap = new Map();
+  const FEED_DEDUP_WINDOW_MS = 30000; // merge duplicates within 30s
+
   function addFeedItem(icon, typeName, payload, hops, color, pkt) {
     const feed = document.getElementById('liveFeed');
     if (!feed) return;
@@ -2151,15 +2155,47 @@
     // Favorites filter: skip feed item if packet doesn't involve a favorite
     if (showOnlyFavorites && !packetInvolvesFavorite(pkt)) return;
 
+    const hash = pkt.hash;
+
+    // Hash-based deduplication: if a feed item with the same hash exists and is recent, update it
+    if (hash && feedHashMap.has(hash)) {
+      const entry = feedHashMap.get(hash);
+      if (entry.element.parentNode && (Date.now() - entry.addedAt) < FEED_DEDUP_WINDOW_MS) {
+        entry.count++;
+        // Update the observation badge
+        let badge = entry.element.querySelector('.badge-obs');
+        if (!badge) {
+          badge = document.createElement('span');
+          badge.className = 'badge badge-obs';
+          badge.style.cssText = 'font-size:10px;margin-left:4px';
+          // Insert after feed-hops or feed-type
+          const anchor = entry.element.querySelector('.feed-hops') || entry.element.querySelector('.feed-type');
+          if (anchor) anchor.after(badge);
+          else entry.element.prepend(badge);
+        }
+        badge.textContent = '👁 ' + entry.count;
+        // Flash the item to indicate update
+        entry.element.classList.add('live-feed-enter');
+        requestAnimationFrame(() => { requestAnimationFrame(() => entry.element.classList.remove('live-feed-enter')); });
+        // Move to top of feed
+        feed.prepend(entry.element);
+        // Update stored pkt with merged observation count
+        entry.pkt.observation_count = entry.count;
+        return;
+      }
+    }
+
     const text = payload.text || payload.name || '';
     const preview = text ? ' ' + (text.length > 35 ? text.slice(0, 35) + '…' : text) : '';
     const hopStr = hops.length ? `<span class="feed-hops">${hops.length}⇢</span>` : '';
-    const obsBadge = pkt.observation_count > 1 ? `<span class="badge badge-obs" style="font-size:10px;margin-left:4px">👁 ${pkt.observation_count}</span>` : '';
+    const obsCount = pkt.observation_count || 1;
+    const obsBadge = obsCount > 1 ? `<span class="badge badge-obs" style="font-size:10px;margin-left:4px">👁 ${obsCount}</span>` : '';
 
     const item = document.createElement('div');
     item.className = 'live-feed-item live-feed-enter';
     item.setAttribute('tabindex', '0');
     item.setAttribute('role', 'button');
+    if (hash) item.setAttribute('data-hash', hash);
     item.style.cursor = 'pointer';
     item.innerHTML = `
       <span class="feed-icon" style="color:${color}">${icon}</span>
@@ -2172,6 +2208,18 @@
     feed.prepend(item);
     requestAnimationFrame(() => { requestAnimationFrame(() => item.classList.remove('live-feed-enter')); });
     while (feed.children.length > 25) feed.removeChild(feed.lastChild);
+
+    // Register in dedup map
+    if (hash) {
+      feedHashMap.set(hash, { element: item, count: obsCount, pkt, addedAt: Date.now() });
+      // Prune old entries periodically
+      if (feedHashMap.size > 50) {
+        const cutoff = Date.now() - FEED_DEDUP_WINDOW_MS;
+        for (const [k, v] of feedHashMap) {
+          if (v.addedAt < cutoff) feedHashMap.delete(k);
+        }
+      }
+    }
   }
 
   function showFeedCard(anchor, pkt, color) {
@@ -2252,6 +2300,7 @@
     recentPaths = [];
     packetCount = 0; activeAnims = 0;
     nodeActivity = {}; pktTimestamps = [];
+    feedHashMap.clear();
     VCR.buffer = []; VCR.playhead = -1; VCR.mode = 'LIVE'; VCR.missedCount = 0; VCR.speed = 1;
   }
 
