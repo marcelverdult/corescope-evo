@@ -190,6 +190,41 @@ Tests that need live mesh data can use `https://analyzer.00id.net` — all API e
 - Anything with edge cases (null handling, boundary values)
 - UI interactions that exercise frontend code branches
 
+## Engineering Principles
+
+These aren't optional. Every change must follow these principles.
+
+### DRY — Don't Repeat Yourself
+If the same logic exists in two places, it MUST be extracted into a shared function. We had **5 separate implementations** of hash prefix disambiguation across the codebase — that's a maintenance nightmare and a bug factory. One implementation, imported everywhere.
+
+**Before writing new code, search the codebase for existing implementations.** `grep -rn 'functionName\|pattern' public/ server.js` takes 2 seconds and prevents duplication.
+
+### SOLID Principles
+- **Single Responsibility**: Each function does ONE thing. A 200-line function that fetches, transforms, renders, and caches is wrong. Split it.
+- **Open/Closed**: Add behavior by extending, not modifying. Use callbacks, options objects, or configuration — not `if (caller === 'live')` branches inside shared code.
+- **Dependency Injection**: Functions should accept their dependencies as parameters, not reach into globals. `resolveHops(hops, nodeList)` — not `resolveHops(hops)` where it secretly reads `window.allNodes`. This makes functions testable in isolation.
+- **Interface Segregation**: Don't force callers to depend on things they don't need. If a function returns 20 fields but the caller uses 3, consider a simpler return shape or let the caller pick.
+
+### Code Reuse
+- **Shared helpers go in shared files.** Frontend: `roles.js`, `hop-resolver.js`. Backend: `server-helpers.js`, `decoder.js`.
+- **Don't copy-paste between files.** If `live.js` needs the same algorithm as `packets.js`, import it from a shared module. If the shared module doesn't exist yet, create one.
+- **Parameterize, don't duplicate.** If two callers need slightly different behavior, add a parameter — don't fork the function.
+
+### Testability
+- **Write functions that are easy to test.** Pure functions (input → output, no side effects) are ideal. If a function reads from the DOM, the DB, and localStorage, it's untestable without mocking everything.
+- **Dependency injection enables testing.** Pass the node list, the map reference, the API function as parameters. Tests can substitute fakes.
+- **Test the real code, not copies.** Don't paste a function into a test file and test the copy. Import/require the actual module. If the module isn't importable (IIFE, browser-only), refactor it so it is — or use `vm.createContext` like `test-frontend-helpers.js` does.
+- **Every bug fix gets a regression test.** If it broke once, it'll break again. The test proves it stays fixed.
+
+### Type Safety (without TypeScript)
+- **Cast at the boundary.** Data from the DB, API, or localStorage may be strings when you expect numbers. Cast early: `Number(val)`, `parseInt(val)`, `String(val)`. Don't let type mismatches propagate deep into logic where they cause cryptic `.toFixed is not a function` errors.
+- **Null-check before method calls.** `val != null ? Number(val).toFixed(1) : '—'` — not `val.toFixed(1)`.
+
+### Performance Awareness
+- **No per-item API calls.** Fetch bulk data once, filter/transform client-side.
+- **No O(n²) in hot paths.** The packets page has 30K+ rows. A nested loop over all packets × all nodes = 20 billion operations. Use Maps/Sets for lookups.
+- **Cache expensive computations.** If you compute the same thing on every render, cache it and invalidate on data change.
+
 ## Common Pitfalls
 
 | Pitfall | Times it happened | Prevention |
