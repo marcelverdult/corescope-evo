@@ -5,7 +5,7 @@
  */
 const { chromium } = require('playwright');
 
-const BASE = process.env.BASE_URL || 'https://analyzer.00id.net';
+const BASE = process.env.BASE_URL || 'http://localhost:3000';
 const results = [];
 
 async function test(name, fn) {

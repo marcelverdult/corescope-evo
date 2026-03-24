@@ -131,42 +131,64 @@ Uses firmware-standard type names (GRP_TXT, TXT_MSG, REQ) with aliases for conve
 
 ## Testing
 
-### Unit Tests
+### Test Pipeline
 ```bash
-node test-packet-filter.js        # 62 tests — filter engine
-node test-aging.js                # 29 tests — node aging system
-node test-regional-filter.js      # 22 tests — regional observer filtering
-node test-regional-integration.js # integration — hits live API (non-deterministic)
-node tools/e2e-test.js            # 44 tests — E2E: spins up temp server, injects packets, validates all APIs
-node tools/frontend-test.js       # 66 tests — frontend smoke: HTML, JS refs, API shapes
-```
-
-**ALL existing tests must pass before pushing.** Run:
-```bash
-npm test                    # all tests + coverage summary
+npm test                    # all backend tests + coverage summary
 npm run test:unit           # fast: unit tests only (no server needed)
-npm run test:coverage       # all tests + HTML coverage report in coverage/
+npm run test:coverage       # all tests + HTML coverage report
+npm run test:full-coverage  # backend + instrumented frontend coverage via Playwright
 ```
-If any test fails, fix it before pushing. No exceptions. No "known failures."
 
-**Coverage baseline:** 37% statements, 42% branches, 54% functions. Coverage should only go up.
+### Test Files
+```bash
+# Backend (deterministic, run before every push)
+node test-packet-filter.js        # filter engine
+node test-aging.js                # node aging system
+node test-regional-filter.js      # regional observer filtering
+node test-decoder.js              # packet decoder
+node test-decoder-spec.js         # spec-driven + golden fixture tests
+node test-server-helpers.js       # extracted server functions
+node test-server-routes.js        # API route tests via supertest
+node test-packet-store.js         # in-memory packet store
+node test-db.js                   # SQLite operations
+node test-frontend-helpers.js     # frontend logic (via vm.createContext)
+node tools/e2e-test.js            # E2E: temp server + synthetic packets
+node tools/frontend-test.js       # frontend smoke: HTML, JS refs, API shapes
 
-**Every new feature must add tests.** If you add logic, add tests. If you fix a bug, add a regression test. Test count should only go up, never down.
+# Frontend E2E (requires running server or Playwright)
+node test-e2e-playwright.js       # 8 Playwright browser tests (default: localhost:3000)
+```
 
-Tests that hit live data can use `https://analyzer.00id.net` — all API endpoints are public, no auth required.
+### Rules
+**ALL existing tests must pass before pushing.** No exceptions. No "known failures."
 
-### Browser Validation
-After pushing, verify in the browser:
-1. Does the page load without errors? (Check console)
-2. Does the new feature work as intended?
-3. Did you break anything else? (Quick check of adjacent features)
-4. Does it work in both light and dark mode?
+**Every new feature must add tests.** Unit tests for logic, Playwright tests for UI changes. Test count only goes up.
+
+**Coverage targets:** Backend 85%+, Frontend 42%+ (both should only go up). CI reports both and updates badges automatically.
+
+### When writing a new feature
+1. Write the feature code
+2. Write unit tests for the logic
+3. Write/update Playwright tests if it's a UI change
+4. Run `npm test` — all tests must pass
+5. Run `node test-e2e-playwright.js` against a local server — E2E must pass
+6. THEN push to master
+
+### Testing infrastructure
+- **Backend coverage**: c8 tracks server-side code in-process
+- **Frontend coverage**: Istanbul instruments `public/*.js` → Playwright exercises them → `window.__coverage__` extracted → nyc reports. Instrumented files are generated fresh each CI run, never checked in.
+- **CI pipeline**: backend tests + coverage → instrument frontend → start local server → Playwright E2E + coverage collection → badges update → deploy (only if all pass)
+- **Playwright tests default to localhost:3000** — NEVER run against prod. CI sets `BASE_URL=http://localhost:13581`. Running locally: start your server, then `node test-e2e-playwright.js`
+- **ARM machines**: Basic Playwright tests work with system chromium (`CHROMIUM_PATH=/usr/bin/chromium-browser`). Heavy coverage collection scripts may crash — use CI for those.
+
+Tests that need live mesh data can use `https://analyzer.00id.net` — all API endpoints are public, no auth required.
 
 ### What Needs Tests
 - Parsers and decoders (packet-filter, decoder)
 - Threshold/status calculations (aging, health)
 - Data transformations (hash size computation, field resolvers)
 - Anything with edge cases (null handling, boundary values)
+- UI interactions that exercise frontend code branches
 
 ## Common Pitfalls
 
@@ -178,6 +200,10 @@ After pushing, verify in the browser:
 | CSS selectors don't match SVG | 2 | Manipulate SVG in JS after generation |
 | Feature built on wrong assumption | 5+ | Read source/data before coding |
 | Pushed without testing | 5+ | Run tests + browser check every time |
+| Tests defaulting to prod | 2 | Always default to localhost, never prod |
+| Gave up testing locally | 2 | Basic tests work on ARM — only heavy coverage scripts crash |
+| Copy-pasted functions for "coverage" | 1 | Test the real code, not copies in a helper file |
+| Subagent timed out mid-work | 4 | Give clear scope, don't try to run slow pipelines locally |
 
 ## File Naming
 - Tests: `test-{feature}.js` in repo root
