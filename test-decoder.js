@@ -233,7 +233,7 @@ test('ACK decode', () => {
 });
 
 test('ACK too short', () => {
-  const hex = '0D00' + '00'.repeat(10);
+  const hex = '0D00' + '00'.repeat(3);
   const p = decodePacket(hex);
   assert(p.payload.error);
 });
@@ -282,7 +282,7 @@ test('PATH decode', () => {
 });
 
 test('PATH too short', () => {
-  const hex = '2100' + '00'.repeat(8);
+  const hex = '2100' + '00'.repeat(1);
   const p = decodePacket(hex);
   assert(p.payload.error);
 });
