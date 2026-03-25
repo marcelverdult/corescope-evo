@@ -395,6 +395,28 @@ app.get('/api/perf', (req, res) => {
     slowQueries: perfStats.slowQueries.slice(-20),
     cache: { size: cache.size, hits: cache.hits, misses: cache.misses, staleHits: cache.staleHits, recomputes: cache.recomputes, hitRate: cache.hits + cache.misses > 0 ? Math.round(cache.hits / (cache.hits + cache.misses) * 1000) / 10 : 0 },
     packetStore: pktStore.getStats(),
+    sqlite: (() => {
+      try {
+        const walInfo = db.db.pragma('wal_checkpoint(PASSIVE)');
+        const pageSize = db.db.pragma('page_size', { simple: true });
+        const pageCount = db.db.pragma('page_count', { simple: true });
+        const freelistCount = db.db.pragma('freelist_count', { simple: true });
+        const dbSizeMB = Math.round(pageSize * pageCount / 1048576 * 10) / 10;
+        const freelistMB = Math.round(pageSize * freelistCount / 1048576 * 10) / 10;
+        const fs = require('fs');
+        const dbPath = process.env.DB_PATH || require('path').join(__dirname, 'data', 'meshcore.db');
+        let walSizeMB = 0;
+        try { walSizeMB = Math.round(fs.statSync(dbPath + '-wal').size / 1048576 * 10) / 10; } catch {}
+        const stats = db.getStats();
+        return {
+          dbSizeMB,
+          walSizeMB,
+          freelistMB,
+          walPages: walInfo[0] ? { total: walInfo[0].busy + walInfo[0].checkpointed, checkpointed: walInfo[0].checkpointed, busy: walInfo[0].busy } : null,
+          rows: { transmissions: stats.totalTransmissions, observations: stats.totalObservations, nodes: stats.totalNodes, observers: stats.totalObservers },
+        };
+      } catch (e) { return { error: e.message }; }
+    })(),
   });
 });
 
@@ -424,6 +446,19 @@ setInterval(() => {
     if (ms > 50) console.log(`[wal] checkpoint: ${ms}ms`);
   } catch (e) { console.error('[wal] checkpoint error:', e.message); }
 }, 300000).unref();
+
+// Daily TRUNCATE checkpoint at 2:00 AM UTC — reclaims WAL file space
+setInterval(() => {
+  const h = new Date().getUTCHours();
+  const m = new Date().getUTCMinutes();
+  if (h === 2 && m === 0) {
+    try {
+      const t0 = Date.now();
+      db.db.pragma('wal_checkpoint(TRUNCATE)');
+      console.log(`[wal] daily TRUNCATE checkpoint: ${Date.now() - t0}ms`);
+    } catch (e) { console.error('[wal] TRUNCATE checkpoint error:', e.message); }
+  }
+}, 60000).unref();
 
 // --- Health / Telemetry Endpoint ---
 app.get('/api/health', (req, res) => {
@@ -522,6 +557,9 @@ if (config.mqttSources && Array.isArray(config.mqttSources)) {
   });
 }
 
+if (process.env.NODE_ENV === 'test') {
+  console.log('[mqtt] Skipping MQTT connections in test mode');
+} else {
 for (const source of mqttSources) {
   try {
     const opts = { reconnectPeriod: 5000 };
@@ -800,6 +838,7 @@ for (const source of mqttSources) {
     console.error(`MQTT [${source.name || source.broker}] connection failed (non-fatal):`, e.message);
   }
 }
+} // end NODE_ENV !== 'test'
 
 // --- Express ---
 app.use(express.json());

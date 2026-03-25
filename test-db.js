@@ -288,9 +288,9 @@ console.log('\nv3 schema:');
     assert(typeof viewRow.timestamp === 'string', 'packets_v timestamp is ISO string');
   }
 
-  // schema_version table exists with version 3
-  const sv = db.db.prepare('SELECT version FROM schema_version ORDER BY version DESC LIMIT 1').get();
-  assert(sv && sv.version === 3, 'schema_version table has version 3');
+  // user_version is 3
+  const sv = db.db.pragma('user_version', { simple: true });
+  assert(sv === 3, 'user_version is 3');
 }
 
 // --- v3 ingestion: observer resolved via observer_idx ---

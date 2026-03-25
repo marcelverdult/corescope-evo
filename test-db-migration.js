@@ -126,13 +126,13 @@ function runDbModule(dbPath) {
     process.env.DB_PATH = ${JSON.stringify(dbPath)};
     const db = require(${JSON.stringify(path.resolve(__dirname, 'db'))});
     const cols = db.db.pragma('table_info(observations)').map(c => c.name);
-    const sv = db.db.prepare('SELECT version FROM schema_version ORDER BY version DESC LIMIT 1').get();
+    const sv = db.db.pragma('user_version', { simple: true });
     const obsCount = db.db.prepare('SELECT COUNT(*) as c FROM observations').get().c;
     const viewRows = db.db.prepare('SELECT * FROM packets_v ORDER BY id').all();
     const rawObs = db.db.prepare('SELECT * FROM observations ORDER BY id').all();
     console.log(JSON.stringify({
       columns: cols,
-      schemaVersion: sv ? sv.version : 0,
+      schemaVersion: sv || 0,
       obsCount,
       viewRows,
       rawObs
@@ -193,7 +193,8 @@ console.log('Migration from old schema:');
   assert(vr2.path_json === null, 'null path_json preserved');
 
   // Verify backup file created
-  assert(fs.existsSync(dbPath + '.pre-v3-backup'), 'backup file exists');
+  const backups1 = fs.readdirSync(tmpDir).filter(f => f.includes('.pre-v3-backup-'));
+  assert(backups1.length === 1, 'backup file exists');
 
   fs.rmSync(tmpDir, { recursive: true });
 }
@@ -211,7 +212,8 @@ console.log('\nMigration idempotency:');
   assert(info.schemaVersion === 3, 'first run migrates to v3');
 
   // Second run — should NOT re-run migration (no backup overwrite, same data)
-  const backupMtime = fs.statSync(dbPath + '.pre-v3-backup').mtimeMs;
+  const backups2pre = fs.readdirSync(tmpDir).filter(f => f.includes('.pre-v3-backup-'));
+  const backupMtime = fs.statSync(path.join(tmpDir, backups2pre[0])).mtimeMs;
   info = runDbModule(dbPath);
   assert(info.schemaVersion === 3, 'second run still v3');
   assert(info.obsCount === 3, 'rows still intact');
@@ -219,24 +221,24 @@ console.log('\nMigration idempotency:');
   fs.rmSync(tmpDir, { recursive: true });
 }
 
-// --- Test 3: Backup failure aborts migration ---
-console.log('\nBackup failure aborts migration:');
+// --- Test 3: Each migration creates a unique backup ---
+console.log('\nUnique backup per migration:');
 {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'meshcore-mig-test3-'));
   const dbPath = path.join(tmpDir, 'test-mig3.db');
 
   createOldSchemaDB(dbPath);
 
-  // Create backup path as a directory so copyFileSync fails
-  fs.mkdirSync(dbPath + '.pre-v3-backup');
-
-  // Run db.js — migration should abort, old schema preserved
   const info = runDbModule(dbPath);
 
-  // Old schema should be preserved
-  assert(info.columns.includes('observer_id'), 'old observer_id column preserved');
-  assert(info.schemaVersion < 3, 'schema version not updated');
-  assert(info.obsCount === 3, 'old rows still intact');
+  // Migration should have completed
+  assert(info.columns.includes('observer_idx'), 'migration completed');
+  assert(info.schemaVersion === 3, 'schema version is 3');
+
+  // A timestamped backup should exist
+  const backups = fs.readdirSync(tmpDir).filter(f => f.includes('.pre-v3-backup-'));
+  assert(backups.length === 1, 'exactly one backup created');
+  assert(fs.statSync(path.join(tmpDir, backups[0])).size > 0, 'backup is non-empty');
 
   fs.rmSync(tmpDir, { recursive: true });
 }

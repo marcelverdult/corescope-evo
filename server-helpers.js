@@ -210,7 +210,7 @@ function disambiguateHops(hops, allNodes, maxHopDist) {
     else if (!prev && next && dNext > MAX_HOP_DIST) { r.unreliable = true; r.lat = null; r.lon = null; }
   }
 
-  return resolved.map(r => ({ hop: r.hop, name: r.name, lat: r.lat, lon: r.lon, pubkey: r.pubkey, ambiguous: !!r.candidates, unreliable: !!r.unreliable }));
+  return resolved.map(r => ({ hop: r.hop, name: r.name, lat: r.lat, lon: r.lon, pubkey: r.pubkey, known: !!r.known, ambiguous: !!r.candidates, unreliable: !!r.unreliable }));
 }
 
 // Update hash_size maps for a single packet

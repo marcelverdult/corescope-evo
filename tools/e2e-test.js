@@ -375,7 +375,7 @@ async function main() {
   if (chList.length > 0) {
     const someCh = chList[0];
     assert(someCh.messageCount > 0, `channel has messages (${someCh.messageCount})`);
-    const msgResp = (await get(`/api/channels/${someCh.hash}/messages`)).data;
+    const msgResp = (await get(`/api/channels/${encodeURIComponent(someCh.hash)}/messages`)).data;
     assert(msgResp.messages.length > 0, 'channel has message list');
     assert(msgResp.messages[0].sender !== undefined, 'message has sender');
     console.log(`  ✓ Channels: ${chList.length} channels\n`);

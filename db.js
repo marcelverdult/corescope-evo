@@ -67,21 +67,37 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now'))
   );
 
-  CREATE TABLE IF NOT EXISTS schema_version (
-    version INTEGER NOT NULL
-  );
-
   CREATE INDEX IF NOT EXISTS idx_transmissions_hash ON transmissions(hash);
   CREATE INDEX IF NOT EXISTS idx_transmissions_first_seen ON transmissions(first_seen);
   CREATE INDEX IF NOT EXISTS idx_transmissions_payload_type ON transmissions(payload_type);
 `);
 
 // --- Determine schema version ---
-let schemaVersion = 0;
-try {
-  const row = db.prepare('SELECT version FROM schema_version ORDER BY version DESC LIMIT 1').get();
-  if (row) schemaVersion = row.version;
-} catch {}
+let schemaVersion = db.pragma('user_version', { simple: true }) || 0;
+
+// Migrate from old schema_version table to pragma user_version
+if (schemaVersion === 0) {
+  try {
+    const row = db.prepare('SELECT version FROM schema_version ORDER BY version DESC LIMIT 1').get();
+    if (row && row.version >= 3) {
+      db.pragma(`user_version = ${row.version}`);
+      schemaVersion = row.version;
+      db.exec('DROP TABLE IF EXISTS schema_version');
+    }
+  } catch {}
+}
+
+// Detect v3 schema by column presence (handles crash between migration and version write)
+if (schemaVersion === 0) {
+  try {
+    const cols = db.pragma('table_info(observations)').map(c => c.name);
+    if (cols.includes('observer_idx') && !cols.includes('observer_id')) {
+      db.pragma('user_version = 3');
+      schemaVersion = 3;
+      console.log('[migration-v3] Detected already-migrated schema, set user_version = 3');
+    }
+  } catch {}
+}
 
 // --- v3 migration: lean observations table ---
 function needsV3Migration() {
@@ -98,7 +114,7 @@ function runV3Migration() {
   console.log('[migration-v3] Starting observations table optimization...');
 
   // a. Backup DB
-  const backupPath = dbPath + '.pre-v3-backup';
+  const backupPath = dbPath + `.pre-v3-backup-${Date.now()}`;
   try {
     console.log(`[migration-v3] Backing up DB to ${backupPath}...`);
     fs.copyFileSync(dbPath, backupPath);
@@ -137,15 +153,12 @@ function runV3Migration() {
     `).run();
     console.log(`[migration-v3] Migrated ${result.changes} rows (${Date.now() - stepStart}ms)`);
 
-    // d. Drop old table
+    // d. Drop view, old table, rename
     stepStart = Date.now();
+    db.exec('DROP VIEW IF EXISTS packets_v');
     db.exec('DROP TABLE observations');
-    console.log(`[migration-v3] Dropped old observations table (${Date.now() - stepStart}ms)`);
-
-    // e. Rename
-    stepStart = Date.now();
     db.exec('ALTER TABLE observations_v3 RENAME TO observations');
-    console.log(`[migration-v3] Renamed observations_v3 → observations (${Date.now() - stepStart}ms)`);
+    console.log(`[migration-v3] Replaced observations table (${Date.now() - stepStart}ms)`);
 
     // f. Create indexes
     stepStart = Date.now();
@@ -158,22 +171,23 @@ function runV3Migration() {
     console.log(`[migration-v3] Created indexes (${Date.now() - stepStart}ms)`);
 
     // g. Set schema version
-    db.exec('DELETE FROM schema_version');
-    db.prepare('INSERT INTO schema_version (version) VALUES (?)').run(3);
+    
+    db.pragma('user_version = 3');
     schemaVersion = 3;
 
     // h. Rebuild view (done below in common code)
 
-    // i. VACUUM
+    // i. VACUUM + checkpoint
     stepStart = Date.now();
     db.exec('VACUUM');
-    console.log(`[migration-v3] VACUUM complete (${Date.now() - stepStart}ms)`);
+    db.pragma('wal_checkpoint(TRUNCATE)');
+    console.log(`[migration-v3] VACUUM + checkpoint complete (${Date.now() - stepStart}ms)`);
 
     console.log(`[migration-v3] Migration complete! Total time: ${Date.now() - startTime}ms`);
     return true;
   } catch (e) {
     console.error(`[migration-v3] Migration failed: ${e.message}`);
-    console.error('[migration-v3] Old data should still be intact if observations table was not yet dropped');
+    console.error('[migration-v3] Restore from backup if needed: ' + dbPath + '.pre-v3-backup');
     // Try to clean up v3 table if it exists
     try { db.exec('DROP TABLE IF EXISTS observations_v3'); } catch {}
     return false;
@@ -186,7 +200,7 @@ if (!isV3 && needsV3Migration()) {
   runV3Migration();
 }
 
-// If schema_version < 3 and no migration happened (fresh DB or migration skipped), create old-style table
+// If user_version < 3 and no migration happened (fresh DB or migration skipped), create old-style table
 if (schemaVersion < 3) {
   const obsExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='observations'").get();
   if (!obsExists) {
@@ -208,8 +222,8 @@ if (schemaVersion < 3) {
       CREATE INDEX idx_observations_timestamp ON observations(timestamp);
       CREATE UNIQUE INDEX idx_observations_dedup ON observations(transmission_id, observer_idx, COALESCE(path_json, ''));
     `);
-    db.exec('DELETE FROM schema_version');
-    db.prepare('INSERT INTO schema_version (version) VALUES (?)').run(3);
+    
+    db.pragma('user_version = 3');
     schemaVersion = 3;
   } else {
     // Old-style observations table exists but migration wasn't run (or failed)
