@@ -11,3 +11,4 @@ firmware/
 coverage/
 public-instrumented/
 .nyc_output/
+.setup-state
