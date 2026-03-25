@@ -20,11 +20,11 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-log()  { echo -e "${GREEN}✓${NC} $1"; }
-warn() { echo -e "${YELLOW}⚠${NC} $1"; }
-err()  { echo -e "${RED}✗${NC} $1"; }
-info() { echo -e "${CYAN}→${NC} $1"; }
-step() { echo -e "\n${BOLD}[$1/$TOTAL_STEPS] $2${NC}"; }
+log()  { printf '%b\n' "${GREEN}✓${NC} $1"; }
+warn() { printf '%b\n' "${YELLOW}⚠${NC} $1"; }
+err()  { printf '%b\n' "${RED}✗${NC} $1"; }
+info() { printf '%b\n' "${CYAN}→${NC} $1"; }
+step() { printf '%b\n' "\n${BOLD}[$1/$TOTAL_STEPS] $2${NC}"; }
 
 confirm() {
   read -p "   $1 [y/N] " -n 1 -r
@@ -623,18 +623,18 @@ cmd_help() {
   echo ""
   echo "Usage: ./manage.sh <command>"
   echo ""
-  echo "  ${BOLD}Setup${NC}"
+  printf '%b\n' "  ${BOLD}Setup${NC}"
   echo "    setup        First-time setup wizard (safe to re-run)"
   echo "    reset        Remove container + image (keeps data + config)"
   echo ""
-  echo "  ${BOLD}Run${NC}"
+  printf '%b\n' "  ${BOLD}Run${NC}"
   echo "    start        Start the container"
   echo "    stop         Stop the container"
   echo "    restart      Restart the container"
   echo "    status       Show health, stats, and service status"
   echo "    logs [N]     Follow logs (last N lines, default 100)"
   echo ""
-  echo "  ${BOLD}Maintain${NC}"
+  printf '%b\n' "  ${BOLD}Maintain${NC}"
   echo "    update       Pull latest code, rebuild, restart (keeps data)"
   echo "    backup [dir] Full backup: database + config + theme (default: ./backups/timestamped/)"
   echo "    restore <d>  Restore from backup dir or .db file (backs up current first)"
