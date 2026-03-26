@@ -36,6 +36,149 @@ confirm() {
 mark_done()  { echo "$1" >> "$STATE_FILE"; }
 is_done()    { [ -f "$STATE_FILE" ] && grep -qx "$1" "$STATE_FILE" 2>/dev/null; }
 
+# ─── Helpers ──────────────────────────────────────────────────────────────
+
+# Determine the correct data volume/mount args for docker run.
+# Detects existing host data directories and uses bind mounts if found.
+get_data_mount_args() {
+  # Check for existing host data directories with a DB file
+  if [ -d "$HOME/meshcore-data" ] && [ -f "$HOME/meshcore-data/meshcore.db" ]; then
+    echo "-v $HOME/meshcore-data:/app/data"
+    return
+  fi
+  if [ -d "$(pwd)/data" ] && [ -f "$(pwd)/data/meshcore.db" ]; then
+    echo "-v $(pwd)/data:/app/data"
+    return
+  fi
+  # Default: Docker named volume
+  echo "-v ${DATA_VOLUME}:/app/data"
+}
+
+# Determine the required port mappings from Caddyfile
+get_required_ports() {
+  local caddyfile_domain
+  caddyfile_domain=$(grep -v '^#' caddy-config/Caddyfile 2>/dev/null | head -1 | tr -d ' {')
+  if [ "$caddyfile_domain" = ":80" ]; then
+    echo "80"
+  else
+    echo "80 443"
+  fi
+}
+
+# Get current container port mappings (just the host ports)
+get_current_ports() {
+  docker inspect "$CONTAINER_NAME" 2>/dev/null | \
+    grep -oP '"HostPort":\s*"\K[0-9]+' | sort -u | tr '\n' ' ' | sed 's/ $//'
+}
+
+# Check if container port mappings match what's needed.
+# Returns 0 if they match, 1 if mismatch.
+check_port_match() {
+  local required current
+  required=$(get_required_ports | tr ' ' '\n' | sort | tr '\n' ' ' | sed 's/ $//')
+  current=$(get_current_ports | tr ' ' '\n' | sort | tr '\n' ' ' | sed 's/ $//')
+  [ "$required" = "$current" ]
+}
+
+# Build the docker run command args (ports + volumes)
+get_docker_run_args() {
+  local ports_arg=""
+  for port in $(get_required_ports); do
+    ports_arg="$ports_arg -p ${port}:${port}"
+  done
+
+  local data_mount
+  data_mount=$(get_data_mount_args)
+
+  echo "$ports_arg \
+    -v $(pwd)/config.json:/app/config.json:ro \
+    -v $(pwd)/caddy-config/Caddyfile:/etc/caddy/Caddyfile:ro \
+    $data_mount \
+    -v ${CADDY_VOLUME}:/data/caddy"
+}
+
+# Recreate the container with current settings
+recreate_container() {
+  info "Stopping and removing old container..."
+  docker stop "$CONTAINER_NAME" 2>/dev/null || true
+  docker rm "$CONTAINER_NAME" 2>/dev/null || true
+
+  local run_args
+  run_args=$(get_docker_run_args)
+
+  eval docker run -d \
+    --name "$CONTAINER_NAME" \
+    --restart unless-stopped \
+    $run_args \
+    "$IMAGE_NAME"
+}
+
+# Check config.json for placeholder values
+check_config_placeholders() {
+  if [ -f config.json ]; then
+    if grep -qE 'your-username|your-password|your-secret|example\.com|changeme' config.json 2>/dev/null; then
+      warn "config.json contains placeholder values."
+      warn "Edit config.json and replace placeholder values before deploying."
+    fi
+  fi
+}
+
+# Verify the running container is actually healthy
+verify_health() {
+  local base_url="http://localhost:3000"
+  local use_https=false
+
+  # Check if Caddyfile has a real domain (not :80)
+  if [ -f caddy-config/Caddyfile ]; then
+    local caddyfile_domain
+    caddyfile_domain=$(grep -v '^#' caddy-config/Caddyfile 2>/dev/null | head -1 | tr -d ' {')
+    if [ "$caddyfile_domain" != ":80" ] && [ -n "$caddyfile_domain" ]; then
+      use_https=true
+    fi
+  fi
+
+  # Wait for /api/stats response
+  info "Waiting for Node.js to respond..."
+  local healthy=false
+  for i in $(seq 1 10); do
+    if docker exec "$CONTAINER_NAME" wget -qO- http://localhost:3000/api/stats &>/dev/null; then
+      healthy=true
+      break
+    fi
+    sleep 2
+  done
+
+  if ! $healthy; then
+    err "Node.js did not respond after 20 seconds."
+    warn "Check logs: ./manage.sh logs"
+    return 1
+  fi
+  log "Node.js is responding."
+
+  # Check for MQTT errors in recent logs
+  local mqtt_errors
+  mqtt_errors=$(docker logs "$CONTAINER_NAME" --tail 50 2>&1 | grep -i 'mqtt.*error\|mqtt.*fail\|ECONNREFUSED.*1883' || true)
+  if [ -n "$mqtt_errors" ]; then
+    warn "MQTT errors detected in logs:"
+    echo "$mqtt_errors" | head -5 | sed 's/^/   /'
+  fi
+
+  # If HTTPS domain configured, try to verify externally
+  if $use_https; then
+    info "Checking HTTPS for ${caddyfile_domain}..."
+    if command -v curl &>/dev/null; then
+      if curl -sf --connect-timeout 5 "https://${caddyfile_domain}/api/stats" &>/dev/null; then
+        log "HTTPS is working: https://${caddyfile_domain}"
+      else
+        warn "HTTPS not reachable yet for ${caddyfile_domain}"
+        warn "It may take a minute for Caddy to provision the certificate."
+      fi
+    fi
+  fi
+
+  return 0
+}
+
 # ─── Setup Wizard ─────────────────────────────────────────────────────────
 
 TOTAL_STEPS=6
@@ -82,7 +225,7 @@ cmd_setup() {
   step 2 "Configuration"
 
   if [ -f config.json ]; then
-    log "config.json exists."
+    log "config.json already exists (not overwriting)."
     # Sanity check the JSON
     if ! python3 -c "import json; json.load(open('config.json'))" 2>/dev/null && \
        ! node -e "JSON.parse(require('fs').readFileSync('config.json'))" 2>/dev/null; then
@@ -90,6 +233,7 @@ cmd_setup() {
       exit 1
     fi
     log "config.json is valid JSON."
+    check_config_placeholders
   else
     info "Creating config.json from example..."
     cp config.example.json config.json
@@ -106,6 +250,7 @@ cmd_setup() {
     fi
 
     log "Created config.json with random API key."
+    check_config_placeholders
     echo ""
     echo "   You can customize config.json later (map center, branding, etc)."
     echo "   Edit with: nano config.json"
@@ -222,30 +367,46 @@ cmd_setup() {
   # ── Step 5: Start container ──
   step 5 "Starting container"
 
+  # Detect existing data directories
+  if [ -d "$HOME/meshcore-data" ] && [ -f "$HOME/meshcore-data/meshcore.db" ]; then
+    info "Found existing data at \$HOME/meshcore-data/ — will use bind mount."
+  elif [ -d "$(pwd)/data" ] && [ -f "$(pwd)/data/meshcore.db" ]; then
+    info "Found existing data at ./data/ — will use bind mount."
+  fi
+
   if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
     log "Container already running."
-  elif docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-    # Exists but stopped — check if it needs recreating (new image)
-    info "Container exists but is stopped. Starting..."
-    docker start "$CONTAINER_NAME"
-    log "Started."
-  else
-    # Determine ports
-    PORTS="-p 80:80 -p 443:443"
-    CADDYFILE_DOMAIN=$(grep -v '^#' caddy-config/Caddyfile 2>/dev/null | head -1 | tr -d ' {')
-    if [ "$CADDYFILE_DOMAIN" = ":80" ]; then
-      PORTS="-p 80:80"
+    # Check port mappings match
+    if ! check_port_match; then
+      warn "Container port mappings don't match Caddyfile configuration."
+      warn "Current ports: $(get_current_ports)"
+      warn "Required ports: $(get_required_ports)"
+      if confirm "Recreate container with correct ports?"; then
+        recreate_container
+        log "Container recreated with correct ports."
+      fi
     fi
-
-    docker run -d \
-      --name "$CONTAINER_NAME" \
-      --restart unless-stopped \
-      $PORTS \
-      -v "$(pwd)/config.json:/app/config.json:ro" \
-      -v "$(pwd)/caddy-config/Caddyfile:/etc/caddy/Caddyfile:ro" \
-      -v "${DATA_VOLUME}:/app/data" \
-      -v "${CADDY_VOLUME}:/data/caddy" \
-      "$IMAGE_NAME"
+  elif docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+    # Exists but stopped — check ports before starting
+    if ! check_port_match; then
+      warn "Stopped container has wrong port mappings."
+      warn "Current ports: $(get_current_ports)"
+      warn "Required ports: $(get_required_ports)"
+      if confirm "Recreate container with correct ports?"; then
+        recreate_container
+        log "Container recreated with correct ports."
+      else
+        info "Starting existing container (ports unchanged)..."
+        docker start "$CONTAINER_NAME"
+        log "Started (with old port mappings)."
+      fi
+    else
+      info "Container exists but is stopped. Starting..."
+      docker start "$CONTAINER_NAME"
+      log "Started."
+    fi
+  else
+    recreate_container
     log "Container started."
   fi
   mark_done "container"
@@ -253,26 +414,10 @@ cmd_setup() {
   # ── Step 6: Verify ──
   step 6 "Verifying"
 
-  info "Waiting for startup..."
-  sleep 5
-
   if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-    # Check if Node.js is responding
-    HEALTHY=false
-    for i in 1 2 3; do
-      if docker exec "$CONTAINER_NAME" wget -qO- http://localhost:3000/api/stats &>/dev/null; then
-        HEALTHY=true
-        break
-      fi
-      sleep 2
-    done
+    verify_health
 
-    if $HEALTHY; then
-      log "All services running."
-    else
-      warn "Container is running but Node.js hasn't responded yet."
-      warn "Check logs: ./manage.sh logs"
-    fi
+    CADDYFILE_DOMAIN=$(grep -v '^#' caddy-config/Caddyfile 2>/dev/null | head -1 | tr -d ' {')
 
     echo ""
     echo "═══════════════════════════════════════"
@@ -320,6 +465,17 @@ cmd_start() {
   if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
     warn "Already running."
   elif docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+    # Check if port mappings still match before starting
+    if ! check_port_match; then
+      warn "Container port mappings don't match Caddyfile configuration."
+      warn "Current ports: $(get_current_ports)"
+      warn "Required ports: $(get_required_ports)"
+      if confirm "Recreate container with correct ports?"; then
+        recreate_container
+        log "Container recreated and started with correct ports."
+        return
+      fi
+    fi
     docker start "$CONTAINER_NAME"
     log "Started."
   else
@@ -333,7 +489,30 @@ cmd_stop() {
 }
 
 cmd_restart() {
-  docker restart "$CONTAINER_NAME" 2>/dev/null && log "Restarted." || err "Not running. Use './manage.sh start'."
+  if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+    # Check if ports need updating — if so, recreate instead of just restarting
+    if ! check_port_match; then
+      warn "Port mappings have changed. Recreating container..."
+      recreate_container
+      log "Container recreated with correct ports."
+    else
+      docker restart "$CONTAINER_NAME"
+      log "Restarted."
+    fi
+  elif docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+    # Stopped container — check ports and recreate if needed
+    if ! check_port_match; then
+      warn "Port mappings have changed. Recreating container..."
+      recreate_container
+      log "Container recreated with correct ports."
+    else
+      docker start "$CONTAINER_NAME"
+      log "Started."
+    fi
+  else
+    err "Not running. Use './manage.sh setup'."
+    exit 1
+  fi
 }
 
 # ─── Status ───────────────────────────────────────────────────────────────
@@ -372,6 +551,20 @@ cmd_status() {
       err "  Caddy — not running"
     fi
 
+    # Check for MQTT errors in recent logs
+    MQTT_ERRORS=$(docker logs "$CONTAINER_NAME" --tail 50 2>&1 | grep -i 'mqtt.*error\|mqtt.*fail\|ECONNREFUSED.*1883' || true)
+    if [ -n "$MQTT_ERRORS" ]; then
+      echo ""
+      warn "MQTT errors in recent logs:"
+      echo "$MQTT_ERRORS" | head -3 | sed 's/^/   /'
+    fi
+
+    # Port mapping check
+    if ! check_port_match; then
+      echo ""
+      warn "Port mappings don't match Caddyfile. Run './manage.sh restart' to fix."
+    fi
+
     # Disk usage
     DB_SIZE=$(docker exec "$CONTAINER_NAME" du -h /app/data/meshcore.db 2>/dev/null | cut -f1)
     if [ -n "$DB_SIZE" ]; then
@@ -404,26 +597,8 @@ cmd_update() {
   info "Rebuilding image..."
   docker build -t "$IMAGE_NAME" .
 
-  # Capture the run config before removing
-  CADDYFILE_DOMAIN=$(grep -v '^#' caddy-config/Caddyfile 2>/dev/null | head -1 | tr -d ' {')
-  PORTS="-p 80:80 -p 443:443"
-  if [ "$CADDYFILE_DOMAIN" = ":80" ]; then
-    PORTS="-p 80:80"
-  fi
-
   info "Restarting with new image..."
-  docker stop "$CONTAINER_NAME" 2>/dev/null || true
-  docker rm "$CONTAINER_NAME" 2>/dev/null || true
-
-  docker run -d \
-    --name "$CONTAINER_NAME" \
-    --restart unless-stopped \
-    $PORTS \
-    -v "$(pwd)/config.json:/app/config.json:ro" \
-    -v "$(pwd)/caddy-config/Caddyfile:/etc/caddy/Caddyfile:ro" \
-    -v "${DATA_VOLUME}:/app/data" \
-    -v "${CADDY_VOLUME}:/data/caddy" \
-    "$IMAGE_NAME"
+  recreate_container
 
   log "Updated and restarted. Data preserved."
 }
