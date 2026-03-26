@@ -271,8 +271,6 @@ async function run() {
     });
   });
 
-  await browser.close();
-
   // Test 14: Live heatmap opacity stored in localStorage
   await test('Live heatmap opacity persists in localStorage', async () => {
     // Verify localStorage key works (no page load needed — reuse current page)
@@ -314,6 +312,8 @@ async function run() {
     // Restore
     await page.setViewportSize({ width: 1280, height: 720 });
   });
+
+  await browser.close();
 
   // Summary
   const passed = results.filter(r => r.pass).length;
