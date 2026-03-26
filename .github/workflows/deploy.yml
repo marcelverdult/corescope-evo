@@ -131,7 +131,7 @@ jobs:
       - name: Build and deploy
         run: |
           set -e
-          DEPLOY_DIR="$HOME/meshcore-analyzer"
+          DEPLOY_DIR="/opt/meshcore-deploy"
           
           docker build -t meshcore-analyzer .
           docker stop meshcore-analyzer 2>/dev/null || true
@@ -147,8 +147,8 @@ jobs:
           
           # Detect existing data directory
           DATA_MOUNT="-v meshcore-data:/app/data"
-          if [ -f "$HOME/meshcore-data/meshcore.db" ]; then
-            DATA_MOUNT="-v $HOME/meshcore-data:/app/data"
+          if [ -f "/opt/meshcore-deploy/data/meshcore.db" ]; then
+            DATA_MOUNT="-v /opt/meshcore-deploy/data:/app/data"
           elif [ -f "$DEPLOY_DIR/data/meshcore.db" ]; then
             DATA_MOUNT="-v $DEPLOY_DIR/data:/app/data"
           fi
