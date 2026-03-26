@@ -521,11 +521,16 @@ function broadcast(msg) {
 // Auto-create stub nodes from path hops (≥2 bytes / 4 hex chars)
 // When an advert arrives later with a full pubkey matching the prefix, upsertNode will upgrade it
 const hopNodeCache = new Set(); // Avoid repeated DB lookups for known hops
+// Track when nodes were last seen as relay hops in packet paths (full pubkey → ISO timestamp)
+const lastPathSeenMap = new Map();
 
 // Sequential hop disambiguation — delegates to server-helpers.js (single source of truth)
 function disambiguateHops(hops, allNodes) {
   return _disambiguateHops(hops, allNodes, MAX_HOP_DIST_SERVER);
 }
+
+// Cache hop prefix → full pubkey for lastPathSeenMap resolution
+const hopPrefixToKey = new Map();
 
 function autoLearnHopNodes(hops, now) {
   for (const hop of hops) {
@@ -535,11 +540,33 @@ function autoLearnHopNodes(hops, now) {
     const existing = db.db.prepare("SELECT public_key FROM nodes WHERE LOWER(public_key) LIKE ?").get(hopLower + '%');
     if (existing) {
       hopNodeCache.add(hop);
+      hopPrefixToKey.set(hopLower, existing.public_key);
       continue;
     }
     // Create stub node — role is likely repeater (most hops are)
     db.upsertNode({ public_key: hopLower, name: null, role: 'repeater', lat: null, lon: null, last_seen: now });
     hopNodeCache.add(hop);
+    hopPrefixToKey.set(hopLower, hopLower); // stub uses prefix as key
+  }
+}
+
+// Update lastPathSeenMap for all hops in a packet path (including 1-byte hops)
+function updatePathSeenTimestamps(hops, now) {
+  for (const hop of hops) {
+    const hopLower = hop.toLowerCase();
+    // Try cached resolution first
+    let fullKey = hopPrefixToKey.get(hopLower);
+    if (!fullKey) {
+      // For 1-byte hops or uncached: try DB prefix match (single query)
+      const existing = db.db.prepare("SELECT public_key FROM nodes WHERE LOWER(public_key) LIKE ?").get(hopLower + '%');
+      if (existing) {
+        fullKey = existing.public_key;
+        hopPrefixToKey.set(hopLower, fullKey);
+      }
+    }
+    if (fullKey) {
+      lastPathSeenMap.set(fullKey, now);
+    }
   }
 }
 
@@ -648,6 +675,8 @@ for (const source of mqttSources) {
         if (decoded.path.hops.length > 0) {
           // Auto-create stub nodes from 2+ byte path hops
           autoLearnHopNodes(decoded.path.hops, now);
+          // Track when each hop node was last seen relaying
+          updatePathSeenTimestamps(decoded.path.hops, now);
         }
 
         if (decoded.header.payloadTypeName === 'ADVERT' && decoded.payload.pubKey) {
@@ -981,7 +1010,9 @@ app.post('/api/packets', requireApiKey, (req, res) => {
     try { db.insertTransmission(apiPktData); } catch (e) { console.error('[dual-write] transmission insert error:', e.message); }
 
     if (decoded.path.hops.length > 0) {
-      autoLearnHopNodes(decoded.path.hops, new Date().toISOString());
+      const _now = new Date().toISOString();
+      autoLearnHopNodes(decoded.path.hops, _now);
+      updatePathSeenTimestamps(decoded.path.hops, _now);
     }
 
     if (decoded.header.payloadTypeName === 'ADVERT' && decoded.payload.pubKey) {
@@ -1074,6 +1105,11 @@ app.get('/api/nodes', (req, res) => {
         if (!latest || p.timestamp > latest) latest = p.timestamp;
       }
       if (latest) node.last_heard = latest;
+    }
+    // Also check if this node was seen as a relay hop in any packet path
+    const pathSeen = lastPathSeenMap.get(node.public_key);
+    if (pathSeen && (!node.last_heard || pathSeen > node.last_heard)) {
+      node.last_heard = pathSeen;
     }
   }
 
@@ -2966,4 +3002,4 @@ function shutdown(signal) {
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT',  () => shutdown('SIGINT'));
 
-module.exports = { app, server, wss, pktStore, db, cache };
+module.exports = { app, server, wss, pktStore, db, cache, lastPathSeenMap };

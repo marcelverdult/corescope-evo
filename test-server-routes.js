@@ -7,6 +7,7 @@ process.env.SEED_DB = 'true';  // Seed test data
 
 const request = require('supertest');
 const { app, server, wss, pktStore, db, cache } = require('./server');
+const lastPathSeenMap = require('./server').lastPathSeenMap;
 
 let passed = 0, failed = 0;
 
@@ -1036,6 +1037,71 @@ seedTestData();
     const h = require('./server-helpers');
     assert(h.isHashSizeFlipFlop([1, 2], new Set([1, 2])) === false);
     assert(h.isHashSizeFlipFlop(null, null) === false);
+  });
+
+  // ── lastPathSeenMap: repeater hop tracking ──
+  await t('node appearing only as path hop gets last_heard', async () => {
+    // Create a node that has NO packets in pktStore (only exists in DB)
+    const hopPubkey = 'ffaa' + '0'.repeat(60);
+    db.upsertNode({ public_key: hopPubkey, name: 'HopOnlyRepeater', role: 'repeater', lat: 0, lon: 0, last_seen: '2020-01-01T00:00:00.000Z' });
+
+    // Simulate it being seen as a path hop
+    const recentTime = new Date().toISOString();
+    lastPathSeenMap.set(hopPubkey, recentTime);
+
+    const res = await request(app).get('/api/nodes?search=HopOnlyRepeater');
+    assert(res.status === 200);
+    assert(res.body.nodes.length >= 1, 'should find the hop-only node');
+    const node = res.body.nodes.find(n => n.public_key === hopPubkey);
+    assert(node, 'node should exist in results');
+    assert(node.last_heard === recentTime, 'last_heard should come from lastPathSeenMap');
+
+    // Cleanup
+    lastPathSeenMap.delete(hopPubkey);
+  });
+
+  await t('last_heard from path hop preferred over stale last_seen', async () => {
+    const hopPubkey = 'ffbb' + '0'.repeat(60);
+    const staleTime = '2020-01-01T00:00:00.000Z';
+    const freshTime = new Date().toISOString();
+    db.upsertNode({ public_key: hopPubkey, name: 'StaleRepeater', role: 'repeater', lat: 0, lon: 0, last_seen: staleTime });
+
+    // Path hop seen recently
+    lastPathSeenMap.set(hopPubkey, freshTime);
+
+    const res = await request(app).get('/api/nodes?search=StaleRepeater');
+    assert(res.status === 200);
+    const node = res.body.nodes.find(n => n.public_key === hopPubkey);
+    assert(node, 'node should exist');
+    assert(node.last_heard === freshTime, 'last_heard should be fresh path time, not stale DB time');
+    assert(node.last_seen === staleTime, 'last_seen (DB) should still be stale');
+
+    lastPathSeenMap.delete(hopPubkey);
+  });
+
+  await t('last_heard from pktStore preferred over older path hop', async () => {
+    const hopPubkey = 'aabb' + '0'.repeat(60); // TestRepeater1 — has packets in pktStore
+    const oldPathTime = '2019-01-01T00:00:00.000Z';
+    lastPathSeenMap.set(hopPubkey, oldPathTime);
+
+    const res = await request(app).get('/api/nodes?search=TestRepeater1');
+    assert(res.status === 200);
+    const node = res.body.nodes.find(n => n.public_key === hopPubkey);
+    assert(node, 'node should exist');
+    // pktStore should have a more recent timestamp than our old path time
+    assert(node.last_heard > oldPathTime, 'pktStore timestamp should win over older path hop time');
+
+    lastPathSeenMap.delete(hopPubkey);
+  });
+
+  await t('bulk-health cache invalidated after advert', () => {
+    // Set a fake bulk-health cache entry
+    cache.set('bulk-health:50:r=', { fake: true }, 60000);
+    assert(cache.get('bulk-health:50:r='), 'cache should have bulk-health entry');
+
+    // Simulate what happens on advert: cache.invalidate('bulk-health')
+    cache.invalidate('bulk-health');
+    assert(!cache.get('bulk-health:50:r='), 'bulk-health cache should be invalidated after advert');
   });
 
   // ── Summary ──
