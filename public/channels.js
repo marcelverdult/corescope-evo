@@ -42,7 +42,8 @@
     tip.setAttribute('role', 'tooltip');
     const roleKey = node.role || (node.is_repeater ? 'repeater' : node.is_room ? 'room' : node.is_sensor ? 'sensor' : 'companion');
     const role = (ROLE_EMOJI[roleKey] || '●') + ' ' + (ROLE_LABELS[roleKey] || roleKey);
-    const lastSeen = node.last_seen ? timeAgo(node.last_seen) : 'unknown';
+    const lastActivity = node.last_heard || node.last_seen;
+    const lastSeen = lastActivity ? timeAgo(lastActivity) : 'unknown';
     tip.innerHTML = `<div class="ch-tooltip-name">${escapeHtml(node.name)}</div>
       <div class="ch-tooltip-role">${role}</div>
       <div class="ch-tooltip-meta">Last seen: ${lastSeen}</div>
@@ -116,7 +117,8 @@
       const adverts = detail.recentAdverts || [];
       const roleKey = n.role || (n.is_repeater ? 'repeater' : n.is_room ? 'room' : n.is_sensor ? 'sensor' : 'companion');
       const role = (ROLE_EMOJI[roleKey] || '●') + ' ' + (ROLE_LABELS[roleKey] || roleKey);
-      const lastSeen = n.last_seen ? timeAgo(n.last_seen) : 'unknown';
+      const lastActivity = n.last_heard || n.last_seen;
+      const lastSeen = lastActivity ? timeAgo(lastActivity) : 'unknown';
 
       panel.innerHTML = `<div class="ch-node-panel-header">
           <strong>${escapeHtml(n.name || 'Unknown')}</strong>

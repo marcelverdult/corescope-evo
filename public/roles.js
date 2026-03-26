@@ -346,6 +346,37 @@
     'LOS': 'Lagos, NG'
   };
 
+  // Copy text to clipboard with fallback for Firefox and older browsers
+  window.copyToClipboard = function(text, onSuccess, onFail) {
+    function fallback() {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      try {
+        var ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        if (ok && onSuccess) onSuccess();
+        else if (!ok && onFail) onFail();
+      } catch (e) {
+        document.body.removeChild(ta);
+        if (onFail) onFail();
+      }
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(
+        function() { if (onSuccess) onSuccess(); },
+        function() { fallback(); }
+      );
+    } else {
+      fallback();
+    }
+  };
+
   // Simple markdown → HTML (bold, italic, links, code, lists, line breaks)
   window.miniMarkdown = function(text) {
     if (!text) return '';

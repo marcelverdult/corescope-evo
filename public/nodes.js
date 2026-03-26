@@ -334,11 +334,11 @@
       // Copy URL
       const nodeUrl = location.origin + '#/nodes/' + encodeURIComponent(n.public_key);
       document.getElementById('copyUrlBtn')?.addEventListener('click', () => {
-        navigator.clipboard.writeText(nodeUrl).then(() => {
-          const btn = document.getElementById('copyUrlBtn');
+        const btn = document.getElementById('copyUrlBtn');
+        window.copyToClipboard(nodeUrl, () => {
           btn.textContent = '✅ Copied!';
           setTimeout(() => btn.textContent = '📋 Copy URL', 2000);
-        }).catch(() => {});
+        });
       });
 
       // Deep-link scroll: ?section=node-packets or ?section=node-packets

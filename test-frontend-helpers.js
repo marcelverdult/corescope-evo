@@ -400,6 +400,109 @@ console.log('\n=== hop-resolver.js ===');
   });
 }
 
+// ===== ROLES.JS: copyToClipboard =====
+console.log('\n=== roles.js: copyToClipboard ===');
+{
+  // Helper: build a sandbox with clipboard/DOM mocks for copyToClipboard tests
+  function makeClipboardSandbox(opts) {
+    const ctx = makeSandbox();
+    const createdEls = [];
+    const appendedEls = [];
+    const removedEls = [];
+
+    // Enhanced createElement that returns a mock textarea
+    ctx.document.createElement = (tag) => {
+      const el = { tagName: tag, value: '', style: {}, focus() {}, select() {} };
+      createdEls.push(el);
+      return el;
+    };
+    ctx.document.body = {
+      appendChild: (el) => { appendedEls.push(el); },
+      removeChild: (el) => { removedEls.push(el); },
+    };
+    ctx.document.execCommand = opts.execCommand || (() => true);
+
+    // navigator mock
+    if (opts.clipboardWriteText) {
+      ctx.navigator = { clipboard: { writeText: opts.clipboardWriteText } };
+    } else {
+      ctx.navigator = {};
+    }
+
+    loadInCtx(ctx, 'public/roles.js');
+    return { ctx, createdEls, appendedEls, removedEls };
+  }
+
+  // Test 1: Fallback succeeds when clipboard API is unavailable
+  test('copyToClipboard fallback calls onSuccess when execCommand succeeds', () => {
+    const { ctx } = makeClipboardSandbox({ execCommand: () => true });
+    let succeeded = false;
+    ctx.window.copyToClipboard('hello', () => { succeeded = true; }, () => { throw new Error('onFail should not be called'); });
+    assert.strictEqual(succeeded, true);
+  });
+
+  // Test 2: Fallback uses textarea when clipboard API is unavailable
+  test('copyToClipboard fallback creates textarea with correct value', () => {
+    const { ctx, createdEls, appendedEls, removedEls } = makeClipboardSandbox({ execCommand: () => true });
+    const beforeCount = createdEls.length; // roles.js may create elements on init
+    ctx.window.copyToClipboard('test-text');
+    const newEls = createdEls.slice(beforeCount);
+    assert.strictEqual(newEls.length, 1);
+    assert.strictEqual(newEls[0].tagName, 'textarea');
+    assert.strictEqual(newEls[0].value, 'test-text');
+    assert.strictEqual(appendedEls.length, 1, 'textarea should be appended to body');
+    assert.strictEqual(removedEls.length, 1, 'textarea should be removed from body');
+  });
+
+  // Test 3: Fallback calls onFail when execCommand returns false
+  test('copyToClipboard fallback calls onFail when execCommand fails', () => {
+    const { ctx } = makeClipboardSandbox({ execCommand: () => false });
+    let failCalled = false;
+    ctx.window.copyToClipboard('hello', () => { throw new Error('onSuccess should not be called'); }, () => { failCalled = true; });
+    assert.strictEqual(failCalled, true);
+  });
+
+  // Test 4: Fallback calls onFail when execCommand throws
+  test('copyToClipboard fallback calls onFail when execCommand throws', () => {
+    const { ctx } = makeClipboardSandbox({ execCommand: () => { throw new Error('not allowed'); } });
+    let failCalled = false;
+    ctx.window.copyToClipboard('hello', null, () => { failCalled = true; });
+    assert.strictEqual(failCalled, true);
+  });
+
+  // Test 5: Handles null input gracefully (no crash)
+  test('copyToClipboard handles null input without throwing', () => {
+    const { ctx } = makeClipboardSandbox({ execCommand: () => true });
+    // Should not throw
+    ctx.window.copyToClipboard(null);
+    ctx.window.copyToClipboard(undefined);
+  });
+
+  // Test 6: Clipboard API path calls writeText with correct argument
+  test('copyToClipboard uses clipboard API when available', () => {
+    let writtenText = null;
+    const { ctx } = makeClipboardSandbox({
+      clipboardWriteText: (text) => { writtenText = text; return Promise.resolve(); },
+    });
+    ctx.window.copyToClipboard('clipboard-text');
+    assert.strictEqual(writtenText, 'clipboard-text');
+  });
+
+  // Test 7: No crash when callbacks are omitted
+  test('copyToClipboard works without callbacks', () => {
+    const { ctx } = makeClipboardSandbox({ execCommand: () => true });
+    ctx.window.copyToClipboard('no-callbacks');
+    // No callbacks — should not throw
+  });
+
+  // Test 8: Cleanup happens even when execCommand throws
+  test('copyToClipboard cleans up textarea on execCommand throw', () => {
+    const { ctx, removedEls } = makeClipboardSandbox({ execCommand: () => { throw new Error('denied'); } });
+    ctx.window.copyToClipboard('cleanup-test');
+    assert.strictEqual(removedEls.length, 1, 'textarea should be removed even on error');
+  });
+}
+
 // ===== SUMMARY =====
 console.log(`\n${'═'.repeat(40)}`);
 console.log(`  Frontend helpers: ${passed} passed, ${failed} failed`);

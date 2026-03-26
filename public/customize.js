@@ -543,6 +543,7 @@
       .cust-header h2 { margin: 0; font-size: 15px; }
       .cust-close { background: none; border: none; font-size: 18px; cursor: pointer; color: var(--text-muted); padding: 4px 8px; border-radius: 4px; }
       .cust-close:hover { background: var(--surface-3); color: var(--text); }
+      .cust-inner { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
       .cust-body { flex: 1; overflow-y: auto; min-height: 0; }
       .cust-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); flex-shrink: 0; }
       .cust-tab { padding: 8px 10px; cursor: pointer; border: none; background: none; color: var(--text-muted);
@@ -1131,12 +1132,7 @@
     if (copyBtn) copyBtn.addEventListener('click', function () {
       var ta = document.getElementById('custExportJson');
       if (ta) {
-        navigator.clipboard.writeText(ta.value).then(function () {
-          copyBtn.textContent = '✓ Copied!';
-          setTimeout(function () { copyBtn.textContent = '📋 Copy to Clipboard'; }, 2000);
-        }).catch(function () {
-          ta.select();
-          document.execCommand('copy');
+        window.copyToClipboard(ta.value, function () {
           copyBtn.textContent = '✓ Copied!';
           setTimeout(function () { copyBtn.textContent = '📋 Copy to Clipboard'; }, 2000);
         });

@@ -30,6 +30,17 @@
   let showHexHashes = localStorage.getItem('meshcore-hex-hashes') === 'true';
   let filtersBuilt = false;
   const PANEL_WIDTH_KEY = 'meshcore-panel-width';
+  const PANEL_CLOSE_HTML = '<button class="panel-close-btn" title="Close detail pane (Esc)">✕</button>';
+
+  function closeDetailPanel() {
+    var panel = document.getElementById('pktRight');
+    if (panel && !panel.classList.contains('empty')) {
+      panel.classList.add('empty');
+      panel.innerHTML = '<div class="panel-resize-handle" id="pktResizeHandle"></div>' + PANEL_CLOSE_HTML + '<span>Select a packet to view details</span>';
+      selectedId = null;
+      renderTableRows();
+    }
+  }
 
   function initPanelResize() {
     const handle = document.getElementById('pktResizeHandle');
@@ -171,10 +182,14 @@
       <div class="panel-left" id="pktLeft"></div>
       <div class="panel-right empty" id="pktRight" aria-live="polite">
         <div class="panel-resize-handle" id="pktResizeHandle"></div>
+        ${PANEL_CLOSE_HTML}
         <span>Select a packet to view details</span>
       </div>
     </div>`;
     initPanelResize();
+    document.getElementById('pktRight').addEventListener('click', function(e) {
+      if (e.target.closest('.panel-close-btn')) closeDetailPanel();
+    });
     await loadObservers();
     // Restore saved time window before first load
     const fTW = document.getElementById('fTimeWindow');
@@ -247,7 +262,7 @@
         const panel = document.getElementById('pktRight');
         if (panel) {
           panel.classList.remove('empty');
-          panel.innerHTML = '<div class="panel-resize-handle" id="pktResizeHandle"></div>';
+          panel.innerHTML = '<div class="panel-resize-handle" id="pktResizeHandle"></div>' + PANEL_CLOSE_HTML;
           const content = document.createElement('div');
           panel.appendChild(content);
           const pkt = data.packet;
@@ -916,13 +931,7 @@
     // Escape to close packet detail panel
     document.addEventListener('keydown', function pktEsc(e) {
       if (e.key === 'Escape') {
-        const panel = document.getElementById('pktRight');
-        if (panel && !panel.classList.contains('empty')) {
-          panel.classList.add('empty');
-          panel.innerHTML = '<div class="panel-resize-handle" id="pktResizeHandle"></div><span>Select a packet to view details</span>';
-          selectedId = null;
-          renderTableRows();
-        }
+        closeDetailPanel();
       }
     });
 
@@ -1144,7 +1153,7 @@
     } else {
       panel = document.getElementById('pktRight');
       panel.classList.remove('empty');
-      panel.innerHTML = '<div class="panel-resize-handle" id="pktResizeHandle"></div><div class="text-center text-muted" style="padding:40px">Loading…</div>';
+      panel.innerHTML = '<div class="panel-resize-handle" id="pktResizeHandle"></div>' + PANEL_CLOSE_HTML + '<div class="text-center text-muted" style="padding:40px">Loading…</div>';
       initPanelResize();
     }
 
@@ -1157,7 +1166,7 @@
         const newHops = hops.filter(h => !(h in hopNameCache));
         if (newHops.length) await resolveHops(newHops);
       } catch {}
-      panel.innerHTML = isMobileNow ? '' : '<div class="panel-resize-handle" id="pktResizeHandle"></div>';
+      panel.innerHTML = isMobileNow ? '' : '<div class="panel-resize-handle" id="pktResizeHandle"></div>' + PANEL_CLOSE_HTML;
       const content = document.createElement('div');
       panel.appendChild(content);
       await renderDetail(content, data);
@@ -1328,11 +1337,9 @@
         const pktHash = copyLinkBtn.dataset.packetHash;
         const obsParam = selectedObservationId ? `?obs=${selectedObservationId}` : '';
         const url = pktHash ? `${location.origin}/#/packets/${pktHash}${obsParam}` : `${location.origin}/#/packets/${copyLinkBtn.dataset.packetId}${obsParam}`;
-        navigator.clipboard.writeText(url).then(() => {
+        window.copyToClipboard(url, () => {
           copyLinkBtn.textContent = '✅ Copied!';
           setTimeout(() => { copyLinkBtn.textContent = '🔗 Copy Link'; }, 1500);
-        }).catch(() => {
-          prompt('Copy this link:', url);
         });
       });
     }
