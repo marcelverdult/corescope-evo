@@ -131,12 +131,14 @@ jobs:
       - name: Build and deploy
         run: |
           set -e
+          DEPLOY_DIR="$HOME/meshcore-analyzer"
+          
           docker build -t meshcore-analyzer .
           docker stop meshcore-analyzer 2>/dev/null || true
           docker rm meshcore-analyzer 2>/dev/null || true
           
           # Determine port mapping from Caddyfile
-          DOMAIN=$(grep -v '^#' caddy-config/Caddyfile 2>/dev/null | head -1 | tr -d ' {')
+          DOMAIN=$(grep -v '^#' "$DEPLOY_DIR/caddy-config/Caddyfile" 2>/dev/null | head -1 | tr -d ' {')
           PORTS="-p 80:80 -p 443:443"
           if echo "$DOMAIN" | grep -qE '^:[0-9]+$'; then
             PORT="${DOMAIN#:}"
@@ -147,16 +149,16 @@ jobs:
           DATA_MOUNT="-v meshcore-data:/app/data"
           if [ -f "$HOME/meshcore-data/meshcore.db" ]; then
             DATA_MOUNT="-v $HOME/meshcore-data:/app/data"
-          elif [ -f "$(pwd)/data/meshcore.db" ]; then
-            DATA_MOUNT="-v $(pwd)/data:/app/data"
+          elif [ -f "$DEPLOY_DIR/data/meshcore.db" ]; then
+            DATA_MOUNT="-v $DEPLOY_DIR/data:/app/data"
           fi
           
           docker run -d \
             --name meshcore-analyzer \
             --restart unless-stopped \
             $PORTS \
-            -v $(pwd)/config.json:/app/config.json:ro \
-            -v $(pwd)/caddy-config/Caddyfile:/etc/caddy/Caddyfile:ro \
+            -v $DEPLOY_DIR/config.json:/app/config.json:ro \
+            -v $DEPLOY_DIR/caddy-config/Caddyfile:/etc/caddy/Caddyfile:ro \
             $DATA_MOUNT \
             -v caddy-data:/data/caddy \
             meshcore-analyzer
@@ -164,7 +166,7 @@ jobs:
           # Wait for health
           for i in $(seq 1 15); do
             if docker exec meshcore-analyzer wget -qO- http://localhost:3000/api/stats &>/dev/null; then
-              echo "Healthy after ${i}s"
+              echo "Healthy after $((i*2))s"
               break
             fi
             sleep 2
