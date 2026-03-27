@@ -60,6 +60,14 @@ type PacketStore struct {
 	byPayloadType map[int][]*StoreTx      // payload_type → transmissions
 	loaded        bool
 	totalObs      int
+	// Response caches
+	rfCache       map[string]*cachedResult // region → cached RF result
+	rfCacheTTL    time.Duration
+}
+
+type cachedResult struct {
+	data      map[string]interface{}
+	expiresAt time.Time
 }
 
 // NewPacketStore creates a new empty packet store backed by db.
@@ -74,6 +82,8 @@ func NewPacketStore(db *DB) *PacketStore {
 		byNode:        make(map[string][]*StoreTx),
 		nodeHashes:    make(map[string]map[string]bool),
 		byPayloadType: make(map[int][]*StoreTx),
+		rfCache:       make(map[string]*cachedResult),
+		rfCacheTTL:    15 * time.Second,
 	}
 }
 
@@ -721,6 +731,11 @@ func (s *PacketStore) IngestNewFromDB(sinceID, limit int) ([]map[string]interfac
 		pickBestObservation(tx)
 	}
 
+	// Invalidate RF cache on new data
+	for k := range s.rfCache {
+		delete(s.rfCache, k)
+	}
+
 	// Build broadcast maps (same shape as GetNewTransmissionsSince)
 	result := make([]map[string]interface{}, 0, len(broadcastOrder))
 	for _, txID := range broadcastOrder {
@@ -1225,6 +1240,26 @@ func (s *PacketStore) GetChannelMessages(channelHash string, limit, offset int) 
 
 // GetAnalyticsRF returns full RF analytics computed from in-memory observations.
 func (s *PacketStore) GetAnalyticsRF(region string) map[string]interface{} {
+	// Check cache first (no lock needed — rfCache is only written under RLock)
+	s.mu.RLock()
+	if cached, ok := s.rfCache[region]; ok && time.Now().Before(cached.expiresAt) {
+		s.mu.RUnlock()
+		return cached.data
+	}
+	s.mu.RUnlock()
+
+	// Compute fresh result
+	result := s.computeAnalyticsRF(region)
+
+	// Cache result
+	s.mu.RLock()
+	s.rfCache[region] = &cachedResult{data: result, expiresAt: time.Now().Add(s.rfCacheTTL)}
+	s.mu.RUnlock()
+
+	return result
+}
+
+func (s *PacketStore) computeAnalyticsRF(region string) map[string]interface{} {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
