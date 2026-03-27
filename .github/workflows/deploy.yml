@@ -129,6 +129,7 @@ jobs:
       - name: Frontend E2E only (no coverage)
         if: steps.changes.outputs.frontend == 'false'
         run: |
+          fuser -k 13581/tcp 2>/dev/null || true
           PORT=13581 node server.js &
           SERVER_PID=$!
           sleep 5
