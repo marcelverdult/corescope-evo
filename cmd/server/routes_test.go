@@ -49,25 +49,21 @@ func TestHealthEndpoint(t *testing.T) {
 		t.Error("expected commit field in health response")
 	}
 
-	// Verify memory.heapMB exists
+	// Verify memory has spec-defined fields (no heapMB or goRuntime per api-spec.md)
 	mem, ok := body["memory"].(map[string]interface{})
 	if !ok {
 		t.Fatal("expected memory object in health response")
 	}
-	if _, ok := mem["heapMB"]; !ok {
-		t.Error("expected heapMB in memory")
+	for _, field := range []string{"rss", "heapUsed", "heapTotal", "external"} {
+		if _, ok := mem[field]; !ok {
+			t.Errorf("expected %s in memory", field)
+		}
 	}
-
-	// Verify goRuntime with goroutines and gcPauses
-	goRT, ok := body["goRuntime"].(map[string]interface{})
-	if !ok {
-		t.Fatal("expected goRuntime object in health response")
+	if _, ok := mem["heapMB"]; ok {
+		t.Error("heapMB should not be in memory (removed per api-spec.md)")
 	}
-	if _, ok := goRT["goroutines"]; !ok {
-		t.Error("expected goroutines in goRuntime")
-	}
-	if _, ok := goRT["gcPauses"]; !ok {
-		t.Error("expected gcPauses in goRuntime")
+	if _, ok := body["goRuntime"]; ok {
+		t.Error("goRuntime should not be in health response (removed per api-spec.md)")
 	}
 
 	// Verify real packetStore stats (not zeros)
@@ -396,14 +392,14 @@ func TestPerfEndpoint(t *testing.T) {
 	var body map[string]interface{}
 	json.Unmarshal(w.Body.Bytes(), &body)
 
-	// Verify goRuntime memory/GC stats
-	goRT, ok := body["goRuntime"].(map[string]interface{})
-	if !ok {
-		t.Fatal("expected goRuntime object in perf response")
+	// Verify goRuntime is NOT present (removed per api-spec.md)
+	if _, ok := body["goRuntime"]; ok {
+		t.Error("goRuntime should not be in perf response (removed per api-spec.md)")
 	}
-	for _, field := range []string{"heapAllocMB", "heapSysMB", "heapInuseMB", "heapIdleMB", "heapReleasedMB", "gcSysMB", "numGC", "pauseTotalMs", "lastPauseMs", "goroutines", "numCPU"} {
-		if _, ok := goRT[field]; !ok {
-			t.Errorf("expected %s in goRuntime", field)
+	// Verify status, uptimeHuman, websocket are NOT present
+	for _, removed := range []string{"status", "uptimeHuman", "websocket"} {
+		if _, ok := body[removed]; ok {
+			t.Errorf("%s should not be in perf response (removed per api-spec.md)", removed)
 		}
 	}
 

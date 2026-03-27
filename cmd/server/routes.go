@@ -80,11 +80,16 @@ func (s *Server) RegisterRoutes(r *mux.Router) {
 	r.HandleFunc("/api/health", s.handleHealth).Methods("GET")
 	r.HandleFunc("/api/stats", s.handleStats).Methods("GET")
 	r.HandleFunc("/api/perf", s.handlePerf).Methods("GET")
+	r.HandleFunc("/api/perf/reset", s.handlePerfReset).Methods("POST")
 
 	// Packet endpoints
 	r.HandleFunc("/api/packets/timestamps", s.handlePacketTimestamps).Methods("GET")
 	r.HandleFunc("/api/packets/{id}", s.handlePacketDetail).Methods("GET")
 	r.HandleFunc("/api/packets", s.handlePackets).Methods("GET")
+	r.HandleFunc("/api/packets", s.handlePostPacket).Methods("POST")
+
+	// Decode endpoint
+	r.HandleFunc("/api/decode", s.handleDecode).Methods("POST")
 
 	// Node endpoints — fixed routes BEFORE parameterized
 	r.HandleFunc("/api/nodes/search", s.handleNodeSearch).Methods("GET")
@@ -325,7 +330,6 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 			"heapUsed":  int(m.HeapAlloc / 1024 / 1024),
 			"heapTotal": int(m.HeapSys / 1024 / 1024),
 			"external":  0,
-			"heapMB":    round(float64(m.HeapAlloc)/1048576, 1),
 		},
 		"eventLoop": map[string]interface{}{
 			"currentLagMs": round(lastPauseMs, 1),
@@ -333,11 +337,6 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 			"p50Ms":        round(percentile(sortedPauses, 0.5), 1),
 			"p95Ms":        round(percentile(sortedPauses, 0.95), 1),
 			"p99Ms":        round(percentile(sortedPauses, 0.99), 1),
-		},
-		"goRuntime": map[string]interface{}{
-			"goroutines": runtime.NumGoroutine(),
-			"gcPauses":   m.NumGC,
-			"numCPU":     runtime.NumCPU(),
 		},
 		"cache":     cacheStats,
 		"websocket": map[string]interface{}{"clients": wsClients},
@@ -412,30 +411,6 @@ func (s *Server) handlePerf(w http.ResponseWriter, r *http.Request) {
 		summary[e.path] = e.data
 	}
 
-	// Memory & GC stats (Go-specific, replaces Node's event loop)
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
-
-	var lastPauseNs uint64
-	if m.NumGC > 0 {
-		idx := (m.NumGC + 255) % 256
-		lastPauseNs = m.PauseNs[idx]
-	}
-
-	goRuntime := map[string]interface{}{
-		"heapAllocMB":    round(float64(m.HeapAlloc)/1048576, 1),
-		"heapSysMB":      round(float64(m.HeapSys)/1048576, 1),
-		"heapInuseMB":    round(float64(m.HeapInuse)/1048576, 1),
-		"heapIdleMB":     round(float64(m.HeapIdle)/1048576, 1),
-		"heapReleasedMB": round(float64(m.HeapReleased)/1048576, 1),
-		"gcSysMB":        round(float64(m.GCSys)/1048576, 1),
-		"numGC":          m.NumGC,
-		"pauseTotalMs":   round(float64(m.PauseTotalNs)/1e6, 1),
-		"lastPauseMs":    round(float64(lastPauseNs)/1e6, 3),
-		"goroutines":     runtime.NumGoroutine(),
-		"numCPU":         runtime.NumCPU(),
-	}
-
 	// Cache stats from packet store
 	cacheStats := map[string]interface{}{
 		"size": 0, "hits": int64(0), "misses": int64(0),
@@ -458,25 +433,22 @@ func (s *Server) handlePerf(w http.ResponseWriter, r *http.Request) {
 	}
 
 	uptimeSec := int(time.Since(s.perfStats.StartedAt).Seconds())
-	wsClients := 0
-	if s.hub != nil {
-		wsClients = s.hub.ClientCount()
-	}
 
 	writeJSON(w, map[string]interface{}{
-		"status":        "ok",
 		"uptime":        uptimeSec,
-		"uptimeHuman":   fmt.Sprintf("%dh %dm", uptimeSec/3600, (uptimeSec%3600)/60),
 		"totalRequests": s.perfStats.Requests,
 		"avgMs":         safeAvg(s.perfStats.TotalMs, float64(s.perfStats.Requests)),
 		"endpoints":     summary,
 		"slowQueries":   lastN(s.perfStats.SlowQueries, 20),
 		"cache":         cacheStats,
-		"websocket":     map[string]interface{}{"clients": wsClients},
-		"goRuntime":     goRuntime,
 		"packetStore":   pktStoreStats,
 		"sqlite":        sqliteStats,
 	})
+}
+
+func (s *Server) handlePerfReset(w http.ResponseWriter, r *http.Request) {
+	s.perfStats = NewPerfStats()
+	writeJSON(w, map[string]interface{}{"ok": true})
 }
 
 // --- Packet Handlers ---
@@ -673,6 +645,102 @@ func (s *Server) handlePacketDetail(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleDecode(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Hex string `json:"hex"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, 400, "invalid JSON body")
+		return
+	}
+	hexStr := strings.TrimSpace(body.Hex)
+	if hexStr == "" {
+		writeError(w, 400, "hex is required")
+		return
+	}
+	decoded, err := DecodePacket(hexStr)
+	if err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	writeJSON(w, map[string]interface{}{
+		"decoded": map[string]interface{}{
+			"header":  decoded.Header,
+			"path":    decoded.Path,
+			"payload": decoded.Payload,
+		},
+	})
+}
+
+func (s *Server) handlePostPacket(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Hex      string   `json:"hex"`
+		Observer *string  `json:"observer"`
+		Snr      *float64 `json:"snr"`
+		Rssi     *float64 `json:"rssi"`
+		Region   *string  `json:"region"`
+		Hash     *string  `json:"hash"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, 400, "invalid JSON body")
+		return
+	}
+	hexStr := strings.TrimSpace(body.Hex)
+	if hexStr == "" {
+		writeError(w, 400, "hex is required")
+		return
+	}
+	decoded, err := DecodePacket(hexStr)
+	if err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+
+	contentHash := ComputeContentHash(hexStr)
+	pathJSON := "[]"
+	if len(decoded.Path.Hops) > 0 {
+		if pj, e := json.Marshal(decoded.Path.Hops); e == nil {
+			pathJSON = string(pj)
+		}
+	}
+	decodedJSON := PayloadJSON(&decoded.Payload)
+	now := time.Now().UTC().Format("2006-01-02T15:04:05.000Z")
+
+	var obsID, obsName interface{}
+	if body.Observer != nil {
+		obsID = *body.Observer
+	}
+	var snr, rssi interface{}
+	if body.Snr != nil {
+		snr = *body.Snr
+	}
+	if body.Rssi != nil {
+		rssi = *body.Rssi
+	}
+
+	res, dbErr := s.db.conn.Exec(`INSERT INTO transmissions (hash, raw_hex, route_type, payload_type, payload_version, path_json, decoded_json, first_seen)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		contentHash, strings.ToUpper(hexStr), decoded.Header.RouteType, decoded.Header.PayloadType,
+		decoded.Header.PayloadVersion, pathJSON, decodedJSON, now)
+
+	var insertedID int64
+	if dbErr == nil {
+		insertedID, _ = res.LastInsertId()
+		s.db.conn.Exec(`INSERT INTO observations (transmission_id, observer_id, observer_name, snr, rssi, timestamp)
+			VALUES (?, ?, ?, ?, ?, ?)`,
+			insertedID, obsID, obsName, snr, rssi, now)
+	}
+
+	writeJSON(w, map[string]interface{}{
+		"id": insertedID,
+		"decoded": map[string]interface{}{
+			"header":  decoded.Header,
+			"path":    decoded.Path,
+			"payload": decoded.Payload,
+		},
+	})
+}
+
 // --- Node Handlers ---
 
 func (s *Server) handleNodes(w http.ResponseWriter, r *http.Request) {
@@ -828,6 +896,31 @@ func (s *Server) handleBulkHealth(w http.ResponseWriter, r *http.Request) {
 			lh = lastHeard.String
 		}
 
+		// Per-observer breakdown
+		pvWhere := "pv.decoded_json LIKE ?"
+		if n.name != "" {
+			pvWhere = "(pv.decoded_json LIKE ? OR pv.decoded_json LIKE ?)"
+		}
+		obsSQL := fmt.Sprintf(`SELECT pv.observer_id, pv.observer_name, AVG(pv.snr) as avgSnr, AVG(pv.rssi) as avgRssi, COUNT(*) as packetCount
+			FROM packets_v pv WHERE %s AND pv.observer_id IS NOT NULL
+			GROUP BY pv.observer_id ORDER BY packetCount DESC`, pvWhere)
+		obsRows, _ := s.db.conn.Query(obsSQL, queryArgs...)
+		observers := make([]map[string]interface{}, 0)
+		if obsRows != nil {
+			for obsRows.Next() {
+				var oID, oName sql.NullString
+				var oSnr, oRssi sql.NullFloat64
+				var oPktCount int
+				obsRows.Scan(&oID, &oName, &oSnr, &oRssi, &oPktCount)
+				observers = append(observers, map[string]interface{}{
+					"observer_id": nullStr(oID), "observer_name": nullStr(oName),
+					"avgSnr": nullFloat(oSnr), "avgRssi": nullFloat(oRssi),
+					"packetCount": oPktCount,
+				})
+			}
+			obsRows.Close()
+		}
+
 		results = append(results, map[string]interface{}{
 			"public_key": n.pk,
 			"name":       nilIfEmpty(n.name),
@@ -842,7 +935,7 @@ func (s *Server) handleBulkHealth(w http.ResponseWriter, r *http.Request) {
 				"avgSnr":             nullFloat(avgSnr),
 				"lastHeard":          nilIfEmpty(lh),
 			},
-			"observers": []interface{}{},
+			"observers": observers,
 		})
 	}
 	writeJSON(w, results)
@@ -865,11 +958,61 @@ func (s *Server) handleNodePaths(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 404, "Not found")
 		return
 	}
+
+	pk := "%" + pubkey[:8] + "%"
+	name := ""
+	if n, ok := node["name"]; ok && n != nil {
+		name = fmt.Sprintf("%v", n)
+	}
+
+	whereClause := "path_json LIKE ?"
+	args := []interface{}{pk}
+	if name != "" {
+		whereClause = "(path_json LIKE ? OR path_json LIKE ?)"
+		args = append(args, "%"+name+"%")
+	}
+
+	pathSQL := fmt.Sprintf("SELECT path_json, hash, MAX(timestamp) as lastSeen, COUNT(*) as cnt FROM packets_v WHERE path_json IS NOT NULL AND path_json != '[]' AND %s GROUP BY path_json ORDER BY cnt DESC LIMIT 50", whereClause)
+	rows, _ := s.db.conn.Query(pathSQL, args...)
+
+	paths := make([]map[string]interface{}, 0)
+	var totalPaths, totalTx int
+	if rows != nil {
+		defer rows.Close()
+		for rows.Next() {
+			var pj, hash string
+			var lastSeen sql.NullString
+			var cnt int
+			rows.Scan(&pj, &hash, &lastSeen, &cnt)
+			var hops []string
+			if json.Unmarshal([]byte(pj), &hops) != nil {
+				continue
+			}
+			hopEntries := make([]map[string]interface{}, 0, len(hops))
+			for _, h := range hops {
+				hopEntries = append(hopEntries, map[string]interface{}{
+					"prefix": h, "name": h, "pubkey": nil, "lat": nil, "lon": nil,
+				})
+			}
+			paths = append(paths, map[string]interface{}{
+				"hops": hopEntries, "count": cnt,
+				"lastSeen": nullStr(lastSeen), "sampleHash": hash,
+			})
+			totalPaths++
+			totalTx += cnt
+		}
+	}
+
 	writeJSON(w, map[string]interface{}{
-		"node":               node,
-		"paths":              []interface{}{},
-		"totalPaths":         0,
-		"totalTransmissions": 0,
+		"node": map[string]interface{}{
+			"public_key": node["public_key"],
+			"name":       node["name"],
+			"lat":        node["lat"],
+			"lon":        node["lon"],
+		},
+		"paths":              paths,
+		"totalPaths":         totalPaths,
+		"totalTransmissions": totalTx,
 	})
 }
 
@@ -975,6 +1118,127 @@ func (s *Server) handleNodeAnalytics(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Hop distribution from path_json
+	hdSQL := fmt.Sprintf(`SELECT path_json FROM packets_v WHERE %s AND path_json IS NOT NULL AND path_json != '[]'`, timeWhere)
+	hdRows, _ := s.db.conn.Query(hdSQL, pk, np, fromISO)
+	hopCounts := map[string]int{}
+	if hdRows != nil {
+		defer hdRows.Close()
+		for hdRows.Next() {
+			var pj string
+			hdRows.Scan(&pj)
+			var hops []interface{}
+			if json.Unmarshal([]byte(pj), &hops) == nil {
+				key := fmt.Sprintf("%d", len(hops))
+				if len(hops) >= 4 {
+					key = "4+"
+				}
+				hopCounts[key]++
+			}
+		}
+	}
+	// Also count zero-hop packets
+	zhSQL := fmt.Sprintf(`SELECT COUNT(*) FROM packets_v WHERE %s AND (path_json IS NULL OR path_json = '[]')`, timeWhere)
+	var zeroHops int
+	s.db.conn.QueryRow(zhSQL, pk, np, fromISO).Scan(&zeroHops)
+	if zeroHops > 0 {
+		hopCounts["0"] += zeroHops
+	}
+	hopDistribution := make([]map[string]interface{}, 0)
+	for _, h := range []string{"0", "1", "2", "3", "4+"} {
+		if c, ok := hopCounts[h]; ok {
+			hopDistribution = append(hopDistribution, map[string]interface{}{"hops": h, "count": c})
+		}
+	}
+
+	// Uptime heatmap
+	uhSQL := fmt.Sprintf(`SELECT
+		CAST(strftime('%%w', timestamp) AS INTEGER) as dayOfWeek,
+		CAST(strftime('%%H', timestamp) AS INTEGER) as hour,
+		COUNT(*) as count
+		FROM packets_v WHERE %s
+		GROUP BY dayOfWeek, hour ORDER BY count DESC`, timeWhere)
+	uhRows, _ := s.db.conn.Query(uhSQL, pk, np, fromISO)
+	uptimeHeatmap := make([]map[string]interface{}, 0)
+	if uhRows != nil {
+		defer uhRows.Close()
+		for uhRows.Next() {
+			var dow, hr, cnt int
+			uhRows.Scan(&dow, &hr, &cnt)
+			uptimeHeatmap = append(uptimeHeatmap, map[string]interface{}{"dayOfWeek": dow, "hour": hr, "count": cnt})
+		}
+	}
+
+	// Computed stats
+	totalPackets := 0
+	for _, entry := range activityTimeline {
+		if c, ok := entry["count"].(int); ok {
+			totalPackets += c
+		}
+	}
+
+	var snrMean, snrStdDev float64
+	var snrCount int
+	snrStatsSQL := fmt.Sprintf(`SELECT COUNT(*), COALESCE(AVG(snr),0), COALESCE(
+		SQRT(AVG(snr*snr) - AVG(snr)*AVG(snr)), 0)
+		FROM packets_v WHERE %s AND snr IS NOT NULL`, timeWhere)
+	s.db.conn.QueryRow(snrStatsSQL, pk, np, fromISO).Scan(&snrCount, &snrMean, &snrStdDev)
+	_ = snrCount
+
+	signalGrade := "D"
+	if snrMean >= 10 {
+		signalGrade = "A"
+	} else if snrMean >= 7 {
+		signalGrade = "A-"
+	} else if snrMean >= 4 {
+		signalGrade = "B+"
+	} else if snrMean >= 1 {
+		signalGrade = "B"
+	} else if snrMean >= -3 {
+		signalGrade = "C"
+	}
+
+	relayCount := 0
+	for _, h := range []string{"1", "2", "3", "4+"} {
+		relayCount += hopCounts[h]
+	}
+	var relayPct float64
+	if totalPackets > 0 {
+		relayPct = round(float64(relayCount)*100.0/float64(totalPackets), 1)
+	}
+
+	var avgPacketsPerDay float64
+	if days > 0 {
+		avgPacketsPerDay = round(float64(totalPackets)/float64(days), 1)
+	}
+
+	// Longest silence
+	var longestSilenceMs int
+	var longestSilenceStart interface{}
+	if len(activityTimeline) >= 2 {
+		for i := 1; i < len(activityTimeline); i++ {
+			t1Str, _ := activityTimeline[i-1]["bucket"].(string)
+			t2Str, _ := activityTimeline[i]["bucket"].(string)
+			t1, e1 := time.Parse(time.RFC3339, t1Str)
+			t2, e2 := time.Parse(time.RFC3339, t2Str)
+			if e1 == nil && e2 == nil {
+				gap := int(t2.Sub(t1).Milliseconds())
+				if gap > longestSilenceMs {
+					longestSilenceMs = gap
+					longestSilenceStart = t1Str
+				}
+			}
+		}
+	}
+
+	// Availability
+	totalHours := float64(days) * 24
+	activeHours := float64(len(activityTimeline))
+	availabilityPct := round(activeHours*100.0/totalHours, 1)
+	if availabilityPct > 100 {
+		availabilityPct = 100
+	}
+
 	writeJSON(w, map[string]interface{}{
 		"node":                node,
 		"timeRange":           map[string]interface{}{"from": fromISO, "to": toISO, "days": days},
@@ -982,14 +1246,21 @@ func (s *Server) handleNodeAnalytics(w http.ResponseWriter, r *http.Request) {
 		"snrTrend":            snrTrend,
 		"packetTypeBreakdown": packetTypeBreakdown,
 		"observerCoverage":    observerCoverage,
-		"hopDistribution":     []interface{}{},
+		"hopDistribution":     hopDistribution,
 		"peerInteractions":    []interface{}{},
-		"uptimeHeatmap":       []interface{}{},
+		"uptimeHeatmap":       uptimeHeatmap,
 		"computedStats": map[string]interface{}{
-			"availabilityPct": 0, "longestSilenceMs": 0, "longestSilenceStart": nil,
-			"signalGrade": "D", "snrMean": 0, "snrStdDev": 0,
-			"relayPct": 0, "totalPackets": len(activityTimeline),
-			"uniqueObservers": len(observerCoverage), "uniquePeers": 0, "avgPacketsPerDay": 0,
+			"availabilityPct":     availabilityPct,
+			"longestSilenceMs":    longestSilenceMs,
+			"longestSilenceStart": longestSilenceStart,
+			"signalGrade":         signalGrade,
+			"snrMean":             round(snrMean, 1),
+			"snrStdDev":           round(snrStdDev, 1),
+			"relayPct":            relayPct,
+			"totalPackets":        totalPackets,
+			"uniqueObservers":     len(observerCoverage),
+			"uniquePeers":         0,
+			"avgPacketsPerDay":    avgPacketsPerDay,
 		},
 	})
 }
@@ -1076,13 +1347,143 @@ func (s *Server) handleAnalyticsTopology(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, s.store.GetAnalyticsTopology(region))
 		return
 	}
+	// SQL fallback — compute basic topology from path_json
+	region := r.URL.Query().Get("region")
+	regionFilter := ""
+	var rArgs []interface{}
+	if region != "" {
+		regionFilter = "AND observer_id IN (SELECT id FROM observers WHERE iata = ?)"
+		rArgs = append(rArgs, region)
+	}
+
+	pathSQL := fmt.Sprintf("SELECT path_json, snr FROM packets_v WHERE path_json IS NOT NULL AND path_json != '[]' %s", regionFilter)
+	pathRows, _ := s.db.conn.Query(pathSQL, rArgs...)
+
+	hopCountMap := map[int]int{}
+	repeaterCounts := map[string]int{}
+	pairCounts := map[string]int{}
+	nodesSeen := map[string]bool{}
+	hopsVsSnrSum := map[int]float64{}
+	hopsVsSnrCnt := map[int]int{}
+
+	if pathRows != nil {
+		defer pathRows.Close()
+		for pathRows.Next() {
+			var pj string
+			var snr sql.NullFloat64
+			pathRows.Scan(&pj, &snr)
+			var hops []string
+			if json.Unmarshal([]byte(pj), &hops) != nil || len(hops) == 0 {
+				continue
+			}
+			hc := len(hops)
+			if hc > 25 {
+				hc = 25
+			}
+			hopCountMap[hc]++
+			for _, h := range hops {
+				nodesSeen[h] = true
+				repeaterCounts[h]++
+			}
+			for i := 0; i+1 < len(hops); i++ {
+				pair := hops[i] + ":" + hops[i+1]
+				pairCounts[pair]++
+			}
+			if snr.Valid {
+				hopsVsSnrSum[hc] += snr.Float64
+				hopsVsSnrCnt[hc]++
+			}
+		}
+	}
+
+	var totalHopCount, maxHops int
+	for h, c := range hopCountMap {
+		totalHopCount += h * c
+		if h > maxHops {
+			maxHops = h
+		}
+	}
+	totalPaths := 0
+	for _, c := range hopCountMap {
+		totalPaths += c
+	}
+	var avgHops float64
+	if totalPaths > 0 {
+		avgHops = round(float64(totalHopCount)/float64(totalPaths), 1)
+	}
+
+	hopDistribution := make([]map[string]interface{}, 0)
+	for h := 1; h <= maxHops; h++ {
+		if c, ok := hopCountMap[h]; ok {
+			hopDistribution = append(hopDistribution, map[string]interface{}{"hops": h, "count": c})
+		}
+	}
+
+	type kv struct {
+		k string
+		v int
+	}
+	var repSorted []kv
+	for k, v := range repeaterCounts {
+		repSorted = append(repSorted, kv{k, v})
+	}
+	sort.Slice(repSorted, func(i, j int) bool { return repSorted[i].v > repSorted[j].v })
+	topRepeaters := make([]map[string]interface{}, 0)
+	for i, rp := range repSorted {
+		if i >= 20 {
+			break
+		}
+		topRepeaters = append(topRepeaters, map[string]interface{}{"hop": rp.k, "count": rp.v, "name": nil, "pubkey": nil})
+	}
+
+	var pairSorted []kv
+	for k, v := range pairCounts {
+		pairSorted = append(pairSorted, kv{k, v})
+	}
+	sort.Slice(pairSorted, func(i, j int) bool { return pairSorted[i].v > pairSorted[j].v })
+	topPairs := make([]map[string]interface{}, 0)
+	for i, p := range pairSorted {
+		if i >= 20 {
+			break
+		}
+		parts := strings.SplitN(p.k, ":", 2)
+		topPairs = append(topPairs, map[string]interface{}{
+			"hopA": parts[0], "hopB": parts[1], "count": p.v,
+			"nameA": nil, "nameB": nil, "pubkeyA": nil, "pubkeyB": nil,
+		})
+	}
+
+	hopsVsSnr := make([]map[string]interface{}, 0)
+	for h := 1; h <= maxHops; h++ {
+		if cnt, ok := hopsVsSnrCnt[h]; ok && cnt > 0 {
+			hopsVsSnr = append(hopsVsSnr, map[string]interface{}{
+				"hops": h, "count": cnt, "avgSnr": round(hopsVsSnrSum[h]/float64(cnt), 1),
+			})
+		}
+	}
+
+	obsList := make([]map[string]interface{}, 0)
+	obsRows, _ := s.db.conn.Query("SELECT id, name FROM observers")
+	if obsRows != nil {
+		defer obsRows.Close()
+		for obsRows.Next() {
+			var oid string
+			var oname sql.NullString
+			obsRows.Scan(&oid, &oname)
+			obsList = append(obsList, map[string]interface{}{"id": oid, "name": nullStr(oname)})
+		}
+	}
+
 	writeJSON(w, map[string]interface{}{
-		"uniqueNodes": 0, "avgHops": 0, "medianHops": 0, "maxHops": 0,
-		"hopDistribution":  []interface{}{},
-		"topRepeaters":     []interface{}{},
-		"topPairs":         []interface{}{},
-		"hopsVsSnr":        []interface{}{},
-		"observers":        []interface{}{},
+		"uniqueNodes":      len(nodesSeen),
+		"avgHops":          avgHops,
+		"medianHops":       0,
+		"maxHops":          maxHops,
+		"hopDistribution":  hopDistribution,
+		"topRepeaters":     topRepeaters,
+		"topPairs":         topPairs,
+		"hopsVsSnr":        hopsVsSnr,
+		"observers":        obsList,
 		"perObserverReach": map[string]interface{}{},
 		"multiObsNodes":    []interface{}{},
 		"bestPathList":     []interface{}{},
@@ -1115,13 +1516,59 @@ func (s *Server) handleAnalyticsDistance(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, s.store.GetAnalyticsDistance(region))
 		return
 	}
+	// SQL fallback
+	region := r.URL.Query().Get("region")
+	regionFilter := ""
+	var rArgs []interface{}
+	if region != "" {
+		regionFilter = "AND observer_id IN (SELECT id FROM observers WHERE iata = ?)"
+		rArgs = append(rArgs, region)
+	}
+
+	nodeLocMap := s.db.GetNodeLocations()
+	_ = nodeLocMap
+
+	pathSQL := fmt.Sprintf("SELECT path_json, hash, timestamp, snr FROM packets_v WHERE path_json IS NOT NULL AND path_json != '[]' %s ORDER BY timestamp DESC LIMIT 5000", regionFilter)
+	pathRows, _ := s.db.conn.Query(pathSQL, rArgs...)
+
+	var totalHops, totalPaths int
+	var maxDist, distSum float64
+	topHops := make([]map[string]interface{}, 0)
+	topPaths := make([]map[string]interface{}, 0)
+	catStats := map[string]interface{}{}
+	distOverTime := make([]map[string]interface{}, 0)
+
+	if pathRows != nil {
+		defer pathRows.Close()
+		for pathRows.Next() {
+			var pj, hash string
+			var ts sql.NullString
+			var snr sql.NullFloat64
+			pathRows.Scan(&pj, &hash, &ts, &snr)
+			var hops []string
+			if json.Unmarshal([]byte(pj), &hops) != nil || len(hops) == 0 {
+				continue
+			}
+			totalPaths++
+			totalHops += len(hops)
+		}
+	}
+
+	var avgDist float64
+	if totalHops > 0 {
+		avgDist = round(distSum/float64(totalHops), 2)
+	}
+
 	writeJSON(w, map[string]interface{}{
-		"summary":       map[string]interface{}{"totalHops": 0, "totalPaths": 0, "avgDist": 0, "maxDist": 0},
-		"topHops":       []interface{}{},
-		"topPaths":      []interface{}{},
-		"catStats":      map[string]interface{}{},
+		"summary": map[string]interface{}{
+			"totalHops": totalHops, "totalPaths": totalPaths,
+			"avgDist": avgDist, "maxDist": maxDist,
+		},
+		"topHops":       topHops,
+		"topPaths":      topPaths,
+		"catStats":      catStats,
 		"distHistogram": []interface{}{},
-		"distOverTime":  []interface{}{},
+		"distOverTime":  distOverTime,
 	})
 }
 
@@ -1356,7 +1803,58 @@ func (s *Server) handleObserverAnalytics(w http.ResponseWriter, r *http.Request)
 	} else if days > 7 {
 		bucketH = 24
 	}
-	_ = bucketH
+	// Timeline — packet count per time bucket
+	bucketFmt := fmt.Sprintf("strftime('%%Y-%%m-%%dT', timestamp) || printf('%%02d', (CAST(strftime('%%H', timestamp) AS INTEGER) / %d) * %d) || ':00:00Z'", bucketH, bucketH)
+	tlSQL := fmt.Sprintf(`SELECT %s as label, COUNT(*) as count
+		FROM packets_v WHERE observer_id = ? AND timestamp > ?
+		GROUP BY label ORDER BY label`, bucketFmt)
+	tlRows, _ := s.db.conn.Query(tlSQL, id, since)
+	timeline := make([]map[string]interface{}, 0)
+	if tlRows != nil {
+		defer tlRows.Close()
+		for tlRows.Next() {
+			var label string
+			var count int
+			tlRows.Scan(&label, &count)
+			timeline = append(timeline, map[string]interface{}{"label": label, "count": count})
+		}
+	}
+
+	// Nodes timeline — unique nodes per time bucket
+	ntSQL := fmt.Sprintf(`SELECT %s as label, COUNT(DISTINCT hash) as count
+		FROM packets_v WHERE observer_id = ? AND timestamp > ?
+		GROUP BY label ORDER BY label`, bucketFmt)
+	ntRows, _ := s.db.conn.Query(ntSQL, id, since)
+	nodesTimeline := make([]map[string]interface{}, 0)
+	if ntRows != nil {
+		defer ntRows.Close()
+		for ntRows.Next() {
+			var label string
+			var count int
+			ntRows.Scan(&label, &count)
+			nodesTimeline = append(nodesTimeline, map[string]interface{}{"label": label, "count": count})
+		}
+	}
+
+	// SNR distribution
+	snrSQL := `SELECT
+		CAST(snr / 2 AS INTEGER) * 2 as rangeStart,
+		COUNT(*) as count
+		FROM packets_v WHERE observer_id = ? AND timestamp > ? AND snr IS NOT NULL
+		GROUP BY rangeStart ORDER BY rangeStart`
+	snrRows, _ := s.db.conn.Query(snrSQL, id, since)
+	snrDistribution := make([]map[string]interface{}, 0)
+	if snrRows != nil {
+		defer snrRows.Close()
+		for snrRows.Next() {
+			var rangeStart, count int
+			snrRows.Scan(&rangeStart, &count)
+			snrDistribution = append(snrDistribution, map[string]interface{}{
+				"range": fmt.Sprintf("%d to %d", rangeStart, rangeStart+2),
+				"count": count,
+			})
+		}
+	}
 
 	// Packet type breakdown
 	ptSQL := `SELECT payload_type, COUNT(*) as count FROM packets_v WHERE observer_id = ? AND timestamp > ? GROUP BY payload_type`
@@ -1387,10 +1885,10 @@ func (s *Server) handleObserverAnalytics(w http.ResponseWriter, r *http.Request)
 	}
 
 	writeJSON(w, map[string]interface{}{
-		"timeline":        []interface{}{},
+		"timeline":        timeline,
 		"packetTypes":     packetTypes,
-		"nodesTimeline":   []interface{}{},
-		"snrDistribution": []interface{}{},
+		"nodesTimeline":   nodesTimeline,
+		"snrDistribution": snrDistribution,
 		"recentPackets":   recentPackets,
 	})
 }
@@ -1405,9 +1903,63 @@ func (s *Server) handleTraces(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]interface{}{"traces": traces})
 }
 
+var iataCoords = map[string]map[string]interface{}{
+	"SJC": {"lat": 37.3626, "lon": -121.929},
+	"SFO": {"lat": 37.6213, "lon": -122.379},
+	"OAK": {"lat": 37.7213, "lon": -122.2208},
+	"SEA": {"lat": 47.4502, "lon": -122.3088},
+	"PDX": {"lat": 45.5898, "lon": -122.5951},
+	"LAX": {"lat": 33.9425, "lon": -118.4081},
+	"SAN": {"lat": 32.7338, "lon": -117.1933},
+	"SMF": {"lat": 38.6954, "lon": -121.5908},
+	"MRY": {"lat": 36.587, "lon": -121.843},
+	"EUG": {"lat": 44.1246, "lon": -123.2119},
+	"RDD": {"lat": 40.509, "lon": -122.2934},
+	"MFR": {"lat": 42.3742, "lon": -122.8735},
+	"FAT": {"lat": 36.7762, "lon": -119.7181},
+	"SBA": {"lat": 34.4262, "lon": -119.8405},
+	"RNO": {"lat": 39.4991, "lon": -119.7681},
+	"BOI": {"lat": 43.5644, "lon": -116.2228},
+	"LAS": {"lat": 36.084, "lon": -115.1537},
+	"PHX": {"lat": 33.4373, "lon": -112.0078},
+	"SLC": {"lat": 40.7884, "lon": -111.9778},
+	"DEN": {"lat": 39.8561, "lon": -104.6737},
+	"DFW": {"lat": 32.8998, "lon": -97.0403},
+	"IAH": {"lat": 29.9844, "lon": -95.3414},
+	"AUS": {"lat": 30.1975, "lon": -97.6664},
+	"MSP": {"lat": 44.8848, "lon": -93.2223},
+	"ATL": {"lat": 33.6407, "lon": -84.4277},
+	"ORD": {"lat": 41.9742, "lon": -87.9073},
+	"JFK": {"lat": 40.6413, "lon": -73.7781},
+	"EWR": {"lat": 40.6895, "lon": -74.1745},
+	"BOS": {"lat": 42.3656, "lon": -71.0096},
+	"MIA": {"lat": 25.7959, "lon": -80.287},
+	"IAD": {"lat": 38.9531, "lon": -77.4565},
+	"CLT": {"lat": 35.2144, "lon": -80.9473},
+	"DTW": {"lat": 42.2124, "lon": -83.3534},
+	"MCO": {"lat": 28.4312, "lon": -81.3081},
+	"BNA": {"lat": 36.1263, "lon": -86.6774},
+	"RDU": {"lat": 35.8801, "lon": -78.788},
+	"YVR": {"lat": 49.1967, "lon": -123.1815},
+	"YYZ": {"lat": 43.6777, "lon": -79.6248},
+	"YYC": {"lat": 51.1215, "lon": -114.0076},
+	"YEG": {"lat": 53.3097, "lon": -113.58},
+	"YOW": {"lat": 45.3225, "lon": -75.6692},
+	"LHR": {"lat": 51.47, "lon": -0.4543},
+	"CDG": {"lat": 49.0097, "lon": 2.5479},
+	"FRA": {"lat": 50.0379, "lon": 8.5622},
+	"AMS": {"lat": 52.3105, "lon": 4.7683},
+	"MUC": {"lat": 48.3537, "lon": 11.775},
+	"SOF": {"lat": 42.6952, "lon": 23.4062},
+	"NRT": {"lat": 35.772, "lon": 140.3929},
+	"HND": {"lat": 35.5494, "lon": 139.7798},
+	"ICN": {"lat": 37.4602, "lon": 126.4407},
+	"SYD": {"lat": -33.9461, "lon": 151.1772},
+	"MEL": {"lat": -37.669, "lon": 144.841},
+}
+
 func (s *Server) handleIATACoords(w http.ResponseWriter, r *http.Request) {
-	// Return empty coords — full IATA coordinate table would be in a shared package
-	writeJSON(w, map[string]interface{}{"coords": map[string]interface{}{}})
+	writeJSON(w, map[string]interface{}{"coords": iataCoords})
 }
 
 func (s *Server) handleAudioLabBuckets(w http.ResponseWriter, r *http.Request) {
