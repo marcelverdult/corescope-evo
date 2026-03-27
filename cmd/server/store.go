@@ -14,6 +14,12 @@ import (
 	"time"
 )
 
+// payloadTypeNames maps payload_type int → human-readable name (firmware-standard).
+var payloadTypeNames = map[int]string{
+	0: "REQ", 1: "RESPONSE", 2: "TXT_MSG", 3: "ACK", 4: "ADVERT",
+	5: "GRP_TXT", 7: "ANON_REQ", 8: "PATH", 9: "TRACE", 11: "CONTROL",
+}
+
 // StoreTx is an in-memory transmission with embedded observations.
 type StoreTx struct {
 	ID               int
@@ -32,6 +38,9 @@ type StoreTx struct {
 	RSSI         *float64
 	PathJSON     string
 	Direction    string
+	// Cached parsed fields (set once, read many)
+	parsedPath []string // cached parsePathJSON result
+	pathParsed bool     // whether parsedPath has been set
 }
 
 // StoreObs is a lean in-memory observation (no duplication of transmission fields).
@@ -65,11 +74,18 @@ type PacketStore struct {
 	insertCount   int64
 	queryCount    int64
 	// Response caches (separate mutex to avoid contention with store RWMutex)
-	cacheMu    sync.Mutex
-	rfCache    map[string]*cachedResult // region → cached RF result
-	rfCacheTTL time.Duration
-	cacheHits  int64
+	cacheMu       sync.Mutex
+	rfCache       map[string]*cachedResult // region → cached RF result
+	topoCache     map[string]*cachedResult // region → cached topology result
+	hashCache     map[string]*cachedResult // region → cached hash-sizes result
+	chanCache     map[string]*cachedResult // region → cached channels result
+	rfCacheTTL    time.Duration
+	cacheHits     int64
 	cacheMisses int64
+	// Cached node list + prefix map (rebuilt on demand, shared across analytics)
+	nodeCache     []nodeInfo
+	nodePM        *prefixMap
+	nodeCacheTime time.Time
 }
 
 type cachedResult struct {
@@ -90,6 +106,9 @@ func NewPacketStore(db *DB) *PacketStore {
 		nodeHashes:    make(map[string]map[string]bool),
 		byPayloadType: make(map[int][]*StoreTx),
 		rfCache:       make(map[string]*cachedResult),
+		topoCache:     make(map[string]*cachedResult),
+		hashCache:     make(map[string]*cachedResult),
+		chanCache:     make(map[string]*cachedResult),
 		rfCacheTTL:    15 * time.Second,
 	}
 }
@@ -243,6 +262,7 @@ func pickBestObservation(tx *StoreTx) {
 	tx.RSSI = best.RSSI
 	tx.PathJSON = best.PathJSON
 	tx.Direction = best.Direction
+	tx.pathParsed = false // invalidate cached parsed path
 }
 
 func pathLen(pathJSON string) int {
@@ -486,7 +506,7 @@ func (s *PacketStore) GetPerfStoreStats() map[string]interface{} {
 // GetCacheStats returns RF cache hit/miss statistics.
 func (s *PacketStore) GetCacheStats() map[string]interface{} {
 	s.cacheMu.Lock()
-	size := len(s.rfCache)
+	size := len(s.rfCache) + len(s.topoCache) + len(s.hashCache) + len(s.chanCache)
 	hits := s.cacheHits
 	misses := s.cacheMisses
 	s.cacheMu.Unlock()
@@ -827,20 +847,50 @@ func (s *PacketStore) IngestNewFromDB(sinceID, limit int) ([]map[string]interfac
 		pickBestObservation(tx)
 	}
 
-	// Build broadcast maps (same shape as GetNewTransmissionsSince)
+	// Build broadcast maps (same shape as Node.js WS broadcast)
 	result := make([]map[string]interface{}, 0, len(broadcastOrder))
 	for _, txID := range broadcastOrder {
 		tx := broadcastTxs[txID]
+		// Build decoded object with header.payloadTypeName for live.js
+		decoded := map[string]interface{}{
+			"header": map[string]interface{}{
+				"payloadTypeName": resolvePayloadTypeName(tx.PayloadType),
+			},
+		}
+		if tx.DecodedJSON != "" {
+			var payload map[string]interface{}
+			if json.Unmarshal([]byte(tx.DecodedJSON), &payload) == nil {
+				decoded["payload"] = payload
+			}
+		}
 		result = append(result, map[string]interface{}{
-			"id":           tx.ID,
-			"raw_hex":      strOrNil(tx.RawHex),
-			"hash":         strOrNil(tx.Hash),
-			"first_seen":   strOrNil(tx.FirstSeen),
-			"route_type":   intPtrOrNil(tx.RouteType),
-			"payload_type": intPtrOrNil(tx.PayloadType),
-			"decoded_json": strOrNil(tx.DecodedJSON),
+			"id":                tx.ID,
+			"raw_hex":           strOrNil(tx.RawHex),
+			"hash":              strOrNil(tx.Hash),
+			"first_seen":        strOrNil(tx.FirstSeen),
+			"route_type":        intPtrOrNil(tx.RouteType),
+			"payload_type":      intPtrOrNil(tx.PayloadType),
+			"decoded_json":      strOrNil(tx.DecodedJSON),
+			"decoded":           decoded,
+			"observer_id":       strOrNil(tx.ObserverID),
+			"observer_name":     strOrNil(tx.ObserverName),
+			"snr":               floatPtrOrNil(tx.SNR),
+			"rssi":              floatPtrOrNil(tx.RSSI),
+			"path_json":         strOrNil(tx.PathJSON),
+			"observation_count": tx.ObservationCount,
 		})
 	}
+
+	// Invalidate analytics caches since new data was ingested
+	if len(result) > 0 {
+		s.cacheMu.Lock()
+		s.rfCache = make(map[string]*cachedResult)
+		s.topoCache = make(map[string]*cachedResult)
+		s.hashCache = make(map[string]*cachedResult)
+		s.chanCache = make(map[string]*cachedResult)
+		s.cacheMu.Unlock()
+	}
+
 	return result, newMaxID
 }
 
@@ -1072,6 +1122,27 @@ func nullFloatPtr(nf sql.NullFloat64) *float64 {
 		return &nf.Float64
 	}
 	return nil
+}
+
+// resolvePayloadTypeName returns the firmware-standard name for a payload_type.
+func resolvePayloadTypeName(pt *int) string {
+	if pt == nil {
+		return "UNKNOWN"
+	}
+	if name, ok := payloadTypeNames[*pt]; ok {
+		return name
+	}
+	return fmt.Sprintf("UNK(%d)", *pt)
+}
+
+// txGetParsedPath returns cached parsed path hops, parsing on first call.
+func txGetParsedPath(tx *StoreTx) []string {
+	if tx.pathParsed {
+		return tx.parsedPath
+	}
+	tx.parsedPath = parsePathJSON(tx.PathJSON)
+	tx.pathParsed = true
+	return tx.parsedPath
 }
 
 func filterTxSlice(s []*StoreTx, fn func(*StoreTx) bool) []*StoreTx {
@@ -1331,6 +1402,25 @@ func (s *PacketStore) GetChannelMessages(channelHash string, limit, offset int) 
 
 // GetAnalyticsChannels returns full channel analytics computed from in-memory packets.
 func (s *PacketStore) GetAnalyticsChannels(region string) map[string]interface{} {
+	s.cacheMu.Lock()
+	if cached, ok := s.chanCache[region]; ok && time.Now().Before(cached.expiresAt) {
+		s.cacheHits++
+		s.cacheMu.Unlock()
+		return cached.data
+	}
+	s.cacheMisses++
+	s.cacheMu.Unlock()
+
+	result := s.computeAnalyticsChannels(region)
+
+	s.cacheMu.Lock()
+	s.chanCache[region] = &cachedResult{data: result, expiresAt: time.Now().Add(s.rfCacheTTL)}
+	s.cacheMu.Unlock()
+
+	return result
+}
+
+func (s *PacketStore) computeAnalyticsChannels(region string) map[string]interface{} {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -1530,7 +1620,7 @@ func (s *PacketStore) computeAnalyticsRF(region string) map[string]interface{} {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	ptNames := map[int]string{0: "REQ", 1: "RESPONSE", 2: "TXT_MSG", 3: "ACK", 4: "ADVERT", 5: "GRP_TXT", 7: "ANON_REQ", 8: "PATH", 9: "TRACE", 11: "CONTROL"}
+	ptNames := payloadTypeNames
 
 	var regionObs map[string]bool
 	if region != "" {
@@ -2094,6 +2184,29 @@ func buildPrefixMap(nodes []nodeInfo) *prefixMap {
 	return pm
 }
 
+// getCachedNodesAndPM returns cached node list and prefix map, rebuilding if stale.
+// Must be called with s.mu held (RLock or Lock).
+func (s *PacketStore) getCachedNodesAndPM() ([]nodeInfo, *prefixMap) {
+	s.cacheMu.Lock()
+	if s.nodeCache != nil && time.Since(s.nodeCacheTime) < 30*time.Second {
+		nodes, pm := s.nodeCache, s.nodePM
+		s.cacheMu.Unlock()
+		return nodes, pm
+	}
+	s.cacheMu.Unlock()
+
+	nodes := s.getAllNodes()
+	pm := buildPrefixMap(nodes)
+
+	s.cacheMu.Lock()
+	s.nodeCache = nodes
+	s.nodePM = pm
+	s.nodeCacheTime = time.Now()
+	s.cacheMu.Unlock()
+
+	return nodes, pm
+}
+
 func (pm *prefixMap) resolve(hop string) *nodeInfo {
 	h := strings.ToLower(hop)
 	candidates := pm.m[h]
@@ -2124,6 +2237,25 @@ func parsePathJSON(pathJSON string) []string {
 }
 
 func (s *PacketStore) GetAnalyticsTopology(region string) map[string]interface{} {
+	s.cacheMu.Lock()
+	if cached, ok := s.topoCache[region]; ok && time.Now().Before(cached.expiresAt) {
+		s.cacheHits++
+		s.cacheMu.Unlock()
+		return cached.data
+	}
+	s.cacheMisses++
+	s.cacheMu.Unlock()
+
+	result := s.computeAnalyticsTopology(region)
+
+	s.cacheMu.Lock()
+	s.topoCache[region] = &cachedResult{data: result, expiresAt: time.Now().Add(s.rfCacheTTL)}
+	s.cacheMu.Unlock()
+
+	return result
+}
+
+func (s *PacketStore) computeAnalyticsTopology(region string) map[string]interface{} {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -2132,8 +2264,8 @@ func (s *PacketStore) GetAnalyticsTopology(region string) map[string]interface{}
 		regionObs = s.resolveRegionObservers(region)
 	}
 
-	allNodes := s.getAllNodes()
-	pm := buildPrefixMap(allNodes)
+	allNodes, pm := s.getCachedNodesAndPM()
+	_ = allNodes // only pm is needed for topology
 	hopCache := make(map[string]*nodeInfo)
 
 	resolveHop := func(hop string) *nodeInfo {
@@ -2154,7 +2286,7 @@ func (s *PacketStore) GetAnalyticsTopology(region string) map[string]interface{}
 	perObserver := map[string]map[string]*struct{ minDist, maxDist, count int }{}
 
 	for _, tx := range s.packets {
-		hops := parsePathJSON(tx.PathJSON)
+		hops := txGetParsedPath(tx)
 		if len(hops) == 0 {
 			continue
 		}
@@ -2484,8 +2616,7 @@ func (s *PacketStore) GetAnalyticsDistance(region string) map[string]interface{}
 		regionObs = s.resolveRegionObservers(region)
 	}
 
-	allNodes := s.getAllNodes()
-	pm := buildPrefixMap(allNodes)
+	allNodes, pm := s.getCachedNodesAndPM()
 	hopCache := make(map[string]*nodeInfo)
 	resolveHop := func(hop string) *nodeInfo {
 		if cached, ok := hopCache[hop]; ok {
@@ -2527,7 +2658,7 @@ func (s *PacketStore) GetAnalyticsDistance(region string) map[string]interface{}
 	distByHour := map[string][]float64{}
 
 	for _, tx := range s.packets {
-		hops := parsePathJSON(tx.PathJSON)
+		hops := txGetParsedPath(tx)
 		if len(hops) == 0 {
 			continue
 		}
@@ -2801,6 +2932,25 @@ func (s *PacketStore) GetAnalyticsDistance(region string) map[string]interface{}
 // --- Hash Sizes Analytics ---
 
 func (s *PacketStore) GetAnalyticsHashSizes(region string) map[string]interface{} {
+	s.cacheMu.Lock()
+	if cached, ok := s.hashCache[region]; ok && time.Now().Before(cached.expiresAt) {
+		s.cacheHits++
+		s.cacheMu.Unlock()
+		return cached.data
+	}
+	s.cacheMisses++
+	s.cacheMu.Unlock()
+
+	result := s.computeAnalyticsHashSizes(region)
+
+	s.cacheMu.Lock()
+	s.hashCache[region] = &cachedResult{data: result, expiresAt: time.Now().Add(s.rfCacheTTL)}
+	s.cacheMu.Unlock()
+
+	return result
+}
+
+func (s *PacketStore) computeAnalyticsHashSizes(region string) map[string]interface{} {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -2809,8 +2959,7 @@ func (s *PacketStore) GetAnalyticsHashSizes(region string) map[string]interface{
 		regionObs = s.resolveRegionObservers(region)
 	}
 
-	allNodes := s.getAllNodes()
-	pm := buildPrefixMap(allNodes)
+	_, pm := s.getCachedNodesAndPM()
 
 	distribution := map[string]int{"1": 0, "2": 0, "3": 0}
 	byHour := map[string]map[string]int{}
@@ -2822,7 +2971,7 @@ func (s *PacketStore) GetAnalyticsHashSizes(region string) map[string]interface{
 		if tx.RawHex == "" {
 			continue
 		}
-		hops := parsePathJSON(tx.PathJSON)
+		hops := txGetParsedPath(tx)
 		if len(hops) == 0 {
 			continue
 		}
@@ -3266,8 +3415,7 @@ func (s *PacketStore) GetAnalyticsSubpaths(region string, minLen, maxLen, limit 
 		regionObs = s.resolveRegionObservers(region)
 	}
 
-	allNodes := s.getAllNodes()
-	pm := buildPrefixMap(allNodes)
+	_, pm := s.getCachedNodesAndPM()
 	hopCache := make(map[string]*nodeInfo)
 	resolveHop := func(hop string) string {
 		if cached, ok := hopCache[hop]; ok {
@@ -3291,7 +3439,7 @@ func (s *PacketStore) GetAnalyticsSubpaths(region string, minLen, maxLen, limit 
 	totalPaths := 0
 
 	for _, tx := range s.packets {
-		hops := parsePathJSON(tx.PathJSON)
+		hops := txGetParsedPath(tx)
 		if len(hops) < 2 {
 			continue
 		}
@@ -3373,8 +3521,7 @@ func (s *PacketStore) GetSubpathDetail(rawHops []string) map[string]interface{} 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	allNodes := s.getAllNodes()
-	pm := buildPrefixMap(allNodes)
+	_, pm := s.getCachedNodesAndPM()
 
 	// Resolve the requested hops
 	nodes := make([]map[string]interface{}, len(rawHops))
@@ -3401,7 +3548,7 @@ func (s *PacketStore) GetSubpathDetail(rawHops []string) map[string]interface{} 
 	var firstSeen, lastSeen interface{}
 
 	for _, tx := range s.packets {
-		hops := parsePathJSON(tx.PathJSON)
+		hops := txGetParsedPath(tx)
 		if len(hops) < len(rawHops) {
 			continue
 		}
