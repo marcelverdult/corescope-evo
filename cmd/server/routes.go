@@ -1993,39 +1993,91 @@ func (s *Server) handleIATACoords(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAudioLabBuckets(w http.ResponseWriter, r *http.Request) {
-	// Query representative packets by type
-	ptSQL := `SELECT payload_type, id, raw_hex, hash, decoded_json, path_json, observer_id, timestamp
-		FROM (
-			SELECT *, ROW_NUMBER() OVER (PARTITION BY payload_type ORDER BY length(raw_hex)) as rn
-			FROM packets_v WHERE raw_hex IS NOT NULL
-		) sub WHERE rn <= 8`
-	rows, err := s.db.conn.Query(ptSQL)
-	if err != nil {
-		writeJSON(w, AudioLabBucketsResponse{Buckets: map[string][]AudioLabPacket{}})
-		return
-	}
-	defer rows.Close()
-
-	ptNames := map[int]string{0: "REQ", 1: "RESPONSE", 2: "TXT_MSG", 3: "ACK", 4: "ADVERT", 5: "GRP_TXT", 7: "ANON_REQ", 8: "PATH", 9: "TRACE", 11: "CONTROL"}
 	buckets := map[string][]AudioLabPacket{}
-	for rows.Next() {
-		var pt, id int
-		var rawHex, hash, decodedJSON, pathJSON, obsID, ts sql.NullString
-		rows.Scan(&pt, &id, &rawHex, &hash, &decodedJSON, &pathJSON, &obsID, &ts)
-		typeName := ptNames[pt]
-		if typeName == "" {
-			typeName = "UNKNOWN"
+
+	if s.store != nil {
+		// Use in-memory store (matches Node.js pktStore.packets approach)
+		s.store.mu.RLock()
+		byType := map[string][]*StoreTx{}
+		for _, tx := range s.store.packets {
+			if tx.RawHex == "" {
+				continue
+			}
+			typeName := "UNKNOWN"
+			if tx.DecodedJSON != "" {
+				var d map[string]interface{}
+				if err := json.Unmarshal([]byte(tx.DecodedJSON), &d); err == nil {
+					if t, ok := d["type"].(string); ok && t != "" {
+						typeName = t
+					}
+				}
+			}
+			if typeName == "UNKNOWN" && tx.PayloadType != nil {
+				if name, ok := payloadTypeNames[*tx.PayloadType]; ok {
+					typeName = name
+				}
+			}
+			byType[typeName] = append(byType[typeName], tx)
 		}
-		if _, ok := buckets[typeName]; !ok {
-			buckets[typeName] = make([]AudioLabPacket, 0)
+		s.store.mu.RUnlock()
+
+		for typeName, pkts := range byType {
+			sort.Slice(pkts, func(i, j int) bool {
+				return len(pkts[i].RawHex) < len(pkts[j].RawHex)
+			})
+			count := min(8, len(pkts))
+			picked := make([]AudioLabPacket, 0, count)
+			for i := 0; i < count; i++ {
+				idx := (i * len(pkts)) / count
+				tx := pkts[idx]
+				pt := 0
+				if tx.PayloadType != nil {
+					pt = *tx.PayloadType
+				}
+				picked = append(picked, AudioLabPacket{
+					Hash:             strOrNil(tx.Hash),
+					RawHex:           strOrNil(tx.RawHex),
+					DecodedJSON:      strOrNil(tx.DecodedJSON),
+					ObservationCount: max(tx.ObservationCount, 1),
+					PayloadType:      pt,
+					PathJSON:         strOrNil(tx.PathJSON),
+					ObserverID:       strOrNil(tx.ObserverID),
+					Timestamp:        strOrNil(tx.FirstSeen),
+				})
+			}
+			buckets[typeName] = picked
 		}
-		buckets[typeName] = append(buckets[typeName], AudioLabPacket{
-			Hash: nullStr(hash), RawHex: nullStr(rawHex),
-			DecodedJSON: nullStr(decodedJSON), ObservationCount: 1,
-			PayloadType: pt, PathJSON: nullStr(pathJSON),
-			ObserverID: nullStr(obsID), Timestamp: nullStr(ts),
-		})
+	} else {
+		// Fallback: direct DB query when store is not loaded
+		ptSQL := `SELECT payload_type, id, raw_hex, hash, decoded_json, path_json, observer_id, timestamp
+			FROM (
+				SELECT *, ROW_NUMBER() OVER (PARTITION BY payload_type ORDER BY length(raw_hex)) as rn
+				FROM packets_v WHERE raw_hex IS NOT NULL
+			) sub WHERE rn <= 8`
+		rows, err := s.db.conn.Query(ptSQL)
+		if err != nil {
+			writeJSON(w, AudioLabBucketsResponse{Buckets: buckets})
+			return
+		}
+		defer rows.Close()
+
+		for rows.Next() {
+			var pt, id int
+			var rawHex, hash, decodedJSON, pathJSON, obsID, ts sql.NullString
+			rows.Scan(&pt, &id, &rawHex, &hash, &decodedJSON, &pathJSON, &obsID, &ts)
+			typeName := payloadTypeNames[pt]
+			if typeName == "" {
+				typeName = "UNKNOWN"
+			}
+			buckets[typeName] = append(buckets[typeName], AudioLabPacket{
+				Hash: nullStr(hash), RawHex: nullStr(rawHex),
+				DecodedJSON: nullStr(decodedJSON), ObservationCount: 1,
+				PayloadType: pt, PathJSON: nullStr(pathJSON),
+				ObserverID: nullStr(obsID), Timestamp: nullStr(ts),
+			})
+		}
 	}
+
 	writeJSON(w, AudioLabBucketsResponse{Buckets: buckets})
 }
 
