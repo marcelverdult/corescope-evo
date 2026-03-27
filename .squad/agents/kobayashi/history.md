@@ -21,3 +21,13 @@ User: User
   - **Coordination:** Assigned Hicks phantom cleanup (backend), Newt live page pruning (frontend), Hudson merge execution (DevOps).
   - **Outcome:** All 4 triaged issues fixed (#131, #130, #129, #123), #133 (phantom nodes) fully resolved, #126 (ambiguous hop prefixes) fixed as bonus, database merged successfully (0 data loss, 2 min downtime, 51,723 tx + 1.237M obs), Go rewrite (MQTT ingestor + web server) completed and ready for staging.
   - **Team expanded:** Hudson joined for DevOps work, Ripley joined as Support Engineer.
+- **Go staging bug triage (2026-03-28):** Filed 8 issues for Go staging bugs missed during API parity work. All found by actually loading the analytics page in a browser — none caught by endpoint-level parity checks.
+  - **#142** (Channels tab: wrong count, all decrypted, undefined fields) → Hicks
+  - **#136** (Hash stats tab: empty) → Hicks
+  - **#138** (Hash issues: no inconsistencies/collision risks shown) → Hicks
+  - **#135** (Topology tab: broken) → Hicks
+  - **#134** (Route patterns: broken) → Hicks
+  - **#140** (bulk-health API: 12s response time) → Hicks
+  - **#137** (Distance tab: broken) → Hicks
+  - **#139** (Commit link: bad contrast) → Newt
+  - **Post-mortem:** Parity was verified by comparing individual endpoint response shapes in isolation. Nobody loaded the analytics page in a browser and looked at it. The agents tested API responses without browser validation of the full UI — exactly the failure mode AGENTS.md rule #2 exists to prevent.
