@@ -81,6 +81,17 @@ func TestHealthEndpoint(t *testing.T) {
 		t.Error("expected estimatedMB in packetStore")
 	}
 
+	// Verify eventLoop (GC pause metrics matching Node.js shape)
+	el, ok := body["eventLoop"].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected eventLoop object in health response")
+	}
+	for _, field := range []string{"currentLagMs", "maxLagMs", "p50Ms", "p95Ms", "p99Ms"} {
+		if _, ok := el[field]; !ok {
+			t.Errorf("expected %s in eventLoop", field)
+		}
+	}
+
 	// Verify cache has real structure
 	cache, ok := body["cache"].(map[string]interface{})
 	if !ok {

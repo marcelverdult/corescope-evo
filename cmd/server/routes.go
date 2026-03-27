@@ -297,6 +297,22 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Build eventLoop-equivalent from GC pause data (matches Node.js shape)
+	var gcPauses []float64
+	n := int(m.NumGC)
+	if n > 256 {
+		n = 256
+	}
+	for i := 0; i < n; i++ {
+		idx := (int(m.NumGC) - n + i) % 256
+		gcPauses = append(gcPauses, float64(m.PauseNs[idx])/1e6)
+	}
+	sortedPauses := sortedCopy(gcPauses)
+	var lastPauseMs float64
+	if m.NumGC > 0 {
+		lastPauseMs = float64(m.PauseNs[(m.NumGC+255)%256]) / 1e6
+	}
+
 	writeJSON(w, map[string]interface{}{
 		"status":      "ok",
 		"engine":      "go",
@@ -310,6 +326,13 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 			"heapTotal": int(m.HeapSys / 1024 / 1024),
 			"external":  0,
 			"heapMB":    round(float64(m.HeapAlloc)/1048576, 1),
+		},
+		"eventLoop": map[string]interface{}{
+			"currentLagMs": round(lastPauseMs, 1),
+			"maxLagMs":     round(percentile(sortedPauses, 1.0), 1),
+			"p50Ms":        round(percentile(sortedPauses, 0.5), 1),
+			"p95Ms":        round(percentile(sortedPauses, 0.95), 1),
+			"p99Ms":        round(percentile(sortedPauses, 0.99), 1),
 		},
 		"goRuntime": map[string]interface{}{
 			"goroutines": runtime.NumGoroutine(),
