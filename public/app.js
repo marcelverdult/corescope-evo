@@ -107,9 +107,18 @@ function formatEngineBadge(engine) {
 
 function formatVersionBadge(version, commit, engine) {
   if (!version && !commit && !engine) return '';
+  var port = (typeof location !== 'undefined' && location.port) || '';
+  var isProd = !port || port === '80' || port === '443';
+  var GH = 'https://github.com/Kpa-clawbot/meshcore-analyzer';
   var parts = [];
-  if (version) parts.push(version.charAt(0) === 'v' ? version : 'v' + version);
-  if (commit && commit !== 'unknown') parts.push(commit.length > 7 ? commit.slice(0, 7) : commit);
+  if (version && isProd) {
+    var vTag = version.charAt(0) === 'v' ? version : 'v' + version;
+    parts.push('<a href="' + GH + '/releases/tag/' + vTag + '" target="_blank" rel="noopener">' + vTag + '</a>');
+  }
+  if (commit && commit !== 'unknown') {
+    var short = commit.length > 7 ? commit.slice(0, 7) : commit;
+    parts.push('<a href="' + GH + '/commit/' + commit + '" target="_blank" rel="noopener">' + short + '</a>');
+  }
   if (engine) parts.push('[' + engine + ']');
   if (parts.length === 0) return '';
   return ' <span class="version-badge">' + parts.join(' · ') + '</span>';

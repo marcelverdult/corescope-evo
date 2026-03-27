@@ -1166,53 +1166,108 @@ console.log('\n=== app.js: formatEngineBadge ===');
 // ===== APP.JS: formatVersionBadge =====
 console.log('\n=== app.js: formatVersionBadge ===');
 {
-  const ctx = makeSandbox();
-  loadInCtx(ctx, 'public/roles.js');
-  loadInCtx(ctx, 'public/app.js');
-  const formatVersionBadge = ctx.formatVersionBadge;
+  function makeBadgeSandbox(port) {
+    const ctx = makeSandbox();
+    ctx.location.port = port || '';
+    loadInCtx(ctx, 'public/roles.js');
+    loadInCtx(ctx, 'public/app.js');
+    return ctx;
+  }
+  const GH = 'https://github.com/Kpa-clawbot/meshcore-analyzer';
 
   test('returns empty string when all args missing', () => {
+    const { formatVersionBadge } = makeBadgeSandbox('');
     assert.strictEqual(formatVersionBadge(null, null, null), '');
     assert.strictEqual(formatVersionBadge(undefined, undefined, undefined), '');
     assert.strictEqual(formatVersionBadge('', '', ''), '');
   });
-  test('shows version + commit + engine', () => {
-    const result = formatVersionBadge('2.6.0', 'abc1234def', 'go');
+
+  // --- Prod tests (no port / port 80 / port 443) ---
+  test('prod: shows version + commit + engine with links', () => {
+    const { formatVersionBadge } = makeBadgeSandbox('');
+    const result = formatVersionBadge('2.6.0', 'abc1234def5678', 'node');
     assert.ok(result.includes('version-badge'), 'should have version-badge class');
-    assert.ok(result.includes('v2.6.0'), 'should show version with v prefix');
-    assert.ok(result.includes('abc1234'), 'should show truncated commit');
-    assert.ok(!result.includes('abc1234d'), 'should truncate commit to 7 chars');
-    assert.ok(result.includes('[go]'), 'should show engine in brackets');
+    assert.ok(result.includes(`href="${GH}/releases/tag/v2.6.0"`), 'version links to release');
+    assert.ok(result.includes('>v2.6.0</a>'), 'version text has v prefix');
+    assert.ok(result.includes(`href="${GH}/commit/abc1234def5678"`), 'commit links to full hash');
+    assert.ok(result.includes('>abc1234</a>'), 'commit display is truncated to 7');
+    assert.ok(result.includes('[node]'), 'should show engine');
   });
-  test('version already has v prefix', () => {
+  test('prod port 80: shows version', () => {
+    const { formatVersionBadge } = makeBadgeSandbox('80');
+    const result = formatVersionBadge('2.6.0', null, 'node');
+    assert.ok(result.includes('>v2.6.0</a>'), 'port 80 is prod — shows version');
+  });
+  test('prod port 443: shows version', () => {
+    const { formatVersionBadge } = makeBadgeSandbox('443');
+    const result = formatVersionBadge('2.6.0', null, 'node');
+    assert.ok(result.includes('>v2.6.0</a>'), 'port 443 is prod — shows version');
+  });
+  test('prod: version already has v prefix', () => {
+    const { formatVersionBadge } = makeBadgeSandbox('');
     const result = formatVersionBadge('v2.6.0', null, null);
-    assert.ok(result.includes('v2.6.0'), 'should not double the v prefix');
+    assert.ok(result.includes('>v2.6.0</a>'), 'should not double the v prefix');
     assert.ok(!result.includes('vv'), 'should not have vv');
   });
+
+  // --- Staging tests (non-standard port) ---
+  test('staging: hides version, shows commit + engine', () => {
+    const { formatVersionBadge } = makeBadgeSandbox('3000');
+    const result = formatVersionBadge('2.6.0', 'abc1234def5678', 'go');
+    assert.ok(!result.includes('v2.6.0'), 'staging should NOT show version');
+    assert.ok(result.includes('>abc1234</a>'), 'should show commit hash');
+    assert.ok(result.includes(`href="${GH}/commit/abc1234def5678"`), 'commit is linked');
+    assert.ok(result.includes('[go]'), 'should show engine');
+  });
+  test('staging port 81: hides version', () => {
+    const { formatVersionBadge } = makeBadgeSandbox('81');
+    const result = formatVersionBadge('2.6.0', 'abc1234', 'go');
+    assert.ok(!result.includes('v2.6.0'), 'port 81 is staging — no version');
+    assert.ok(result.includes('>abc1234</a>'), 'commit shown');
+  });
+
+  // --- Shared behavior ---
+  test('commit link uses full hash', () => {
+    const { formatVersionBadge } = makeBadgeSandbox('');
+    const result = formatVersionBadge(null, 'abc1234def567890123456789abcdef012345678', 'node');
+    assert.ok(result.includes(`href="${GH}/commit/abc1234def567890123456789abcdef012345678"`), 'link uses full hash');
+    assert.ok(result.includes('>abc1234</a>'), 'display is truncated to 7');
+  });
   test('skips commit when "unknown"', () => {
+    const { formatVersionBadge } = makeBadgeSandbox('');
     const result = formatVersionBadge('2.6.0', 'unknown', 'node');
-    assert.ok(result.includes('v2.6.0'), 'should show version');
+    assert.ok(result.includes('>v2.6.0</a>'), 'should show version');
     assert.ok(!result.includes('unknown'), 'should not show unknown commit');
     assert.ok(result.includes('[node]'), 'should show engine');
   });
   test('skips commit when missing', () => {
+    const { formatVersionBadge } = makeBadgeSandbox('');
     const result = formatVersionBadge('2.6.0', null, 'go');
-    assert.ok(result.includes('v2.6.0'), 'should show version');
+    assert.ok(result.includes('>v2.6.0</a>'), 'should show version');
     assert.ok(result.includes('[go]'), 'should show engine');
   });
   test('shows only engine when version/commit missing', () => {
+    const { formatVersionBadge } = makeBadgeSandbox('3000');
     const result = formatVersionBadge(null, null, 'go');
     assert.ok(result.includes('[go]'), 'should show engine');
     assert.ok(result.includes('version-badge'), 'should use version-badge class');
   });
-  test('short commit not truncated', () => {
+  test('short commit not truncated in display', () => {
+    const { formatVersionBadge } = makeBadgeSandbox('');
     const result = formatVersionBadge('1.0.0', 'abc1234', 'node');
-    assert.ok(result.includes('abc1234'), 'should show full short commit');
+    assert.ok(result.includes('>abc1234</a>'), 'should show full short commit');
   });
-  test('version only', () => {
+  test('version only on prod', () => {
+    const { formatVersionBadge } = makeBadgeSandbox('');
     const result = formatVersionBadge('2.6.0', null, null);
-    assert.ok(result.includes('v2.6.0'), 'should show version');
+    assert.ok(result.includes('>v2.6.0</a>'), 'should show version');
     assert.ok(!result.includes('·'), 'should not have separator for single part');
+  });
+  test('staging: only engine when no commit', () => {
+    const { formatVersionBadge } = makeBadgeSandbox('8080');
+    const result = formatVersionBadge('2.6.0', null, 'go');
+    assert.ok(!result.includes('2.6.0'), 'no version on staging');
+    assert.ok(result.includes('[go]'), 'engine shown');
   });
 }
 
