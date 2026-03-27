@@ -843,7 +843,12 @@ func (s *Server) handleNodeAnalytics(w http.ResponseWriter, r *http.Request) {
 // --- Analytics Handlers ---
 
 func (s *Server) handleAnalyticsRF(w http.ResponseWriter, r *http.Request) {
-	// Basic RF analytics from SQL
+	if s.store != nil {
+		region := r.URL.Query().Get("region")
+		writeJSON(w, s.store.GetAnalyticsRF(region))
+		return
+	}
+	// Fallback: basic RF analytics from SQL
 	region := r.URL.Query().Get("region")
 	regionFilter := ""
 	var rArgs []interface{}
@@ -926,7 +931,13 @@ func (s *Server) handleAnalyticsTopology(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) handleAnalyticsChannels(w http.ResponseWriter, r *http.Request) {
-	channels, _ := s.db.GetChannels()
+	var channels []map[string]interface{}
+	if s.store != nil {
+		region := r.URL.Query().Get("region")
+		channels = s.store.GetChannels(region)
+	} else {
+		channels, _ = s.db.GetChannels()
+	}
 	writeJSON(w, map[string]interface{}{
 		"activeChannels": len(channels),
 		"decryptable":    len(channels),
@@ -1037,6 +1048,12 @@ func (s *Server) handleResolveHops(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleChannels(w http.ResponseWriter, r *http.Request) {
+	if s.store != nil {
+		region := r.URL.Query().Get("region")
+		channels := s.store.GetChannels(region)
+		writeJSON(w, map[string]interface{}{"channels": channels})
+		return
+	}
 	channels, err := s.db.GetChannels()
 	if err != nil {
 		writeError(w, 500, err.Error())
@@ -1049,6 +1066,11 @@ func (s *Server) handleChannelMessages(w http.ResponseWriter, r *http.Request) {
 	hash := mux.Vars(r)["hash"]
 	limit := queryInt(r, "limit", 100)
 	offset := queryInt(r, "offset", 0)
+	if s.store != nil {
+		messages, total := s.store.GetChannelMessages(hash, limit, offset)
+		writeJSON(w, map[string]interface{}{"messages": messages, "total": total})
+		return
+	}
 	messages, total, err := s.db.GetChannelMessages(hash, limit, offset)
 	if err != nil {
 		writeError(w, 500, err.Error())

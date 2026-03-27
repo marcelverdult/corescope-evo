@@ -3,7 +3,9 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log"
+	"math"
 	"sort"
 	"strings"
 	"sync"
@@ -964,4 +966,745 @@ func filterTxSlice(s []*StoreTx, fn func(*StoreTx) bool) []*StoreTx {
 		}
 	}
 	return result
+}
+
+// GetChannels returns channel list from in-memory packets (payload_type 5, decoded type CHAN).
+func (s *PacketStore) GetChannels(region string) []map[string]interface{} {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var regionObs map[string]bool
+	if region != "" {
+		regionObs = s.resolveRegionObservers(region)
+	}
+
+	type chanInfo struct {
+		Hash         string
+		Name         string
+		LastMessage  interface{}
+		LastSender   interface{}
+		MessageCount int
+		LastActivity string
+	}
+	channelMap := map[string]*chanInfo{}
+
+	for _, tx := range s.packets {
+		if tx.PayloadType == nil || *tx.PayloadType != 5 {
+			continue
+		}
+		if tx.DecodedJSON == "" {
+			continue
+		}
+
+		// Region filter: check if any observation is from a regional observer
+		if regionObs != nil {
+			match := false
+			for _, obs := range tx.Observations {
+				if regionObs[obs.ObserverID] {
+					match = true
+					break
+				}
+			}
+			if !match {
+				continue
+			}
+		}
+
+		var decoded map[string]interface{}
+		if json.Unmarshal([]byte(tx.DecodedJSON), &decoded) != nil {
+			continue
+		}
+		dtype, _ := decoded["type"].(string)
+		if dtype != "CHAN" {
+			continue
+		}
+
+		channelName, _ := decoded["channel"].(string)
+		if channelName == "" {
+			channelName = "unknown"
+		}
+		key := channelName
+
+		ch := channelMap[key]
+		if ch == nil {
+			ch = &chanInfo{
+				Hash: key, Name: channelName,
+				LastActivity: tx.FirstSeen,
+			}
+			channelMap[key] = ch
+		}
+		ch.MessageCount++
+		if tx.FirstSeen >= ch.LastActivity {
+			ch.LastActivity = tx.FirstSeen
+			if text, ok := decoded["text"].(string); ok && text != "" {
+				idx := strings.Index(text, ": ")
+				if idx > 0 {
+					ch.LastMessage = text[idx+2:]
+				} else {
+					ch.LastMessage = text
+				}
+				if sender, ok := decoded["sender"].(string); ok {
+					ch.LastSender = sender
+				}
+			}
+		}
+	}
+
+	channels := make([]map[string]interface{}, 0, len(channelMap))
+	for _, ch := range channelMap {
+		channels = append(channels, map[string]interface{}{
+			"hash": ch.Hash, "name": ch.Name,
+			"lastMessage": ch.LastMessage, "lastSender": ch.LastSender,
+			"messageCount": ch.MessageCount, "lastActivity": ch.LastActivity,
+		})
+	}
+	return channels
+}
+
+// GetChannelMessages returns deduplicated messages for a channel from in-memory packets.
+func (s *PacketStore) GetChannelMessages(channelHash string, limit, offset int) ([]map[string]interface{}, int) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if limit <= 0 {
+		limit = 100
+	}
+
+	type msgEntry struct {
+		Data      map[string]interface{}
+		Repeats   int
+		Observers []string
+	}
+	msgMap := map[string]*msgEntry{}
+	var msgOrder []string
+
+	// Iterate oldest-first (packets stored newest-first, so reverse)
+	for i := len(s.packets) - 1; i >= 0; i-- {
+		tx := s.packets[i]
+		if tx.PayloadType == nil || *tx.PayloadType != 5 || tx.DecodedJSON == "" {
+			continue
+		}
+
+		var decoded map[string]interface{}
+		if json.Unmarshal([]byte(tx.DecodedJSON), &decoded) != nil {
+			continue
+		}
+		dtype, _ := decoded["type"].(string)
+		if dtype != "CHAN" {
+			continue
+		}
+		ch, _ := decoded["channel"].(string)
+		if ch == "" {
+			ch = "unknown"
+		}
+		if ch != channelHash {
+			continue
+		}
+
+		text, _ := decoded["text"].(string)
+		sender, _ := decoded["sender"].(string)
+		if sender == "" && text != "" {
+			idx := strings.Index(text, ": ")
+			if idx > 0 && idx < 50 {
+				sender = text[:idx]
+			}
+		}
+
+		dedupeKey := sender + ":" + tx.Hash
+
+		if existing, ok := msgMap[dedupeKey]; ok {
+			existing.Repeats++
+			existing.Data["repeats"] = existing.Repeats
+			// Add observer if new
+			obsName := tx.ObserverName
+			if obsName == "" {
+				obsName = tx.ObserverID
+			}
+			if obsName != "" {
+				found := false
+				for _, o := range existing.Observers {
+					if o == obsName {
+						found = true
+						break
+					}
+				}
+				if !found {
+					existing.Observers = append(existing.Observers, obsName)
+					existing.Data["observers"] = existing.Observers
+				}
+			}
+		} else {
+			displaySender := sender
+			displayText := text
+			if text != "" {
+				idx := strings.Index(text, ": ")
+				if idx > 0 && idx < 50 {
+					displaySender = text[:idx]
+					displayText = text[idx+2:]
+				}
+			}
+
+			hops := pathLen(tx.PathJSON)
+
+			var snrVal interface{}
+			if tx.SNR != nil {
+				snrVal = *tx.SNR
+			}
+
+			senderTs, _ := decoded["sender_timestamp"]
+
+			observers := []string{}
+			obsName := tx.ObserverName
+			if obsName == "" {
+				obsName = tx.ObserverID
+			}
+			if obsName != "" {
+				observers = []string{obsName}
+			}
+
+			entry := &msgEntry{
+				Data: map[string]interface{}{
+					"sender":           displaySender,
+					"text":             displayText,
+					"timestamp":        strOrNil(tx.FirstSeen),
+					"sender_timestamp": senderTs,
+					"packetId":         tx.ID,
+					"packetHash":       strOrNil(tx.Hash),
+					"repeats":          1,
+					"observers":        observers,
+					"hops":             hops,
+					"snr":              snrVal,
+				},
+				Repeats:   1,
+				Observers: observers,
+			}
+			msgMap[dedupeKey] = entry
+			msgOrder = append(msgOrder, dedupeKey)
+		}
+	}
+
+	total := len(msgOrder)
+	// Return latest messages (tail)
+	start := total - limit - offset
+	if start < 0 {
+		start = 0
+	}
+	end := total - offset
+	if end < 0 {
+		end = 0
+	}
+	if end > total {
+		end = total
+	}
+
+	messages := make([]map[string]interface{}, 0, end-start)
+	for i := start; i < end; i++ {
+		messages = append(messages, msgMap[msgOrder[i]].Data)
+	}
+	return messages, total
+}
+
+// GetAnalyticsRF returns full RF analytics computed from in-memory observations.
+func (s *PacketStore) GetAnalyticsRF(region string) map[string]interface{} {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	ptNames := map[int]string{0: "REQ", 1: "RESPONSE", 2: "TXT_MSG", 3: "ACK", 4: "ADVERT", 5: "GRP_TXT", 7: "ANON_REQ", 8: "PATH", 9: "TRACE", 11: "CONTROL"}
+
+	var regionObs map[string]bool
+	if region != "" {
+		regionObs = s.resolveRegionObservers(region)
+	}
+
+	// Collect all observations matching the region
+	var snrVals, rssiVals []float64
+	var packetSizes []int
+	seenSizeHashes := map[string]bool{}
+	seenTypeHashes := map[string]bool{}
+	typeBuckets := map[int]int{}
+	hourBuckets := map[string]int{}
+	snrByType := map[string]*struct{ vals []float64 }{}
+	sigTime := map[string]*struct {
+		snrs  []float64
+		count int
+	}{}
+	var scatterAll []struct{ snr, rssi float64 }
+	totalObs := 0
+	regionalHashes := map[string]bool{}
+
+	if regionObs != nil {
+		// Regional: iterate observations from matching observers
+		for obsID := range regionObs {
+			obsList := s.byObserver[obsID]
+			for _, obs := range obsList {
+				totalObs++
+				tx := s.byTxID[obs.TransmissionID]
+				hash := ""
+				if tx != nil {
+					hash = tx.Hash
+				}
+				if hash != "" {
+					regionalHashes[hash] = true
+				}
+
+				ts := obs.Timestamp
+
+				// SNR/RSSI
+				if obs.SNR != nil {
+					snrVals = append(snrVals, *obs.SNR)
+					typeName := "UNK"
+					if tx != nil && tx.PayloadType != nil {
+						if n, ok := ptNames[*tx.PayloadType]; ok {
+							typeName = n
+						} else {
+							typeName = fmt.Sprintf("UNK(%d)", *tx.PayloadType)
+						}
+					}
+					if snrByType[typeName] == nil {
+						snrByType[typeName] = &struct{ vals []float64 }{}
+					}
+					snrByType[typeName].vals = append(snrByType[typeName].vals, *obs.SNR)
+
+					if obs.RSSI != nil {
+						scatterAll = append(scatterAll, struct{ snr, rssi float64 }{*obs.SNR, *obs.RSSI})
+					}
+
+					// Signal over time
+					if len(ts) >= 13 {
+						hr := ts[:13]
+						if sigTime[hr] == nil {
+							sigTime[hr] = &struct {
+								snrs  []float64
+								count int
+							}{}
+						}
+						sigTime[hr].snrs = append(sigTime[hr].snrs, *obs.SNR)
+						sigTime[hr].count++
+					}
+				}
+				if obs.RSSI != nil {
+					rssiVals = append(rssiVals, *obs.RSSI)
+				}
+
+				// Packets per hour
+				if len(ts) >= 13 {
+					hr := ts[:13]
+					hourBuckets[hr]++
+				}
+
+				// Packet sizes (unique by hash)
+				if hash != "" && !seenSizeHashes[hash] && tx != nil && tx.RawHex != "" {
+					seenSizeHashes[hash] = true
+					packetSizes = append(packetSizes, len(tx.RawHex)/2)
+				}
+
+				// Payload type distribution (unique by hash)
+				if hash != "" && !seenTypeHashes[hash] && tx != nil && tx.PayloadType != nil {
+					seenTypeHashes[hash] = true
+					typeBuckets[*tx.PayloadType]++
+				}
+			}
+		}
+	} else {
+		// No region: iterate all transmissions and their observations
+		for _, tx := range s.packets {
+			if len(tx.Observations) > 0 {
+				for _, obs := range tx.Observations {
+					totalObs++
+					if tx.Hash != "" {
+						regionalHashes[tx.Hash] = true
+					}
+					ts := obs.Timestamp
+
+					if obs.SNR != nil {
+						snrVals = append(snrVals, *obs.SNR)
+						typeName := "UNK"
+						if tx.PayloadType != nil {
+							if n, ok := ptNames[*tx.PayloadType]; ok {
+								typeName = n
+							} else {
+								typeName = fmt.Sprintf("UNK(%d)", *tx.PayloadType)
+							}
+						}
+						if snrByType[typeName] == nil {
+							snrByType[typeName] = &struct{ vals []float64 }{}
+						}
+						snrByType[typeName].vals = append(snrByType[typeName].vals, *obs.SNR)
+
+						if obs.RSSI != nil {
+							scatterAll = append(scatterAll, struct{ snr, rssi float64 }{*obs.SNR, *obs.RSSI})
+						}
+
+						if len(ts) >= 13 {
+							hr := ts[:13]
+							if sigTime[hr] == nil {
+								sigTime[hr] = &struct {
+									snrs  []float64
+									count int
+								}{}
+							}
+							sigTime[hr].snrs = append(sigTime[hr].snrs, *obs.SNR)
+							sigTime[hr].count++
+						}
+					}
+					if obs.RSSI != nil {
+						rssiVals = append(rssiVals, *obs.RSSI)
+					}
+
+					if len(ts) >= 13 {
+						hourBuckets[ts[:13]]++
+					}
+
+					if tx.Hash != "" && !seenSizeHashes[tx.Hash] && tx.RawHex != "" {
+						seenSizeHashes[tx.Hash] = true
+						packetSizes = append(packetSizes, len(tx.RawHex)/2)
+					}
+					if tx.Hash != "" && !seenTypeHashes[tx.Hash] && tx.PayloadType != nil {
+						seenTypeHashes[tx.Hash] = true
+						typeBuckets[*tx.PayloadType]++
+					}
+				}
+			} else {
+				// Legacy: transmission without observations
+				totalObs++
+				if tx.Hash != "" {
+					regionalHashes[tx.Hash] = true
+				}
+				if tx.SNR != nil {
+					snrVals = append(snrVals, *tx.SNR)
+				}
+				if tx.RSSI != nil {
+					rssiVals = append(rssiVals, *tx.RSSI)
+				}
+				ts := tx.FirstSeen
+				if len(ts) >= 13 {
+					hourBuckets[ts[:13]]++
+				}
+				if tx.Hash != "" && !seenSizeHashes[tx.Hash] && tx.RawHex != "" {
+					seenSizeHashes[tx.Hash] = true
+					packetSizes = append(packetSizes, len(tx.RawHex)/2)
+				}
+				if tx.Hash != "" && !seenTypeHashes[tx.Hash] && tx.PayloadType != nil {
+					seenTypeHashes[tx.Hash] = true
+					typeBuckets[*tx.PayloadType]++
+				}
+			}
+		}
+	}
+
+	// Stats helpers
+	sortedF64 := func(arr []float64) []float64 {
+		c := make([]float64, len(arr))
+		copy(c, arr)
+		sort.Float64s(c)
+		return c
+	}
+	medianF64 := func(arr []float64) float64 {
+		s := sortedF64(arr)
+		if len(s) == 0 {
+			return 0
+		}
+		return s[len(s)/2]
+	}
+	stddevF64 := func(arr []float64, avg float64) float64 {
+		if len(arr) == 0 {
+			return 0
+		}
+		sum := 0.0
+		for _, v := range arr {
+			d := v - avg
+			sum += d * d
+		}
+		return math.Sqrt(sum / float64(len(arr)))
+	}
+	minF64 := func(arr []float64) float64 {
+		if len(arr) == 0 {
+			return 0
+		}
+		m := arr[0]
+		for _, v := range arr[1:] {
+			if v < m {
+				m = v
+			}
+		}
+		return m
+	}
+	maxF64 := func(arr []float64) float64 {
+		if len(arr) == 0 {
+			return 0
+		}
+		m := arr[0]
+		for _, v := range arr[1:] {
+			if v > m {
+				m = v
+			}
+		}
+		return m
+	}
+	minInt := func(arr []int) int {
+		if len(arr) == 0 {
+			return 0
+		}
+		m := arr[0]
+		for _, v := range arr[1:] {
+			if v < m {
+				m = v
+			}
+		}
+		return m
+	}
+	maxInt := func(arr []int) int {
+		if len(arr) == 0 {
+			return 0
+		}
+		m := arr[0]
+		for _, v := range arr[1:] {
+			if v > m {
+				m = v
+			}
+		}
+		return m
+	}
+
+	snrAvg := 0.0
+	if len(snrVals) > 0 {
+		sum := 0.0
+		for _, v := range snrVals {
+			sum += v
+		}
+		snrAvg = sum / float64(len(snrVals))
+	}
+	rssiAvg := 0.0
+	if len(rssiVals) > 0 {
+		sum := 0.0
+		for _, v := range rssiVals {
+			sum += v
+		}
+		rssiAvg = sum / float64(len(rssiVals))
+	}
+
+	// Packets per hour
+	type hourCount struct {
+		Hour  string `json:"hour"`
+		Count int    `json:"count"`
+	}
+	hourKeys := make([]string, 0, len(hourBuckets))
+	for k := range hourBuckets {
+		hourKeys = append(hourKeys, k)
+	}
+	sort.Strings(hourKeys)
+	packetsPerHour := make([]hourCount, len(hourKeys))
+	for i, k := range hourKeys {
+		packetsPerHour[i] = hourCount{Hour: k, Count: hourBuckets[k]}
+	}
+
+	// Payload types
+	type ptEntry struct {
+		Type  int    `json:"type"`
+		Name  string `json:"name"`
+		Count int    `json:"count"`
+	}
+	payloadTypes := make([]ptEntry, 0, len(typeBuckets))
+	for t, c := range typeBuckets {
+		name := ptNames[t]
+		if name == "" {
+			name = fmt.Sprintf("UNK(%d)", t)
+		}
+		payloadTypes = append(payloadTypes, ptEntry{Type: t, Name: name, Count: c})
+	}
+	sort.Slice(payloadTypes, func(i, j int) bool { return payloadTypes[i].Count > payloadTypes[j].Count })
+
+	// SNR by type
+	type snrTypeEntry struct {
+		Name  string  `json:"name"`
+		Count int     `json:"count"`
+		Avg   float64 `json:"avg"`
+		Min   float64 `json:"min"`
+		Max   float64 `json:"max"`
+	}
+	snrByTypeArr := make([]snrTypeEntry, 0, len(snrByType))
+	for name, d := range snrByType {
+		sum := 0.0
+		for _, v := range d.vals {
+			sum += v
+		}
+		snrByTypeArr = append(snrByTypeArr, snrTypeEntry{
+			Name: name, Count: len(d.vals),
+			Avg: sum / float64(len(d.vals)),
+			Min: minF64(d.vals), Max: maxF64(d.vals),
+		})
+	}
+	sort.Slice(snrByTypeArr, func(i, j int) bool { return snrByTypeArr[i].Count > snrByTypeArr[j].Count })
+
+	// Signal over time
+	type sigTimeEntry struct {
+		Hour   string  `json:"hour"`
+		Count  int     `json:"count"`
+		AvgSnr float64 `json:"avgSnr"`
+	}
+	sigKeys := make([]string, 0, len(sigTime))
+	for k := range sigTime {
+		sigKeys = append(sigKeys, k)
+	}
+	sort.Strings(sigKeys)
+	signalOverTime := make([]sigTimeEntry, len(sigKeys))
+	for i, k := range sigKeys {
+		d := sigTime[k]
+		sum := 0.0
+		for _, v := range d.snrs {
+			sum += v
+		}
+		signalOverTime[i] = sigTimeEntry{Hour: k, Count: d.count, AvgSnr: sum / float64(d.count)}
+	}
+
+	// Scatter (downsample to 500)
+	type scatterPoint struct {
+		SNR  float64 `json:"snr"`
+		RSSI float64 `json:"rssi"`
+	}
+	scatterStep := 1
+	if len(scatterAll) > 500 {
+		scatterStep = len(scatterAll) / 500
+	}
+	scatterData := make([]scatterPoint, 0, 500)
+	for i, p := range scatterAll {
+		if i%scatterStep == 0 {
+			scatterData = append(scatterData, scatterPoint{SNR: p.snr, RSSI: p.rssi})
+		}
+	}
+
+	// Histograms
+	buildHistogramF64 := func(values []float64, bins int) map[string]interface{} {
+		if len(values) == 0 {
+			return map[string]interface{}{"bins": []interface{}{}, "min": 0, "max": 0}
+		}
+		mn, mx := minF64(values), maxF64(values)
+		rng := mx - mn
+		if rng == 0 {
+			rng = 1
+		}
+		binWidth := rng / float64(bins)
+		counts := make([]int, bins)
+		for _, v := range values {
+			idx := int((v - mn) / binWidth)
+			if idx >= bins {
+				idx = bins - 1
+			}
+			counts[idx]++
+		}
+		binArr := make([]map[string]interface{}, bins)
+		for i, c := range counts {
+			binArr[i] = map[string]interface{}{"x": mn + float64(i)*binWidth, "w": binWidth, "count": c}
+		}
+		return map[string]interface{}{"bins": binArr, "min": mn, "max": mx}
+	}
+	buildHistogramInt := func(values []int, bins int) map[string]interface{} {
+		if len(values) == 0 {
+			return map[string]interface{}{"bins": []interface{}{}, "min": 0, "max": 0}
+		}
+		mn, mx := float64(minInt(values)), float64(maxInt(values))
+		rng := mx - mn
+		if rng == 0 {
+			rng = 1
+		}
+		binWidth := rng / float64(bins)
+		counts := make([]int, bins)
+		for _, v := range values {
+			idx := int((float64(v) - mn) / binWidth)
+			if idx >= bins {
+				idx = bins - 1
+			}
+			counts[idx]++
+		}
+		binArr := make([]map[string]interface{}, bins)
+		for i, c := range counts {
+			binArr[i] = map[string]interface{}{"x": mn + float64(i)*binWidth, "w": binWidth, "count": c}
+		}
+		return map[string]interface{}{"bins": binArr, "min": mn, "max": mx}
+	}
+
+	snrHistogram := buildHistogramF64(snrVals, 20)
+	rssiHistogram := buildHistogramF64(rssiVals, 20)
+	sizeHistogram := buildHistogramInt(packetSizes, 25)
+
+	// Time span
+	timeSpanHours := 0.0
+	if totalObs > 0 {
+		var minT, maxT int64
+		first := true
+		// Scan a representative set for time bounds
+		for _, tx := range s.packets {
+			for _, obs := range tx.Observations {
+				t, err := time.Parse("2006-01-02 15:04:05", obs.Timestamp)
+				if err != nil {
+					t, err = time.Parse(time.RFC3339, obs.Timestamp)
+				}
+				if err != nil {
+					continue
+				}
+				ms := t.UnixMilli()
+				if first {
+					minT, maxT = ms, ms
+					first = false
+				} else {
+					if ms < minT {
+						minT = ms
+					}
+					if ms > maxT {
+						maxT = ms
+					}
+				}
+			}
+		}
+		if !first {
+			timeSpanHours = float64(maxT-minT) / 3600000.0
+		}
+	}
+
+	// Avg packet size
+	avgPktSize := 0
+	if len(packetSizes) > 0 {
+		sum := 0
+		for _, v := range packetSizes {
+			sum += v
+		}
+		avgPktSize = sum / len(packetSizes)
+	}
+
+	snrStats := map[string]interface{}{"min": 0.0, "max": 0.0, "avg": 0.0, "median": 0.0, "stddev": 0.0}
+	if len(snrVals) > 0 {
+		snrStats = map[string]interface{}{
+			"min": minF64(snrVals), "max": maxF64(snrVals),
+			"avg": snrAvg, "median": medianF64(snrVals),
+			"stddev": stddevF64(snrVals, snrAvg),
+		}
+	}
+	rssiStats := map[string]interface{}{"min": 0.0, "max": 0.0, "avg": 0.0, "median": 0.0, "stddev": 0.0}
+	if len(rssiVals) > 0 {
+		rssiStats = map[string]interface{}{
+			"min": minF64(rssiVals), "max": maxF64(rssiVals),
+			"avg": rssiAvg, "median": medianF64(rssiVals),
+			"stddev": stddevF64(rssiVals, rssiAvg),
+		}
+	}
+
+	return map[string]interface{}{
+		"totalPackets":       len(snrVals),
+		"totalAllPackets":    totalObs,
+		"totalTransmissions": len(regionalHashes),
+		"snr":                snrStats,
+		"rssi":               rssiStats,
+		"snrValues":          snrHistogram,
+		"rssiValues":         rssiHistogram,
+		"packetSizes":        sizeHistogram,
+		"minPacketSize":      minInt(packetSizes),
+		"maxPacketSize":      maxInt(packetSizes),
+		"avgPacketSize":      avgPktSize,
+		"packetsPerHour":     packetsPerHour,
+		"payloadTypes":       payloadTypes,
+		"snrByType":          snrByTypeArr,
+		"signalOverTime":     signalOverTime,
+		"scatterData":        scatterData,
+		"timeSpanHours":      timeSpanHours,
+	}
 }
