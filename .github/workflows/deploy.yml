@@ -164,7 +164,6 @@ jobs:
           echo "Built $(git rev-parse --short HEAD)"
 
       - name: Deploy to staging
-        continue-on-error: true
         run: |
           set -e
 
@@ -209,15 +208,15 @@ jobs:
           # Run compose from the repo checkout (where docker-compose.yml lives)
           docker compose --profile staging up -d --force-recreate staging
 
-          # Wait for Docker healthcheck to report healthy
-          for i in $(seq 1 30); do
+          # Wait for Docker healthcheck — give it up to 5 minutes (big DB)
+          for i in $(seq 1 300); do
             HEALTH=$(docker inspect meshcore-staging --format '{{.State.Health.Status}}' 2>/dev/null || echo "starting")
             if [ "$HEALTH" = "healthy" ]; then
               echo "Staging healthy after ${i}s"
               break
             fi
-            if [ "$i" -eq 30 ]; then
-              echo "Staging failed health check after 30s"
+            if [ "$i" -eq 300 ]; then
+              echo "Staging failed health check after 300s"
               docker logs meshcore-staging --tail 50
               exit 1
             fi
