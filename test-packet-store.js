@@ -27,6 +27,7 @@ function createMockDb() {
           return null;
         },
         all: (...args) => [],
+        iterate: (...args) => [][Symbol.iterator](),
       }),
     },
     insertTransmission: (data) => ({
@@ -367,6 +368,132 @@ test('finds by text search in decoded_json', () => {
   store.insert(makePacketData({ hash: 'fpn3', decoded_json: JSON.stringify({ name: 'MySpecialNode' }) }));
   const r = store.findPacketsForNode('MySpecialNode');
   assert.strictEqual(r.packets.length, 1);
+});
+
+// === Memory optimization: observation deduplication ===
+console.log('\n=== Observation deduplication (transmission_id refs) ===');
+
+test('observations don\'t duplicate transmission fields', () => {
+  const store = new PacketStore(createMockDb());
+  store.load();
+  store.insert(makePacketData({ hash: 'dedup1', raw_hex: 'FF00FF00', decoded_json: '{"pubKey":"ABCD"}' }));
+  const tx = store.byHash.get('dedup1');
+  assert(tx, 'transmission should exist');
+  assert(tx.observations.length >= 1, 'should have at least 1 observation');
+  const obs = tx.observations[0];
+  // Observation should NOT have its own copies of transmission fields
+  assert(!obs.hasOwnProperty('raw_hex'), 'obs should not have own raw_hex');
+  assert(!obs.hasOwnProperty('decoded_json'), 'obs should not have own decoded_json');
+  // Observation should reference its parent transmission
+  assert(obs.hasOwnProperty('transmission_id'), 'obs should have transmission_id');
+});
+
+test('transmission fields accessible through lookup', () => {
+  const store = new PacketStore(createMockDb());
+  store.load();
+  store.insert(makePacketData({ hash: 'lookup1', raw_hex: 'DEADBEEF', decoded_json: '{"pubKey":"CAFE"}' }));
+  const tx = store.byHash.get('lookup1');
+  const obs = tx.observations[0];
+  // Look up the transmission via the observation's transmission_id
+  const parentTx = store.byTxId.get(obs.transmission_id);
+  assert(parentTx, 'should find parent transmission via transmission_id');
+  assert.strictEqual(parentTx.raw_hex, 'DEADBEEF');
+  assert.strictEqual(parentTx.decoded_json, '{"pubKey":"CAFE"}');
+  assert.strictEqual(parentTx.hash, 'lookup1');
+});
+
+test('query results still contain transmission fields (backward compat)', () => {
+  const store = new PacketStore(createMockDb());
+  store.load();
+  store.insert(makePacketData({ hash: 'compat1', raw_hex: 'AABB', decoded_json: '{"test":true}' }));
+  const r = store.query();
+  assert.strictEqual(r.total, 1);
+  const pkt = r.packets[0];
+  // Query results (transmissions) should still have these fields
+  assert.strictEqual(pkt.raw_hex, 'AABB');
+  assert.strictEqual(pkt.decoded_json, '{"test":true}');
+  assert.strictEqual(pkt.hash, 'compat1');
+});
+
+test('all() results contain transmission fields', () => {
+  const store = new PacketStore(createMockDb());
+  store.load();
+  store.insert(makePacketData({ hash: 'allcompat1', raw_hex: 'CCDD', decoded_json: '{"x":1}' }));
+  const pkts = store.all();
+  assert.strictEqual(pkts.length, 1);
+  assert.strictEqual(pkts[0].raw_hex, 'CCDD');
+  assert.strictEqual(pkts[0].decoded_json, '{"x":1}');
+});
+
+test('multiple observations share one transmission', () => {
+  const store = new PacketStore(createMockDb());
+  store.load();
+  store.insert(makePacketData({ hash: 'shared1', observer_id: 'obs-A', raw_hex: 'FFFF' }));
+  store.insert(makePacketData({ hash: 'shared1', observer_id: 'obs-B', raw_hex: 'FFFF' }));
+  store.insert(makePacketData({ hash: 'shared1', observer_id: 'obs-C', raw_hex: 'FFFF' }));
+  // Only 1 transmission should exist
+  assert.strictEqual(store.packets.length, 1);
+  const tx = store.byHash.get('shared1');
+  assert.strictEqual(tx.observations.length, 3);
+  // All observations should reference the same transmission_id
+  const txId = tx.observations[0].transmission_id;
+  assert(txId != null, 'transmission_id should be set');
+  assert.strictEqual(tx.observations[1].transmission_id, txId);
+  assert.strictEqual(tx.observations[2].transmission_id, txId);
+  // Only 1 entry in byTxId for this transmission
+  assert(store.byTxId.has(txId), 'byTxId should have the shared transmission');
+});
+
+test('getSiblings still returns observation data after dedup', () => {
+  const store = new PacketStore(createMockDb());
+  store.load();
+  store.insert(makePacketData({ hash: 'sibdedup1', observer_id: 'obs-X', snr: 5.0 }));
+  store.insert(makePacketData({ hash: 'sibdedup1', observer_id: 'obs-Y', snr: 9.0 }));
+  const sibs = store.getSiblings('sibdedup1');
+  assert.strictEqual(sibs.length, 2);
+  // Each sibling should have observer-specific fields
+  const obsIds = sibs.map(s => s.observer_id).sort();
+  assert.deepStrictEqual(obsIds, ['obs-X', 'obs-Y']);
+});
+
+test('queryGrouped still returns transmission fields after dedup', () => {
+  const store = new PacketStore(createMockDb());
+  store.load();
+  store.insert(makePacketData({ hash: 'grpdedup1', raw_hex: 'AABB', decoded_json: '{"g":1}', observer_id: 'o1' }));
+  store.insert(makePacketData({ hash: 'grpdedup1', observer_id: 'o2' }));
+  const r = store.queryGrouped();
+  assert.strictEqual(r.total, 1);
+  const g = r.packets[0];
+  assert.strictEqual(g.raw_hex, 'AABB');
+  assert.strictEqual(g.decoded_json, '{"g":1}');
+  assert.strictEqual(g.observation_count, 2);
+});
+
+test('memory estimate reflects deduplication savings', () => {
+  const store = new PacketStore(createMockDb());
+  store.load();
+  // Insert 50 unique transmissions, each with 5 observers
+  const longHex = 'AA'.repeat(200);
+  const longJson = JSON.stringify({ pubKey: 'BB'.repeat(32), name: 'TestNode', data: 'X'.repeat(200) });
+  for (let i = 0; i < 50; i++) {
+    for (let j = 0; j < 5; j++) {
+      store.insert(makePacketData({
+        hash: `mem${i}`,
+        observer_id: `obs-mem-${j}`,
+        raw_hex: longHex,
+        decoded_json: longJson,
+      }));
+    }
+  }
+  assert.strictEqual(store.packets.length, 50);
+  // Verify observations don't bloat memory with duplicate strings
+  let obsWithRawHex = 0;
+  for (const tx of store.packets) {
+    for (const obs of tx.observations) {
+      if (obs.hasOwnProperty('raw_hex')) obsWithRawHex++;
+    }
+  }
+  assert.strictEqual(obsWithRawHex, 0, 'no observation should have own raw_hex property');
 });
 
 // === Summary ===
