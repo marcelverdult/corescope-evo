@@ -157,48 +157,59 @@ jobs:
       - name: Validate JS
         run: sh scripts/validate.sh
 
-      - name: Build and deploy
+      - name: Build image
+        run: |
+          docker build -t meshcore-analyzer:latest .
+          echo "Built $(git rev-parse --short HEAD)"
+
+      - name: Deploy to staging
         run: |
           set -e
-          DEPLOY_DIR="/opt/meshcore-deploy"
-          
-          docker build -t meshcore-analyzer .
-          docker stop meshcore-analyzer 2>/dev/null || true
-          docker rm meshcore-analyzer 2>/dev/null || true
-          
-          # Determine port mapping from Caddyfile
-          DOMAIN=$(grep -v '^#' "$DEPLOY_DIR/caddy-config/Caddyfile" 2>/dev/null | head -1 | tr -d ' {')
-          PORTS="-p 80:80 -p 443:443"
-          if echo "$DOMAIN" | grep -qE '^:[0-9]+$'; then
-            PORT="${DOMAIN#:}"
-            PORTS="-p ${PORT}:${PORT}"
+          cd /opt/meshcore-deploy
+
+          # Source environment overrides
+          if [ -f .env ]; then
+            set -a; source .env; set +a
           fi
-          
-          # Detect existing data directory
-          DATA_MOUNT="-v meshcore-data:/app/data"
-          if [ -f "/opt/meshcore-deploy/data/meshcore.db" ]; then
-            DATA_MOUNT="-v /opt/meshcore-deploy/data:/app/data"
-          elif [ -f "$DEPLOY_DIR/data/meshcore.db" ]; then
-            DATA_MOUNT="-v $DEPLOY_DIR/data:/app/data"
-          fi
-          
-          docker run -d \
-            --name meshcore-analyzer \
-            --restart unless-stopped \
-            $PORTS \
-            -v $DEPLOY_DIR/config.json:/app/config.json:ro \
-            -v $DEPLOY_DIR/caddy-config/Caddyfile:/etc/caddy/Caddyfile:ro \
-            $DATA_MOUNT \
-            -v caddy-data:/data/caddy \
-            meshcore-analyzer
-          
-          # Wait for health
-          for i in $(seq 1 15); do
-            if docker exec meshcore-analyzer wget -qO- http://localhost:3000/api/stats &>/dev/null; then
-              echo "Healthy after $((i*2))s"
+
+          # Ensure data directories exist
+          mkdir -p "${PROD_DATA_DIR:-$HOME/meshcore-data}" "${STAGING_DATA_DIR:-$HOME/meshcore-staging-data}"
+
+          # Restart staging with the newly built image
+          docker compose --profile staging up -d --force-recreate staging
+
+          # Wait for Docker healthcheck to report healthy
+          for i in $(seq 1 30); do
+            HEALTH=$(docker inspect meshcore-staging --format '{{.State.Health.Status}}' 2>/dev/null || echo "starting")
+            if [ "$HEALTH" = "healthy" ]; then
+              echo "Staging healthy after ${i}s"
               break
             fi
-            sleep 2
+            if [ "$i" -eq 30 ]; then
+              echo "Staging failed health check after 30s"
+              docker logs meshcore-staging --tail 50
+              exit 1
+            fi
+            sleep 1
           done
-          
-          echo "Deployed $(git rev-parse --short HEAD)"
+
+      - name: Smoke test staging
+        run: |
+          curl -f http://localhost:81/api/stats || exit 1
+          curl -f http://localhost:81/api/nodes || exit 1
+          echo "Staging smoke tests passed"
+
+      - name: Promotion instructions
+        run: |
+          echo "## Staging Deployed ✓" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** \`$(git rev-parse --short HEAD)\` — $(git log -1 --format=%s)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Staging URL:** http://<VM_HOST>:81" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "To promote to production:" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "ssh deploy@<VM_HOST>" >> $GITHUB_STEP_SUMMARY
+          echo "cd /opt/meshcore-deploy" >> $GITHUB_STEP_SUMMARY
+          echo "./manage.sh promote" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
