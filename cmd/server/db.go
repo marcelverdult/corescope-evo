@@ -175,9 +175,14 @@ func (db *DB) QueryPackets(q PacketQuery) (*PacketResult, error) {
 	}
 
 	var total int
-	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM packets_v %s", w)
-	if err := db.conn.QueryRow(countSQL, args...).Scan(&total); err != nil {
-		return nil, err
+	if len(where) == 0 {
+		// Fast path: no filters, use direct table count
+		db.conn.QueryRow("SELECT COUNT(*) FROM observations").Scan(&total)
+	} else {
+		countSQL := fmt.Sprintf("SELECT COUNT(*) FROM packets_v %s", w)
+		if err := db.conn.QueryRow(countSQL, args...).Scan(&total); err != nil {
+			return nil, err
+		}
 	}
 
 	querySQL := fmt.Sprintf("SELECT id, raw_hex, timestamp, observer_id, observer_name, direction, snr, rssi, score, hash, route_type, payload_type, payload_version, path_json, decoded_json, created_at FROM packets_v %s ORDER BY timestamp %s LIMIT ? OFFSET ?", w, q.Order)
