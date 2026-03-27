@@ -14,7 +14,23 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  go-build:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Build & test Go server
+        run: cd cmd/server && go build . && go test ./...
+
+      - name: Build & test Go ingestor
+        run: cd cmd/ingestor && go build . && go test ./...
+
   test:
+    needs: go-build
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
@@ -40,9 +56,8 @@ jobs:
           # If test files changed, run everything
           if [ "$TESTS" -gt 0 ]; then BACKEND=1; FRONTEND=1; fi
           echo "backend=$([[ $BACKEND -gt 0 ]] && echo true || echo false)" >> $GITHUB_OUTPUT
-          # Frontend coverage temporarily disabled — 169 blind sleeps = 13min CI
-          echo "frontend=false" >> $GITHUB_OUTPUT
-          echo "Changes: backend=$BACKEND frontend=$FRONTEND (coverage SKIPPED) tests=$TESTS ci=$CI"
+          echo "frontend=$([[ $FRONTEND -gt 0 ]] && echo true || echo false)" >> $GITHUB_OUTPUT
+          echo "Changes: backend=$BACKEND frontend=$FRONTEND tests=$TESTS ci=$CI"
 
       - name: Backend tests + coverage
         if: steps.changes.outputs.backend == 'true'
@@ -147,7 +162,7 @@ jobs:
           git diff --cached --quiet || (git commit -m "ci: update test badges [skip ci]" && git push) || echo "Badge push failed"
 
   deploy:
-    needs: test
+    needs: [go-build, test]
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4

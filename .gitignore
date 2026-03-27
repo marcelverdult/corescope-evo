@@ -20,3 +20,10 @@ public-instrumented/
 .squad/sessions/
 # Squad: SubSquad activation file (local to this machine)
 .squad-workstream
+# Temp scripts / build artifacts
+recover-delta.sh
+merge.sh
+replacements.txt
+reps.txt
+cmd/server/server.exe
+cmd/ingestor/ingestor.exe
