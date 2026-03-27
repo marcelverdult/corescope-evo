@@ -27,3 +27,4 @@ replacements.txt
 reps.txt
 cmd/server/server.exe
 cmd/ingestor/ingestor.exe
+# CI trigger
