@@ -179,6 +179,9 @@ func (p *Poller) Start() {
 				if newMax > lastID {
 					lastID = newMax
 				}
+				if len(newTxs) > 0 {
+					log.Printf("[broadcast] sending %d packets to %d clients (lastID now %d)", len(newTxs), p.hub.ClientCount(), lastID)
+				}
 				for _, tx := range newTxs {
 					p.hub.Broadcast(map[string]interface{}{
 						"type": "packet",

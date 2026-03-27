@@ -899,6 +899,8 @@ func (s *PacketStore) IngestNewFromDB(sinceID, limit int) ([]map[string]interfac
 		s.cacheMu.Unlock()
 	}
 
+	log.Printf("[poller] IngestNewFromDB: found %d new txs, maxID %d->%d", len(result), sinceID, newMaxID)
+
 	return result, newMaxID
 }
 
