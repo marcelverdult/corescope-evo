@@ -622,7 +622,7 @@ for (const source of mqttSources) {
       console.log(`MQTT [${tag}] connected to ${source.broker}`);
       const topics = Array.isArray(source.topics) ? source.topics : [source.topics || 'meshcore/#'];
       for (const t of topics) {
-        client.subscribe(t, (err) => {
+        client.subscribe(t, { qos: 0 }, (err) => {
           if (err) console.error(`MQTT [${tag}] subscribe error for ${t}:`, err);
           else console.log(`MQTT [${tag}] subscribed to ${t}`);
         });
