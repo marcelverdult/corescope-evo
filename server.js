@@ -963,7 +963,7 @@ app.get('/api/packets/:id', (req, res) => {
 
   // Include sibling observations for this transmission
   const transmission = packet.hash ? pktStore.byHash.get(packet.hash) : null;
-  const siblingObservations = transmission ? transmission.observations : [];
+  const siblingObservations = transmission ? pktStore.enrichObservations(transmission.observations) : [];
   const observation_count = transmission ? transmission.observation_count : 1;
 
   res.json({ packet, path: pathHops, breakdown, observation_count, observations: siblingObservations });
@@ -1303,9 +1303,10 @@ app.get('/api/analytics/rf', (req, res) => {
   const seenSizeHashes = new Set();
   const packetSizes = [];
   for (const p of allRegional) {
-    if (p.raw_hex && p.hash && !seenSizeHashes.has(p.hash)) {
+    const raw = p.raw_hex || (p.transmission_id ? (pktStore.byTxId.get(p.transmission_id) || {}).raw_hex : null);
+    if (raw && p.hash && !seenSizeHashes.has(p.hash)) {
       seenSizeHashes.add(p.hash);
-      packetSizes.push(p.raw_hex.length / 2);
+      packetSizes.push(raw.length / 2);
     }
   }
 
@@ -2293,7 +2294,7 @@ app.get('/api/observers/:id/analytics', (req, res) => {
   const id = req.params.id;
   const days = parseInt(req.query.days) || 7;
   const since = new Date(Date.now() - days * 86400000).toISOString();
-  const obsPackets = (pktStore.byObserver.get(id) || []).filter(p => p.timestamp >= since).sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+  const obsPackets = pktStore.enrichObservations((pktStore.byObserver.get(id) || []).filter(p => p.timestamp >= since)).sort((a, b) => b.timestamp.localeCompare(a.timestamp));
 
   // Timeline: packets per hour (last N days, bucketed)
   const bucketMs = days <= 1 ? 3600000 : days <= 7 ? 3600000 * 4 : 86400000;
