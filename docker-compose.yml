@@ -10,8 +10,8 @@ services:
       - "${PROD_HTTPS_PORT:-443}:${PROD_HTTPS_PORT:-443}"
       - "${PROD_MQTT_PORT:-1883}:1883"
     volumes:
-      - ${PROD_DATA_DIR:-~/meshcore-data}/config.json:/app/config.json:ro
-      - ${PROD_DATA_DIR:-~/meshcore-data}/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./config.json:/app/config.json:ro
+      - ./caddy-config/Caddyfile:/etc/caddy/Caddyfile:ro
       - ${PROD_DATA_DIR:-~/meshcore-data}:/app/data
       - caddy-data-prod:/data/caddy
     environment:
