@@ -15,3 +15,9 @@ User: User
   - **#130** (Bug: Disappearing nodes on live map) → Newt (⚛️). High severity, multiple Cascadia Mesh community reports. Likely status calculation or map filter bug. Nodes visible in static list but vanishing from live map.
   - **#129** (Feature: Packet comparison between observers) → Newt (⚛️). Feature request from letsmesh analyzer. Side-by-side packet filtering for two repeaters to diagnose repeater issues.
   - **#123** (Feature: Show channel hash on decrypt failure) → Hicks (🔧). Core contributor (lincomatic) request. Decoder needs to track why decrypt failed (no key vs. corruption) and expose channel hash + reason in API response.
+- **Massive session — 2026-03-27 (full day):**
+  - **#133 root cause (phantom nodes):** `autoLearnHopNodes()` creates stub nodes for unresolved hop prefixes (2-8 hex chars). Cascadia showed 7,308 nodes (6,638 repeaters) when real size ~200-400. With `hash_size=1`, collision rate high → infinite phantom generation.
+  - **DB merge decision:** Staging DB (185MB, 50K transmissions, 1.2M observations) is superset. Use as merge base. Transmissions dedup by hash (unique), observations all preserved (unique by observer), nodes/observers latest-wins + sum counts. 6-phase execution plan: pre-flight, backup, merge, deploy, validate, cleanup.
+  - **Coordination:** Assigned Hicks phantom cleanup (backend), Newt live page pruning (frontend), Hudson merge execution (DevOps).
+  - **Outcome:** All 4 triaged issues fixed (#131, #130, #129, #123), #133 (phantom nodes) fully resolved, #126 (ambiguous hop prefixes) fixed as bonus, database merged successfully (0 data loss, 2 min downtime, 51,723 tx + 1.237M obs), Go rewrite (MQTT ingestor + web server) completed and ready for staging.
+  - **Team expanded:** Hudson joined for DevOps work, Ripley joined as Support Engineer.

@@ -29,6 +29,9 @@ How to decide who handles what.
 | scripts/, coverage tooling | Hudson | Build scripts, coverage collector optimization |
 | Azure, VM, infrastructure | Hudson | az CLI, SSH, server provisioning, monitoring |
 | Production debugging, DB ops | Hudson | SQLite recovery, WAL issues, process diagnostics |
+| User questions, "why does X..." | Ripley | Community support, UI behavior explanations |
+| Bug report triage from users | Ripley | Analyze reports, reproduce, route to dev |
+| GitHub issue comments (support) | Ripley | Explain behavior, suggest workarounds |
 | README, docs/ | Kobayashi | Documentation updates |
 | Session logging | Scribe | Automatic — never needs routing |
 

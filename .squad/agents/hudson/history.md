@@ -484,3 +484,85 @@ On the production VM, `~/meshcore-data/` exists as the bind-mount path. The comp
 - Go ingestor LoadConfig() in cmd/ingestor/config.go supports MQTT_BROKER env var override (lines 51-62) replacing all configured sources with a single one
 - Use dedicated env var names (STAGING_GO_*) to avoid sharing port config between Node.js and Go staging services
 
+
+## Learnings - CI Pipeline Updates (2026-03-27)
+
+### Task: Add Go CI + Re-enable Frontend Coverage + Clean Temp Files
+**Requester:** Kpa-clawbot
+
+### Changes Made
+1. **Go build/test job added to deploy.yml** — new `go-build` job runs before `test` and `deploy` jobs. Uses actions/setup-go@v5 with Go 1.22. Builds and tests both `cmd/server` and `cmd/ingestor`. If Go tests fail, entire pipeline stops.
+2. **Frontend coverage re-enabled** — removed hardcoded `frontend=false` on line 44, replaced with dynamic detection based on changed files. The old comment noted "169 blind sleeps = 13min CI" as the reason it was disabled.
+3. **Temp files cleaned up** — deleted recover-delta.sh, merge.sh, replacements.txt, reps.txt, cmd/server/server.exe from repo root. Added all to .gitignore along with cmd/ingestor/ingestor.exe.
+
+### Pipeline Structure (after changes)
+`go-build` → `test` (Node.js) → `deploy` (Docker build + staging)
+
+### Key Decisions
+- Go build is a separate job (not a step in `test`) so it runs in parallel with checkout/npm-ci on the Node side
+- Deploy job depends on both `go-build` and `test` completing successfully
+- No Go coverage reporting yet — keeping it simple per task spec
+
+## Go Staging Auto-Deploy Added (2026-03-27 09:34 UTC)
+
+### Task: Add Go staging auto-deploy to CI pipeline
+**Requester:** Kpa-clawbot
+
+### What was done
+- Added "Deploy Go staging" step to deploy job in .github/workflows/deploy.yml
+- Step runs AFTER Node staging is healthy (port 81), builds Go Docker image, deploys on port 82
+- Uses continue-on-error: true so Go staging failures never block the Node.js pipeline
+- Health-checks Go container for up to 60s (Go starts fast), verifies /api/stats returns ngine field
+- Updated promotion instructions in job summary to show both Node and Go staging URLs
+
+### Key decisions
+- 60s health timeout (vs 300s for Node) — Go binary starts much faster than Node + SQLite load
+- Single step with continue-on-error rather than separate job — keeps deploy sequential and simple
+- Smoke test checks for ngine field specifically — confirms the Go engine is responding, not just any HTTP server
+
+---
+
+## Massive Session - 2026-03-27 (FULL DAY)
+
+### Database Merge Execution
+- **Status:** ✅ Complete, deployed to production
+- **Pre-merge verification:** Disk space confirmed, schemas both v3, counts captured
+- **Backup creation:** Timestamped /home/deploy/backups/pre-merge-20260327-071425/ with prod + staging DBs
+- **Merge execution:** Staging DB used as base (superset). Transmissions INSERT OR IGNORE by hash. Observations all unique. Nodes/observers latest-wins + sum counts.
+- **Results:** 51,723 tx + 1,237,186 obs merged. Hash uniqueness verified. Spot check passed.
+- **Deployment:** Docker Compose managed meshcore-prod (replaced old Docker volume approach). Load time 8,491ms. Memory 860MiB RSS (no NODE_OPTIONS needed — RAM fix proved effective).
+- **Health:** Healthy within 30s. External access via https://analyzer.00id.net ✅
+
+### Infrastructure Changes
+- deploy user SSH key + docker group re-added via Azure CLI
+- Old Docker volumes removed
+- NODE_OPTIONS hack removed (no longer needed post-RAM-fix)
+
+### Docker Compose Migration
+- **Volume paths unified:** caddy-data (prod), caddy-data-staging (staging)
+- **Data directories:** ~/meshcore-data (prod), ~/meshcore-staging-data (staging) via bind mounts
+- **Config files:** Separate config.prod.json, config.staging.json
+- **Caddyfile:** Separate Caddyfile.prod (HTTPS), Caddyfile.staging (HTTP :81)
+
+### Staging Environment Setup
+- **Data:** ~/meshcore-staging-data/ with copy of problematic DB (185MB) for debugging
+- **Purpose:** Debug corrupted WAL from 100% CPU incident
+- **MQTT:** Port 1884 (separate from prod 1883)
+- **HTTP:** Plaintext port 81 (no HTTPS)
+
+### CI Pipeline Updates
+- **Docker Compose v2 auto-check:** CI deploy job now auto-installs docker-compose-plugin if missing (self-healing per user directive)
+- **Staging auto-deploy:** Build image once, deploy staging auto on every master push. Health check via Docker Compose.
+- **Production manual:** No auto-restart of prod. Promotion via ./manage.sh promote (Hudson only).
+
+### Testing & Validation
+- ✅ docker-compose config validation
+- ✅ Service startup verification
+- ✅ Volume mount verification (data persistence)
+- ✅ Health check behavior (Docker Compose native)
+
+### Key Decisions Applied
+- Only Hudson touches prod infrastructure (user directive)
+- Go staging runs on port 82 (future phase)
+- Backups retained 7 days post-merge
+- Manual promotion flow (no auto-promotion to prod)

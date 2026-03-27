@@ -20,5 +20,6 @@
 | Newt | Frontend Dev | auto | ⚛️ |
 | Bishop | Tester | auto | 🧪 |
 | Hudson | DevOps Engineer | auto | ⚙️ |
+| Ripley | Support Engineer | auto | 🛟 |
 | Scribe | Session Logger | claude-haiku-4.5 | 📋 |
 | Ralph | Work Monitor | — | 🔄 |
