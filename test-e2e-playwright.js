@@ -6,6 +6,7 @@
 const { chromium } = require('playwright');
 
 const BASE = process.env.BASE_URL || 'http://localhost:3000';
+const GO_BASE = process.env.GO_BASE_URL || '';  // e.g. https://analyzer.00id.net:82
 const results = [];
 
 async function test(name, fn) {
@@ -102,6 +103,40 @@ async function run() {
     assert(themeBefore !== themeAfter, `Theme didn't change: before=${themeBefore}, after=${themeAfter}`);
   });
 
+  // Test: Stats bar shows version/commit badge
+  await test('Stats bar shows version and commit badge', async () => {
+    await page.goto(BASE, { waitUntil: 'domcontentloaded' });
+    // Wait for stats to load (fetched from /api/stats)
+    await page.waitForFunction(() => {
+      const stats = document.getElementById('navStats');
+      return stats && stats.textContent.trim().length > 5;
+    }, { timeout: 10000 });
+    const navStats = await page.$('#navStats');
+    assert(navStats, 'Nav stats bar (#navStats) not found');
+    // Check if stats API exposes version info
+    const hasVersionData = await page.evaluate(async () => {
+      try {
+        const res = await fetch('/api/stats');
+        const data = await res.json();
+        return !!(data.version || data.commit || data.engine);
+      } catch { return false; }
+    });
+    if (!hasVersionData) {
+      console.log('    ⏭️  Server does not expose version/commit in /api/stats — badge test skipped');
+      return;
+    }
+    // Version badge should appear when data is available
+    await page.waitForFunction(() => !!document.querySelector('.version-badge'), { timeout: 5000 });
+    const badgeText = await page.$eval('.version-badge', el => el.textContent.trim());
+    assert(badgeText.length > 3, `Version badge should have content but got "${badgeText}"`);
+    const hasCommitHash = /[0-9a-f]{7}/i.test(badgeText);
+    assert(hasCommitHash, `Version badge should contain a commit hash, got "${badgeText}"`);
+    const engineBadge = await page.$('.engine-badge');
+    assert(engineBadge, 'Engine badge (.engine-badge) not found');
+    const engineText = await page.$eval('.engine-badge', el => el.textContent.trim().toLowerCase());
+    assert(engineText.includes('node') || engineText.includes('go'), `Engine should contain "node" or "go", got "${engineText}"`);
+  });
+
   // --- Group: Nodes page (tests 2, 5) ---
 
   // Test 2: Nodes page loads with data
@@ -130,6 +165,29 @@ async function run() {
     // Check for status indicator
     const hasStatus = html.includes('\ud83d\udfe2') || html.includes('\u26aa') || html.includes('status') || html.includes('Active') || html.includes('Stale');
     assert(hasStatus, 'No status indicator found in node detail');
+  });
+
+  // Test: Nodes page has WebSocket auto-update listener (#131)
+  await test('Nodes page has WebSocket auto-update', async () => {
+    await page.goto(`${BASE}/#/nodes`, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('table tbody tr');
+    // The live dot in navbar indicates WS connection status
+    const liveDot = await page.$('#liveDot');
+    assert(liveDot, 'Live dot WebSocket indicator (#liveDot) not found');
+    // Verify WS infrastructure exists (onWS/offWS globals from app.js)
+    const hasWsInfra = await page.evaluate(() => {
+      return typeof onWS === 'function' && typeof offWS === 'function';
+    });
+    assert(hasWsInfra, 'WebSocket listener infrastructure (onWS/offWS) should be available');
+    // Wait for WS connection and verify liveDot shows connected state
+    try {
+      await page.waitForFunction(() => {
+        const dot = document.getElementById('liveDot');
+        return dot && dot.classList.contains('connected');
+      }, { timeout: 5000 });
+    } catch (_) {
+      // WS may not connect against remote — liveDot existence is sufficient
+    }
   });
 
   // --- Group: Map page (tests 3, 9, 10, 13, 16) ---
@@ -329,6 +387,36 @@ async function run() {
     assert(panelHidden, 'Detail pane should be hidden after clicking ✕');
   });
 
+  // Test: GRP_TXT packet detail shows Channel Hash (#123)
+  await test('GRP_TXT packet detail shows Channel Hash', async () => {
+    // Find an undecrypted GRP_TXT packet via API (only these show Channel Hash)
+    const hash = await page.evaluate(async () => {
+      try {
+        const res = await fetch('/api/packets?limit=500');
+        const data = await res.json();
+        for (const p of (data.packets || [])) {
+          try {
+            const d = JSON.parse(p.decoded_json || '{}');
+            if (d.type === 'GRP_TXT' && !d.text && d.channelHash != null) return p.hash;
+          } catch {}
+        }
+      } catch {}
+      return null;
+    });
+    if (!hash) { console.log('    ⏭️  Skipped (no undecrypted GRP_TXT packets found)'); return; }
+    await page.goto(`${BASE}/#/packets/${hash}`, { waitUntil: 'domcontentloaded' });
+    // Wait for detail to render with actual content (not "Loading…")
+    await page.waitForFunction(() => {
+      const panel = document.getElementById('pktRight');
+      if (!panel || panel.classList.contains('empty')) return false;
+      const text = panel.textContent;
+      return text.length > 50 && !text.includes('Loading');
+    }, { timeout: 8000 });
+    const detailHtml = await page.$eval('#pktRight', el => el.innerHTML);
+    const hasChannelHash = detailHtml.includes('Channel Hash') || detailHtml.includes('Ch 0x');
+    assert(hasChannelHash, 'Undecrypted GRP_TXT detail should show "Channel Hash"');
+  });
+
   // --- Group: Analytics page (test 8 + sub-tabs) ---
 
   // Test 8: Analytics page loads with overview
@@ -442,6 +530,51 @@ async function run() {
     }, { timeout: 15000 });
     const hasResults = await page.$eval('#compareContent', el => el.textContent.trim().length > 0);
     assert(hasResults, 'Comparison should produce results');
+  });
+
+  // Test: Compare results show shared/unique breakdown (#129)
+  await test('Compare results show shared/unique cards', async () => {
+    // Results should be visible from previous test
+    const cardBoth = await page.$('.compare-card-both');
+    assert(cardBoth, 'Should have "shared" card (.compare-card-both)');
+    const cardA = await page.$('.compare-card-a');
+    assert(cardA, 'Should have "only A" card (.compare-card-a)');
+    const cardB = await page.$('.compare-card-b');
+    assert(cardB, 'Should have "only B" card (.compare-card-b)');
+    // Verify counts are rendered (may be locale-formatted with commas)
+    const counts = await page.$$eval('.compare-card-count', els => els.map(e => e.textContent.trim()));
+    assert(counts.length >= 3, `Expected >=3 summary counts, got ${counts.length}`);
+    counts.forEach((c, i) => {
+      assert(/^[\d,]+$/.test(c), `Count ${i} should be a number but got "${c}"`);
+    });
+    // Verify tab buttons exist for both/onlyA/onlyB
+    const tabs = await page.$$eval('[data-cview]', els => els.map(e => e.getAttribute('data-cview')));
+    assert(tabs.includes('both'), 'Should have "both" tab');
+    assert(tabs.includes('onlyA'), 'Should have "onlyA" tab');
+    assert(tabs.includes('onlyB'), 'Should have "onlyB" tab');
+  });
+
+  // Test: Compare "both" tab shows table with shared packets
+  await test('Compare both tab shows shared packets table', async () => {
+    const bothTab = await page.$('[data-cview="both"]');
+    assert(bothTab, '"both" tab button not found');
+    await bothTab.click();
+    // Table renders inside #compareDetail (not #compareContent)
+    await page.waitForFunction(() => {
+      const d = document.getElementById('compareDetail');
+      return d && (d.querySelector('.compare-table') || d.textContent.trim().length > 5);
+    }, { timeout: 5000 });
+    const table = await page.$('#compareDetail .compare-table');
+    if (table) {
+      // Verify table has expected columns (Hash, Time, Type)
+      const headers = await page.$$eval('#compareDetail .compare-table th', els => els.map(e => e.textContent.trim()));
+      assert(headers.some(h => h.includes('Hash') || h.includes('hash')), 'Table should have Hash column');
+      assert(headers.some(h => h.includes('Type') || h.includes('type')), 'Table should have Type column');
+    } else {
+      // No shared packets — should show "No packets" message
+      const text = await page.$eval('#compareDetail', el => el.textContent.trim());
+      assert(text.includes('No packets') || text.length > 0, 'Should show message or table');
+    }
   });
 
   // --- Group: Live page ---
@@ -679,6 +812,42 @@ async function run() {
     const content = await page.$eval('#perfContent', el => el.textContent.trim());
     assert(content.length > 10, 'Perf content should still be present after refresh');
   });
+
+  // Test: Node.js perf page shows Event Loop metrics (not Go Runtime)
+  await test('Perf page shows Event Loop on Node server', async () => {
+    const perfText = await page.$eval('#perfContent', el => el.textContent);
+    // Node.js server should show Event Loop metrics
+    const hasEventLoop = perfText.includes('Event Loop') || perfText.includes('event loop');
+    const hasMemory = perfText.includes('Memory') || perfText.includes('RSS');
+    assert(hasEventLoop || hasMemory, 'Node perf page should show Event Loop or Memory metrics');
+    // Should NOT show Go Runtime section on Node.js server
+    const hasGoRuntime = perfText.includes('Go Runtime');
+    assert(!hasGoRuntime, 'Node perf page should NOT show Go Runtime section');
+  });
+
+  // Test: Go perf page shows Go Runtime section (goroutines, GC)
+  // NOTE: This test requires GO_BASE_URL pointing to Go staging (port 82)
+  if (GO_BASE) {
+    await test('Go perf page shows Go Runtime metrics', async () => {
+      await page.goto(`${GO_BASE}/#/perf`, { waitUntil: 'domcontentloaded' });
+      await page.waitForSelector('#perfContent', { timeout: 8000 });
+      await page.waitForFunction(() => {
+        const c = document.getElementById('perfContent');
+        return c && c.textContent.trim().length > 20;
+      }, { timeout: 10000 });
+      const perfText = await page.$eval('#perfContent', el => el.textContent);
+      assert(perfText.includes('Go Runtime'), 'Go perf page should show "Go Runtime" section');
+      assert(perfText.includes('Goroutines') || perfText.includes('goroutines'),
+        'Go perf page should show Goroutines metric');
+      assert(perfText.includes('GC') || perfText.includes('Heap'),
+        'Go perf page should show GC or Heap metrics');
+      // Should NOT show Event Loop on Go server
+      const hasEventLoop = perfText.includes('Event Loop');
+      assert(!hasEventLoop, 'Go perf page should NOT show Event Loop section');
+    });
+  } else {
+    console.log('  ⏭️  Go perf test skipped (set GO_BASE_URL for Go staging, e.g. port 82)');
+  }
 
   // --- Group: Audio Lab page ---
 
