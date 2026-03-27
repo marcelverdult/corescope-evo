@@ -1722,3 +1722,108 @@ tr[data-hops]:hover { background: rgba(59,130,246,0.1); }
 .packet-filter-input:focus { border-color: var(--accent); outline: none; }
 .packet-filter-input.filter-error { border-color: var(--status-red); }
 .packet-filter-input.filter-active { border-color: var(--status-green); }
+
+/* === Observer Comparison (#/compare) === */
+.compare-controls { margin-bottom: 20px; }
+.compare-selector {
+  display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap;
+}
+.compare-select-group { display: flex; flex-direction: column; gap: 4px; }
+.compare-select-group label {
+  font-size: 12px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.3px; color: var(--text-muted);
+}
+.compare-select {
+  padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--input-bg); color: var(--text); font-size: 14px;
+  min-width: 220px; cursor: pointer;
+}
+.compare-select:focus { border-color: var(--accent); outline: none; }
+.compare-vs {
+  font-size: 18px; font-weight: 700; color: var(--text-muted);
+  padding-bottom: 6px;
+}
+.compare-btn {
+  padding: 8px 20px; border: none; border-radius: 6px;
+  background: var(--accent); color: #fff; font-size: 14px; font-weight: 600;
+  cursor: pointer; transition: background 0.15s;
+}
+.compare-btn:hover:not(:disabled) { background: var(--accent-hover); }
+.compare-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.compare-results { margin-top: 16px; }
+
+.compare-summary {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px; margin-bottom: 16px;
+}
+.compare-card {
+  padding: 16px; border-radius: 8px; text-align: center; cursor: pointer;
+  border: 2px solid transparent; transition: border-color 0.15s, transform 0.1s;
+}
+.compare-card:hover { transform: translateY(-2px); }
+.compare-card-count { font-size: 28px; font-weight: 700; }
+.compare-card-label { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+.compare-card-pct { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+.compare-card-both {
+  background: rgba(34, 197, 94, 0.1); border-color: rgba(34, 197, 94, 0.3);
+}
+.compare-card-both .compare-card-count { color: var(--status-green); }
+
+.compare-card-a {
+  background: rgba(74, 158, 255, 0.1); border-color: rgba(74, 158, 255, 0.3);
+}
+.compare-card-a .compare-card-count { color: var(--accent); }
+
+.compare-card-b {
+  background: rgba(255, 107, 107, 0.1); border-color: rgba(255, 107, 107, 0.3);
+}
+.compare-card-b .compare-card-count { color: var(--status-red); }
+
+/* Comparison bar */
+.compare-bar-container { margin-bottom: 16px; }
+.compare-bar {
+  display: flex; height: 24px; border-radius: 6px; overflow: hidden;
+  background: var(--border);
+}
+.compare-bar-seg { transition: width 0.3s ease; }
+.compare-bar-a { background: var(--accent); }
+.compare-bar-both { background: var(--status-green); }
+.compare-bar-b { background: var(--status-red); }
+
+.compare-bar-legend {
+  display: flex; gap: 16px; margin-top: 8px; font-size: 12px;
+  color: var(--text-muted);
+}
+.compare-legend-item { display: flex; align-items: center; gap: 4px; }
+.compare-dot {
+  width: 10px; height: 10px; border-radius: 50%; display: inline-block;
+}
+.compare-dot-a { background: var(--accent); }
+.compare-dot-both { background: var(--status-green); }
+.compare-dot-b { background: var(--status-red); }
+
+.compare-type-summary {
+  margin-bottom: 16px; font-size: 13px; color: var(--text);
+}
+.compare-type-badge {
+  display: inline-block; padding: 2px 8px; margin: 2px;
+  border-radius: var(--badge-radius); background: var(--surface-0);
+  font-size: 12px; color: var(--text-muted);
+}
+
+.compare-tabs { display: flex; gap: 4px; margin-bottom: 12px; flex-wrap: wrap; }
+
+.compare-summary-text { padding: 12px 0; font-size: 14px; line-height: 1.6; }
+.compare-summary-text p { margin: 0 0 8px; }
+.compare-warning { color: var(--status-yellow); font-weight: 600; }
+.compare-good { color: var(--status-green); font-weight: 600; }
+
+.compare-table { font-size: 13px; }
+
+@media (max-width: 640px) {
+  .compare-selector { flex-direction: column; align-items: stretch; }
+  .compare-select { min-width: auto; width: 100%; }
+  .compare-summary { grid-template-columns: 1fr; }
+}

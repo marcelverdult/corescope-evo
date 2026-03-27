@@ -901,6 +901,118 @@ console.log('\n=== nodes.js: loadNodes refreshOnly =====');
   });
 }
 
+// ===== COMPARE.JS TESTS =====
+console.log('\n=== compare.js: comparePacketSets ===');
+{
+  const ctx = makeSandbox();
+  loadInCtx(ctx, 'public/roles.js');
+  loadInCtx(ctx, 'public/app.js');
+  loadInCtx(ctx, 'public/compare.js');
+  const cmp = ctx.comparePacketSets;
+
+  test('both empty sets', () => {
+    const r = cmp([], []);
+    assert.strictEqual(r.onlyA.length, 0);
+    assert.strictEqual(r.onlyB.length, 0);
+    assert.strictEqual(r.both.length, 0);
+  });
+
+  test('A has items, B empty', () => {
+    const r = cmp(['h1', 'h2'], []);
+    assert.strictEqual(r.onlyA.length, 2);
+    assert.ok(r.onlyA.includes('h1'));
+    assert.ok(r.onlyA.includes('h2'));
+    assert.strictEqual(r.onlyB.length, 0);
+    assert.strictEqual(r.both.length, 0);
+  });
+
+  test('A empty, B has items', () => {
+    const r = cmp([], ['h3', 'h4']);
+    assert.strictEqual(r.onlyA.length, 0);
+    assert.strictEqual(r.onlyB.length, 2);
+    assert.ok(r.onlyB.includes('h3'));
+    assert.ok(r.onlyB.includes('h4'));
+    assert.strictEqual(r.both.length, 0);
+  });
+
+  test('complete overlap', () => {
+    const r = cmp(['h1', 'h2', 'h3'], ['h1', 'h2', 'h3']);
+    assert.strictEqual(r.onlyA.length, 0);
+    assert.strictEqual(r.onlyB.length, 0);
+    assert.strictEqual(r.both.length, 3);
+    assert.ok(r.both.includes('h1'));
+    assert.ok(r.both.includes('h2'));
+    assert.ok(r.both.includes('h3'));
+  });
+
+  test('no overlap', () => {
+    const r = cmp(['h1', 'h2'], ['h3', 'h4']);
+    assert.strictEqual(r.onlyA.length, 2);
+    assert.strictEqual(r.onlyB.length, 2);
+    assert.strictEqual(r.both.length, 0);
+  });
+
+  test('partial overlap', () => {
+    const r = cmp(['h1', 'h2', 'h3'], ['h2', 'h3', 'h4']);
+    assert.strictEqual(r.onlyA.length, 1);
+    assert.ok(r.onlyA.includes('h1'));
+    assert.strictEqual(r.onlyB.length, 1);
+    assert.ok(r.onlyB.includes('h4'));
+    assert.strictEqual(r.both.length, 2);
+    assert.ok(r.both.includes('h2'));
+    assert.ok(r.both.includes('h3'));
+  });
+
+  test('accepts Set inputs', () => {
+    const r = cmp(new Set(['a', 'b', 'c']), new Set(['b', 'c', 'd']));
+    assert.strictEqual(r.onlyA.length, 1);
+    assert.ok(r.onlyA.includes('a'));
+    assert.strictEqual(r.onlyB.length, 1);
+    assert.ok(r.onlyB.includes('d'));
+    assert.strictEqual(r.both.length, 2);
+  });
+
+  test('handles null/undefined gracefully', () => {
+    const r = cmp(null, undefined);
+    assert.strictEqual(r.onlyA.length, 0);
+    assert.strictEqual(r.onlyB.length, 0);
+    assert.strictEqual(r.both.length, 0);
+  });
+
+  test('handles duplicates in input arrays', () => {
+    const r = cmp(['h1', 'h1', 'h2'], ['h2', 'h2', 'h3']);
+    assert.strictEqual(r.onlyA.length, 1);
+    assert.ok(r.onlyA.includes('h1'));
+    assert.strictEqual(r.onlyB.length, 1);
+    assert.ok(r.onlyB.includes('h3'));
+    assert.strictEqual(r.both.length, 1);
+    assert.ok(r.both.includes('h2'));
+  });
+
+  test('large set performance (10K hashes)', () => {
+    const a = []; const b = [];
+    for (var i = 0; i < 10000; i++) {
+      a.push('hash_' + i);
+      if (i % 2 === 0) b.push('hash_' + i);
+    }
+    b.push('unique_b');
+    const t0 = Date.now();
+    const r = cmp(a, b);
+    const elapsed = Date.now() - t0;
+    assert.strictEqual(r.both.length, 5000, 'should have 5000 shared hashes');
+    assert.strictEqual(r.onlyA.length, 5000, 'should have 5000 A-only hashes');
+    assert.strictEqual(r.onlyB.length, 1, 'should have 1 B-only hash');
+    assert.ok(elapsed < 500, 'should complete in under 500ms, took ' + elapsed + 'ms');
+  });
+
+  test('total = onlyA + onlyB + both', () => {
+    const r = cmp(['a', 'b', 'c', 'd'], ['c', 'd', 'e', 'f', 'g']);
+    const total = r.onlyA.length + r.onlyB.length + r.both.length;
+    const uniqueAll = new Set([...['a', 'b', 'c', 'd'], ...['c', 'd', 'e', 'f', 'g']]);
+    assert.strictEqual(total, uniqueAll.size, 'total should equal number of unique hashes');
+  });
+}
+
 // ===== SUMMARY =====
 console.log(`\n${'═'.repeat(40)}`);
 console.log(`  Frontend helpers: ${passed} passed, ${failed} failed`);

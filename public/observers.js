@@ -12,6 +12,7 @@
       <div class="observers-page">
         <div class="page-header">
           <h2>Observer Status</h2>
+          <a href="#/compare" class="btn-icon" title="Compare observers" aria-label="Compare observers" style="text-decoration:none">🔍</a>
           <button class="btn-icon" data-action="obs-refresh" title="Refresh" aria-label="Refresh observers">🔄</button>
         </div>
         <div id="obsRegionFilter" class="region-filter-container"></div>
