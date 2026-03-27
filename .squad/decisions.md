@@ -2,6 +2,16 @@
 
 ## Active Decisions
 
+### 2026-03-27T22:00:00Z: Proto fixture capture in CI
+**By:** Copilot (User directive)
+**What:** Proto fixture capture in CI should run against prod (the stable reference), not staging. Staging may have broken code. Prod is known-good.
+**Why:** Ensures fixture definitions are derived from a stable, known-good API contract. Prevents broken staging deployments from breaking proto contracts.
+
+### 2026-03-27T20:56:00Z: Architecture decision — Protobuf API contract
+**By:** Copilot (Architecture decision)
+**What:** All frontend/backend interfaces get protobuf definitions as the single source of truth. Go generates structs with JSON tags from protos. Node stays unchanged — protos are derived FROM Node's current JSON shapes. Proto definitions MUST use inheritance and composition (no repeating field definitions). Data flow: SQLite → proto struct → JSON. JSON blobs from DB deserialize against proto structs for validation.
+**Why:** Eliminates the endless parity bugs between Node and Go. Compiler-enforced contract instead of agent-verified field matching. DRY — shared message types composed, not duplicated.
+
 ### 2026-03-27T02:18:00Z: Infrastructure connection details
 **By:** Squad Coordinator (capturing session discoveries)
 **What:** Production VM connection details established this session:
