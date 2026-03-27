@@ -503,6 +503,197 @@ console.log('\n=== roles.js: copyToClipboard ===');
   });
 }
 
+// ===== LIVE.JS: pruneStaleNodes =====
+console.log('\n=== live.js: pruneStaleNodes ===');
+{
+  function makeLiveSandbox() {
+    const ctx = makeSandbox();
+    // Leaflet mock
+    const removedLayers = [];
+    ctx.L = {
+      circleMarker: () => {
+        const m = {
+          addTo: function() { return m; },
+          bindTooltip: function() { return m; },
+          on: function() { return m; },
+          setRadius: function() {},
+          setStyle: function() {},
+          setLatLng: function() {},
+          getLatLng: function() { return { lat: 0, lng: 0 }; },
+          _baseColor: '', _baseSize: 5, _glowMarker: null,
+        };
+        return m;
+      },
+      polyline: () => {
+        const p = { addTo: function() { return p; }, setStyle: function() {}, remove: function() {} };
+        return p;
+      },
+      map: () => {
+        const m = {
+          setView: function() { return m; }, addLayer: function() { return m; },
+          on: function() { return m; }, getZoom: function() { return 11; },
+          getCenter: function() { return { lat: 37, lng: -122 }; },
+          getBounds: function() { return { contains: () => true }; },
+          fitBounds: function() { return m; }, invalidateSize: function() {},
+          remove: function() {}, hasLayer: function() { return false; },
+        };
+        return m;
+      },
+      layerGroup: () => {
+        const g = {
+          addTo: function() { return g; }, addLayer: function() {},
+          removeLayer: function(l) { removedLayers.push(l); },
+          clearLayers: function() {}, hasLayer: function() { return true; },
+          eachLayer: function() {},
+        };
+        return g;
+      },
+      tileLayer: () => ({ addTo: function() { return this; } }),
+      control: { attribution: () => ({ addTo: function() {} }) },
+      DomUtil: { addClass: function() {}, removeClass: function() {} },
+    };
+    ctx.getComputedStyle = () => ({ getPropertyValue: () => '' });
+    ctx.matchMedia = () => ({ matches: false, addEventListener: () => {} });
+    ctx.registerPage = () => {};
+    ctx.onWS = () => {};
+    ctx.offWS = () => {};
+    ctx.connectWS = () => {};
+    ctx.api = () => Promise.resolve([]);
+    ctx.invalidateApiCache = () => {};
+    ctx.favStar = () => '';
+    ctx.bindFavStars = () => {};
+    ctx.getFavorites = () => [];
+    ctx.isFavorite = () => false;
+    ctx.HopResolver = { init: () => {}, resolve: () => ({}), ready: () => false };
+    ctx.MeshAudio = null;
+    ctx.RegionFilter = { init: () => {}, getSelected: () => null, onRegionChange: () => {} };
+    ctx.WebSocket = function() { this.close = () => {}; };
+    ctx.navigator = {};
+    ctx.visualViewport = null;
+    ctx.document.documentElement = { getAttribute: () => null, setAttribute: () => {} };
+    ctx.document.body = { appendChild: () => {}, removeChild: () => {}, contains: () => false };
+    ctx.document.querySelector = () => null;
+    ctx.document.querySelectorAll = () => [];
+    ctx.document.createElementNS = () => ctx.document.createElement();
+    ctx.cancelAnimationFrame = () => {};
+    ctx.IATA_COORDS_GEO = {};
+
+    loadInCtx(ctx, 'public/roles.js');
+    try {
+      loadInCtx(ctx, 'public/live.js');
+    } catch (e) {
+      // live.js may have non-critical load errors in sandbox
+      for (const k of Object.keys(ctx.window)) ctx[k] = ctx.window[k];
+    }
+    return { ctx, removedLayers };
+  }
+
+  test('pruneStaleNodes removes nodes older than silentMs threshold', () => {
+    const { ctx, removedLayers } = makeLiveSandbox();
+    const prune = ctx.window._livePruneStaleNodes;
+    const getMarkers = ctx.window._liveNodeMarkers;
+    const getData = ctx.window._liveNodeData;
+    assert.ok(prune, '_livePruneStaleNodes must be exposed');
+    assert.ok(getMarkers, '_liveNodeMarkers must be exposed');
+    assert.ok(getData, '_liveNodeData must be exposed');
+
+    const markers = getMarkers();
+    const data = getData();
+
+    // Inject a companion node last seen 48 hours ago (exceeds nodeSilentMs=24h)
+    markers['staleKey'] = { _glowMarker: null };
+    data['staleKey'] = { public_key: 'staleKey', role: 'companion', _liveSeen: Date.now() - 48 * 3600000 };
+
+    // Inject an active companion seen just now
+    markers['freshKey'] = { _glowMarker: null };
+    data['freshKey'] = { public_key: 'freshKey', role: 'companion', _liveSeen: Date.now() };
+
+    prune();
+
+    assert.ok(!markers['staleKey'], 'stale companion should be pruned');
+    assert.ok(!data['staleKey'], 'stale companion data should be pruned');
+    assert.ok(markers['freshKey'], 'fresh companion should remain');
+    assert.ok(data['freshKey'], 'fresh companion data should remain');
+  });
+
+  test('pruneStaleNodes uses longer threshold for infrastructure roles', () => {
+    const { ctx } = makeLiveSandbox();
+    const prune = ctx.window._livePruneStaleNodes;
+    const markers = ctx.window._liveNodeMarkers();
+    const data = ctx.window._liveNodeData();
+
+    // A repeater seen 48h ago should NOT be pruned (infraSilentMs = 72h)
+    markers['rpt1'] = { _glowMarker: null };
+    data['rpt1'] = { public_key: 'rpt1', role: 'repeater', _liveSeen: Date.now() - 48 * 3600000 };
+
+    // A repeater seen 96h ago SHOULD be pruned
+    markers['rpt2'] = { _glowMarker: null };
+    data['rpt2'] = { public_key: 'rpt2', role: 'repeater', _liveSeen: Date.now() - 96 * 3600000 };
+
+    prune();
+
+    assert.ok(markers['rpt1'], 'repeater at 48h should remain (under 72h threshold)');
+    assert.ok(data['rpt1'], 'repeater data at 48h should remain');
+    assert.ok(!markers['rpt2'], 'repeater at 96h should be pruned (over 72h threshold)');
+    assert.ok(!data['rpt2'], 'repeater data at 96h should be pruned');
+  });
+
+  test('node count does not grow unbounded with repeated ADVERTs', () => {
+    const { ctx } = makeLiveSandbox();
+    const prune = ctx.window._livePruneStaleNodes;
+    const markers = ctx.window._liveNodeMarkers();
+    const data = ctx.window._liveNodeData();
+
+    // Simulate 500 nodes added over time, most now stale
+    for (var i = 0; i < 500; i++) {
+      var key = 'node' + i;
+      markers[key] = { _glowMarker: null };
+      // First 400 are old (stale), last 100 are fresh
+      var age = i < 400 ? 48 * 3600000 : 0;
+      data[key] = { public_key: key, role: 'companion', _liveSeen: Date.now() - age };
+    }
+
+    assert.strictEqual(Object.keys(markers).length, 500, 'should start with 500 nodes');
+    prune();
+    assert.strictEqual(Object.keys(markers).length, 100, 'should have pruned down to 100 active nodes');
+    assert.strictEqual(Object.keys(data).length, 100, 'nodeData should match');
+  });
+
+  test('pruneStaleNodes skips nodes with no timestamp', () => {
+    const { ctx } = makeLiveSandbox();
+    const prune = ctx.window._livePruneStaleNodes;
+    const markers = ctx.window._liveNodeMarkers();
+    const data = ctx.window._liveNodeData();
+
+    markers['noTs'] = { _glowMarker: null };
+    data['noTs'] = { public_key: 'noTs', role: 'companion' };
+
+    prune();
+
+    assert.ok(markers['noTs'], 'node with no timestamp should not be pruned');
+  });
+
+  test('pruneStaleNodes uses last_heard as fallback for _liveSeen', () => {
+    const { ctx } = makeLiveSandbox();
+    const prune = ctx.window._livePruneStaleNodes;
+    const markers = ctx.window._liveNodeMarkers();
+    const data = ctx.window._liveNodeData();
+
+    // Node with last_heard (from API) but no _liveSeen — stale
+    markers['apiOld'] = { _glowMarker: null };
+    data['apiOld'] = { public_key: 'apiOld', role: 'companion', last_heard: new Date(Date.now() - 48 * 3600000).toISOString() };
+
+    // Node with last_heard — fresh
+    markers['apiFresh'] = { _glowMarker: null };
+    data['apiFresh'] = { public_key: 'apiFresh', role: 'companion', last_heard: new Date().toISOString() };
+
+    prune();
+
+    assert.ok(!markers['apiOld'], 'API node with stale last_heard should be pruned');
+    assert.ok(markers['apiFresh'], 'API node with fresh last_heard should remain');
+  });
+}
+
 // ===== SUMMARY =====
 console.log(`\n${'═'.repeat(40)}`);
 console.log(`  Frontend helpers: ${passed} passed, ${failed} failed`);

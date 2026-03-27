@@ -24,6 +24,7 @@
   let _timelineRefreshInterval = null;
   let _lcdClockInterval = null;
   let _rateCounterInterval = null;
+  let _pruneInterval = null;
 
   // === VCR State Machine ===
   const VCR = {
@@ -1088,6 +1089,9 @@
       if (VCR.mode === 'LIVE') updateVCRClock(Date.now());
     }, 1000);
 
+    // Prune stale nodes every 60 seconds
+    _pruneInterval = setInterval(pruneStaleNodes, 60000);
+
     // Auto-hide nav with pin toggle (#62)
     const topNav = document.querySelector('.top-nav');
     if (topNav) { topNav.style.position = 'fixed'; topNav.style.width = '100%'; topNav.style.zIndex = '1100'; }
@@ -1269,8 +1273,10 @@
       const resp = await fetch(url);
       const nodes = await resp.json();
       const list = Array.isArray(nodes) ? nodes : (nodes.nodes || []);
+      var now = Date.now();
       list.forEach(n => {
         if (n.lat != null && n.lon != null && !(n.lat === 0 && n.lon === 0)) {
+          n._liveSeen = now;
           nodeData[n.public_key] = n;
           addNodeMarker(n);
         }
@@ -1461,6 +1467,41 @@
     }
   }
 
+  // Prune nodes not seen within their role's health threshold
+  function pruneStaleNodes() {
+    var now = Date.now();
+    var pruned = false;
+    for (var key in nodeMarkers) {
+      var n = nodeData[key];
+      if (!n) continue;
+      var lastSeen = n._liveSeen || (n.last_heard ? new Date(n.last_heard).getTime() : null) || (n.last_seen ? new Date(n.last_seen).getTime() : null);
+      if (lastSeen == null) continue;
+      var status = window.getNodeStatus ? getNodeStatus(n.role || 'unknown', lastSeen) : 'active';
+      if (status === 'stale') {
+        var marker = nodeMarkers[key];
+        if (marker) {
+          if (nodesLayer) {
+            try { nodesLayer.removeLayer(marker); } catch (e) {}
+            if (marker._glowMarker) try { nodesLayer.removeLayer(marker._glowMarker); } catch (e) {}
+          }
+        }
+        delete nodeMarkers[key];
+        delete nodeData[key];
+        pruned = true;
+      }
+    }
+    if (pruned) {
+      var _el2 = document.getElementById('liveNodeCount');
+      if (_el2) _el2.textContent = Object.keys(nodeMarkers).length;
+      if (window.HopResolver) HopResolver.init(Object.values(nodeData));
+    }
+  }
+
+  // Expose for testing
+  window._livePruneStaleNodes = pruneStaleNodes;
+  window._liveNodeMarkers = function() { return nodeMarkers; };
+  window._liveNodeData = function() { return nodeData; };
+
   async function replayRecent() {
     try {
       const resp = await fetch('/api/packets?limit=8&groupByHash=true');
@@ -1560,10 +1601,12 @@
       if (h.payloadTypeName === 'ADVERT' && p.pubKey) {
         var key = p.pubKey;
         if (!nodeMarkers[key] && p.lat != null && p.lon != null && !(p.lat === 0 && p.lon === 0)) {
-          var n = { public_key: key, name: p.name || key.slice(0,8), role: p.role || 'unknown', lat: p.lat, lon: p.lon };
+          var n = { public_key: key, name: p.name || key.slice(0,8), role: p.role || 'unknown', lat: p.lat, lon: p.lon, _liveSeen: Date.now() };
           nodeData[key] = n;
           addNodeMarker(n);
           if (window.HopResolver) HopResolver.init(Object.values(nodeData));
+        } else if (nodeData[key]) {
+          nodeData[key]._liveSeen = Date.now();
         }
       }
     }
@@ -2344,6 +2387,7 @@
     if (_timelineRefreshInterval) { clearInterval(_timelineRefreshInterval); _timelineRefreshInterval = null; }
     if (_lcdClockInterval) { clearInterval(_lcdClockInterval); _lcdClockInterval = null; }
     if (_rateCounterInterval) { clearInterval(_rateCounterInterval); _rateCounterInterval = null; }
+    if (_pruneInterval) { clearInterval(_pruneInterval); _pruneInterval = null; }
     if (ws) { ws.onclose = null; ws.close(); ws = null; }
     if (map) { map.remove(); map = null; }
     if (_onResize) {
