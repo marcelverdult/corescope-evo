@@ -271,6 +271,59 @@ func (db *DB) GetDBSizeStats() map[string]interface{} {
 	return result
 }
 
+// GetDBSizeStatsTyped returns SQLite file sizes and row counts as a typed struct.
+func (db *DB) GetDBSizeStatsTyped() SqliteStats {
+	result := SqliteStats{}
+
+	if db.path != "" && db.path != ":memory:" {
+		if info, err := os.Stat(db.path); err == nil {
+			result.DbSizeMB = math.Round(float64(info.Size())/1048576*10) / 10
+		}
+	}
+
+	if db.path != "" && db.path != ":memory:" {
+		if info, err := os.Stat(db.path + "-wal"); err == nil {
+			result.WalSizeMB = math.Round(float64(info.Size())/1048576*10) / 10
+		}
+	}
+
+	var pageSize, freelistCount int64
+	db.conn.QueryRow("PRAGMA page_size").Scan(&pageSize)
+	db.conn.QueryRow("PRAGMA freelist_count").Scan(&freelistCount)
+	result.FreelistMB = math.Round(float64(pageSize*freelistCount)/1048576*10) / 10
+
+	var walBusy, walLog, walCheckpointed int
+	err := db.conn.QueryRow("PRAGMA wal_checkpoint(PASSIVE)").Scan(&walBusy, &walLog, &walCheckpointed)
+	if err == nil {
+		result.WalPages = &WalPages{
+			Total:        walLog,
+			Checkpointed: walCheckpointed,
+			Busy:         walBusy,
+		}
+	} else {
+		result.WalPages = &WalPages{}
+	}
+
+	rows := &SqliteRowCounts{}
+	for _, table := range []string{"transmissions", "observations", "nodes", "observers"} {
+		var count int
+		db.conn.QueryRow("SELECT COUNT(*) FROM " + table).Scan(&count)
+		switch table {
+		case "transmissions":
+			rows.Transmissions = count
+		case "observations":
+			rows.Observations = count
+		case "nodes":
+			rows.Nodes = count
+		case "observers":
+			rows.Observers = count
+		}
+	}
+	result.Rows = rows
+
+	return result
+}
+
 // GetRoleCounts returns count per role (7-day active, matching Node.js /api/stats).
 func (db *DB) GetRoleCounts() map[string]int {
 	sevenDaysAgo := time.Now().Add(-7 * 24 * time.Hour).Format(time.RFC3339)

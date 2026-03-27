@@ -183,9 +183,9 @@ func (p *Poller) Start() {
 					log.Printf("[broadcast] sending %d packets to %d clients (lastID now %d)", len(newTxs), p.hub.ClientCount(), lastID)
 				}
 				for _, tx := range newTxs {
-					p.hub.Broadcast(map[string]interface{}{
-						"type": "packet",
-						"data": tx,
+					p.hub.Broadcast(WSMessage{
+						Type: "packet",
+						Data: tx,
 					})
 				}
 			} else {
@@ -206,9 +206,9 @@ func (p *Poller) Start() {
 						pkt[k] = v
 					}
 					tx["packet"] = pkt
-					p.hub.Broadcast(map[string]interface{}{
-						"type": "packet",
-						"data": tx,
+					p.hub.Broadcast(WSMessage{
+						Type: "packet",
+						Data: tx,
 					})
 				}
 			}

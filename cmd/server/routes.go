@@ -33,7 +33,7 @@ type PerfStats struct {
 	Requests    int64
 	TotalMs     float64
 	Endpoints   map[string]*EndpointPerf
-	SlowQueries []map[string]interface{}
+	SlowQueries []SlowQuery
 	StartedAt   time.Time
 }
 
@@ -47,7 +47,7 @@ type EndpointPerf struct {
 func NewPerfStats() *PerfStats {
 	return &PerfStats{
 		Endpoints:   make(map[string]*EndpointPerf),
-		SlowQueries: make([]map[string]interface{}, 0),
+		SlowQueries: make([]SlowQuery, 0),
 		StartedAt:   time.Now(),
 	}
 }
@@ -152,9 +152,11 @@ func (s *Server) perfMiddleware(next http.Handler) http.Handler {
 			ep.Recent = ep.Recent[1:]
 		}
 		if ms > 100 {
-			slow := map[string]interface{}{
-				"path": r.URL.Path, "ms": round(ms, 1),
-				"time": time.Now().UTC().Format(time.RFC3339), "status": 200,
+			slow := SlowQuery{
+				Path:   r.URL.Path,
+				Ms:     round(ms, 1),
+				Time:   time.Now().UTC().Format(time.RFC3339),
+				Status: 200,
 			}
 			s.perfStats.SlowQueries = append(s.perfStats.SlowQueries, slow)
 			if len(s.perfStats.SlowQueries) > 50 {
@@ -171,23 +173,23 @@ func (s *Server) handleConfigCache(w http.ResponseWriter, r *http.Request) {
 	if ct == nil {
 		ct = map[string]interface{}{}
 	}
-	writeJSON(w, ct)
+	writeJSON(w, ct) // CacheTTL is user-provided opaque config — map is appropriate
 }
 
 func (s *Server) handleConfigClient(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, map[string]interface{}{
-		"roles":              s.cfg.Roles,
-		"healthThresholds":   s.cfg.HealthThresholds,
-		"tiles":              s.cfg.Tiles,
-		"snrThresholds":      s.cfg.SnrThresholds,
-		"distThresholds":     s.cfg.DistThresholds,
-		"maxHopDist":         s.cfg.MaxHopDist,
-		"limits":             s.cfg.Limits,
-		"perfSlowMs":         s.cfg.PerfSlowMs,
-		"wsReconnectMs":      s.cfg.WsReconnectMs,
-		"cacheInvalidateMs":  s.cfg.CacheInvalidMs,
-		"externalUrls":       s.cfg.ExternalUrls,
-		"propagationBufferMs": s.cfg.PropagationBufferMs(),
+	writeJSON(w, ClientConfigResponse{
+		Roles:               s.cfg.Roles,
+		HealthThresholds:    s.cfg.HealthThresholds,
+		Tiles:               s.cfg.Tiles,
+		SnrThresholds:       s.cfg.SnrThresholds,
+		DistThresholds:      s.cfg.DistThresholds,
+		MaxHopDist:          s.cfg.MaxHopDist,
+		Limits:              s.cfg.Limits,
+		PerfSlowMs:          s.cfg.PerfSlowMs,
+		WsReconnectMs:       s.cfg.WsReconnectMs,
+		CacheInvalidateMs:   s.cfg.CacheInvalidMs,
+		ExternalUrls:        s.cfg.ExternalUrls,
+		PropagationBufferMs: float64(s.cfg.PropagationBufferMs()),
 	})
 }
 
@@ -238,13 +240,13 @@ func (s *Server) handleConfigTheme(w http.ResponseWriter, r *http.Request) {
 		home = s.cfg.Home
 	}
 
-	writeJSON(w, map[string]interface{}{
-		"branding":   branding,
-		"theme":      themeColors,
-		"themeDark":  themeDark,
-		"nodeColors": nodeColors,
-		"typeColors": typeColors,
-		"home":       home,
+	writeJSON(w, ThemeResponse{
+		Branding:   branding,
+		Theme:      themeColors,
+		ThemeDark:  themeDark,
+		NodeColors: nodeColors,
+		TypeColors: typeColors,
+		Home:       home,
 	})
 }
 
@@ -257,7 +259,7 @@ func (s *Server) handleConfigMap(w http.ResponseWriter, r *http.Request) {
 	if zoom == 0 {
 		zoom = 9
 	}
-	writeJSON(w, map[string]interface{}{"center": center, "zoom": zoom})
+	writeJSON(w, MapConfigResponse{Center: center, Zoom: zoom})
 }
 
 // --- System Handlers ---
@@ -276,30 +278,15 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	pktCount := 0
 	var pktEstMB float64
 	if s.store != nil {
-		ps := s.store.GetPerfStoreStats()
-		if v, ok := ps["totalLoaded"].(int); ok {
-			pktCount = v
-		}
-		if v, ok := ps["estimatedMB"].(float64); ok {
-			pktEstMB = v
-		}
+		ps := s.store.GetPerfStoreStatsTyped()
+		pktCount = ps.TotalLoaded
+		pktEstMB = ps.EstimatedMB
 	}
 
 	// Real cache stats
-	cacheStats := map[string]interface{}{
-		"entries": 0, "hits": int64(0), "misses": int64(0),
-		"staleHits": 0, "recomputes": int64(0), "hitRate": float64(0),
-	}
+	cs := CacheStats{}
 	if s.store != nil {
-		cs := s.store.GetCacheStats()
-		cacheStats = map[string]interface{}{
-			"entries":    cs["size"],
-			"hits":       cs["hits"],
-			"misses":     cs["misses"],
-			"staleHits":  cs["staleHits"],
-			"recomputes": cs["recomputes"],
-			"hitRate":    cs["hitRate"],
-		}
+		cs = s.store.GetCacheStatsTyped()
 	}
 
 	// Build eventLoop-equivalent from GC pause data (matches Node.js shape)
@@ -318,37 +305,47 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		lastPauseMs = float64(m.PauseNs[(m.NumGC+255)%256]) / 1e6
 	}
 
-	writeJSON(w, map[string]interface{}{
-		"status":      "ok",
-		"engine":      "go",
-		"version":     s.version,
-		"commit":      s.commit,
-		"uptime":      int(uptime),
-		"uptimeHuman": fmt.Sprintf("%dh %dm", int(uptime)/3600, (int(uptime)%3600)/60),
-		"memory": map[string]interface{}{
-			"rss":       int(m.Sys / 1024 / 1024),
-			"heapUsed":  int(m.HeapAlloc / 1024 / 1024),
-			"heapTotal": int(m.HeapSys / 1024 / 1024),
-			"external":  0,
+	// Build slow queries list
+	recentSlow := make([]SlowQuery, 0)
+	sliceEnd := s.perfStats.SlowQueries
+	if len(sliceEnd) > 5 {
+		sliceEnd = sliceEnd[len(sliceEnd)-5:]
+	}
+	for _, sq := range sliceEnd {
+		recentSlow = append(recentSlow, sq)
+	}
+
+	writeJSON(w, HealthResponse{
+		Status:      "ok",
+		Engine:      "go",
+		Version:     s.version,
+		Commit:      s.commit,
+		Uptime:      int(uptime),
+		UptimeHuman: fmt.Sprintf("%dh %dm", int(uptime)/3600, (int(uptime)%3600)/60),
+		Memory: MemoryStats{
+			RSS:       int(m.Sys / 1024 / 1024),
+			HeapUsed:  int(m.HeapAlloc / 1024 / 1024),
+			HeapTotal: int(m.HeapSys / 1024 / 1024),
+			External:  0,
 		},
-		"eventLoop": map[string]interface{}{
-			"currentLagMs": round(lastPauseMs, 1),
-			"maxLagMs":     round(percentile(sortedPauses, 1.0), 1),
-			"p50Ms":        round(percentile(sortedPauses, 0.5), 1),
-			"p95Ms":        round(percentile(sortedPauses, 0.95), 1),
-			"p99Ms":        round(percentile(sortedPauses, 0.99), 1),
+		EventLoop: EventLoopStats{
+			CurrentLagMs: round(lastPauseMs, 1),
+			MaxLagMs:     round(percentile(sortedPauses, 1.0), 1),
+			P50Ms:        round(percentile(sortedPauses, 0.5), 1),
+			P95Ms:        round(percentile(sortedPauses, 0.95), 1),
+			P99Ms:        round(percentile(sortedPauses, 0.99), 1),
 		},
-		"cache":     cacheStats,
-		"websocket": map[string]interface{}{"clients": wsClients},
-		"packetStore": map[string]interface{}{
-			"packets":     pktCount,
-			"estimatedMB": pktEstMB,
+		Cache:     cs,
+		WebSocket: WebSocketStatsResp{Clients: wsClients},
+		PacketStore: HealthPacketStoreStats{
+			Packets:     pktCount,
+			EstimatedMB: pktEstMB,
 		},
-		"perf": map[string]interface{}{
-			"totalRequests": s.perfStats.Requests,
-			"avgMs":         safeAvg(s.perfStats.TotalMs, float64(s.perfStats.Requests)),
-			"slowQueries":   len(s.perfStats.SlowQueries),
-			"recentSlow":    lastN(s.perfStats.SlowQueries, 5),
+		Perf: HealthPerfStats{
+			TotalRequests: int(s.perfStats.Requests),
+			AvgMs:         safeAvg(s.perfStats.TotalMs, float64(s.perfStats.Requests)),
+			SlowQueries:   len(s.perfStats.SlowQueries),
+			RecentSlow:    recentSlow,
 		},
 	})
 }
@@ -366,89 +363,110 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	counts := s.db.GetRoleCounts()
-	result := map[string]interface{}{
-		"totalPackets":       stats.TotalPackets,
-		"totalTransmissions": stats.TotalTransmissions,
-		"totalObservations":  stats.TotalObservations,
-		"totalNodes":         stats.TotalNodes,
-		"totalNodesAllTime":  stats.TotalNodesAllTime,
-		"totalObservers":     stats.TotalObservers,
-		"packetsLastHour":    stats.PacketsLastHour,
-		"engine":             "go",
-		"version":            s.version,
-		"commit":             s.commit,
-		"counts":             counts,
-	}
-	writeJSON(w, result)
+	writeJSON(w, StatsResponse{
+		TotalPackets:       stats.TotalPackets,
+		TotalTransmissions: &stats.TotalTransmissions,
+		TotalObservations:  stats.TotalObservations,
+		TotalNodes:         stats.TotalNodes,
+		TotalNodesAllTime:  stats.TotalNodesAllTime,
+		TotalObservers:     stats.TotalObservers,
+		PacketsLastHour:    stats.PacketsLastHour,
+		Engine:             "go",
+		Version:            s.version,
+		Commit:             s.commit,
+		Counts: RoleCounts{
+			Repeaters:  counts["repeaters"],
+			Rooms:      counts["rooms"],
+			Companions: counts["companions"],
+			Sensors:    counts["sensors"],
+		},
+	})
 }
 
 func (s *Server) handlePerf(w http.ResponseWriter, r *http.Request) {
 	// Endpoint performance summary
 	type epEntry struct {
 		path string
-		data map[string]interface{}
+		data *EndpointStatsResp
 	}
 	var entries []epEntry
 	for path, ep := range s.perfStats.Endpoints {
 		sorted := sortedCopy(ep.Recent)
-		d := map[string]interface{}{
-			"count": ep.Count,
-			"avgMs": round(ep.TotalMs/float64(ep.Count), 1),
-			"p50Ms": round(percentile(sorted, 0.5), 1),
-			"p95Ms": round(percentile(sorted, 0.95), 1),
-			"maxMs": round(ep.MaxMs, 1),
+		d := &EndpointStatsResp{
+			Count: ep.Count,
+			AvgMs: round(ep.TotalMs/float64(ep.Count), 1),
+			P50Ms: round(percentile(sorted, 0.5), 1),
+			P95Ms: round(percentile(sorted, 0.95), 1),
+			MaxMs: round(ep.MaxMs, 1),
 		}
 		entries = append(entries, epEntry{path, d})
 	}
 	// Sort by total time spent (count * avg) descending, matching Node.js
 	sort.Slice(entries, func(i, j int) bool {
-		ti := float64(entries[i].data["count"].(int)) * entries[i].data["avgMs"].(float64)
-		tj := float64(entries[j].data["count"].(int)) * entries[j].data["avgMs"].(float64)
+		ti := float64(entries[i].data.Count) * entries[i].data.AvgMs
+		tj := float64(entries[j].data.Count) * entries[j].data.AvgMs
 		return ti > tj
 	})
-	summary := map[string]interface{}{}
+	summary := make(map[string]*EndpointStatsResp)
 	for _, e := range entries {
 		summary[e.path] = e.data
 	}
 
 	// Cache stats from packet store
-	cacheStats := map[string]interface{}{
-		"size": 0, "hits": int64(0), "misses": int64(0),
-		"staleHits": 0, "recomputes": int64(0), "hitRate": float64(0),
-	}
+	var perfCS PerfCacheStats
 	if s.store != nil {
-		cacheStats = s.store.GetCacheStats()
+		cs := s.store.GetCacheStatsTyped()
+		perfCS = PerfCacheStats{
+			Size:       cs.Entries,
+			Hits:       cs.Hits,
+			Misses:     cs.Misses,
+			StaleHits:  cs.StaleHits,
+			Recomputes: cs.Recomputes,
+			HitRate:    cs.HitRate,
+		}
 	}
 
 	// Packet store stats
-	var pktStoreStats map[string]interface{}
+	var pktStoreStats *PerfPacketStoreStats
 	if s.store != nil {
-		pktStoreStats = s.store.GetPerfStoreStats()
+		ps := s.store.GetPerfStoreStatsTyped()
+		pktStoreStats = &ps
 	}
 
 	// SQLite stats
-	var sqliteStats map[string]interface{}
+	var sqliteStats *SqliteStats
 	if s.db != nil {
-		sqliteStats = s.db.GetDBSizeStats()
+		ss := s.db.GetDBSizeStatsTyped()
+		sqliteStats = &ss
 	}
 
 	uptimeSec := int(time.Since(s.perfStats.StartedAt).Seconds())
 
-	writeJSON(w, map[string]interface{}{
-		"uptime":        uptimeSec,
-		"totalRequests": s.perfStats.Requests,
-		"avgMs":         safeAvg(s.perfStats.TotalMs, float64(s.perfStats.Requests)),
-		"endpoints":     summary,
-		"slowQueries":   lastN(s.perfStats.SlowQueries, 20),
-		"cache":         cacheStats,
-		"packetStore":   pktStoreStats,
-		"sqlite":        sqliteStats,
+	// Convert slow queries
+	slowQueries := make([]SlowQuery, 0)
+	sliceEnd := s.perfStats.SlowQueries
+	if len(sliceEnd) > 20 {
+		sliceEnd = sliceEnd[len(sliceEnd)-20:]
+	}
+	for _, sq := range sliceEnd {
+		slowQueries = append(slowQueries, sq)
+	}
+
+	writeJSON(w, PerfResponse{
+		Uptime:        uptimeSec,
+		TotalRequests: s.perfStats.Requests,
+		AvgMs:         safeAvg(s.perfStats.TotalMs, float64(s.perfStats.Requests)),
+		Endpoints:     summary,
+		SlowQueries:   slowQueries,
+		Cache:         perfCS,
+		PacketStore:   pktStoreStats,
+		Sqlite:        sqliteStats,
 	})
 }
 
 func (s *Server) handlePerfReset(w http.ResponseWriter, r *http.Request) {
 	s.perfStats = NewPerfStats()
-	writeJSON(w, map[string]interface{}{"ok": true})
+	writeJSON(w, OkResp{Ok: true})
 }
 
 // --- Packet Handlers ---
@@ -483,11 +501,11 @@ func (s *Server) handlePackets(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 500, err.Error())
 			return
 		}
-		writeJSON(w, map[string]interface{}{
-			"packets": result.Packets,
-			"total":   result.Total,
-			"limit":   queryInt(r, "limit", 50),
-			"offset":  queryInt(r, "offset", 0),
+		writeJSON(w, PacketListResponse{
+			Packets: mapSliceToTransmissions(result.Packets),
+			Total:   result.Total,
+			Limit:   queryInt(r, "limit", 50),
+			Offset:  queryInt(r, "offset", 0),
 		})
 		return
 	}
@@ -636,12 +654,12 @@ func (s *Server) handlePacketDetail(w http.ResponseWriter, r *http.Request) {
 		pathHops = []interface{}{}
 	}
 
-	writeJSON(w, map[string]interface{}{
-		"packet":            packet,
-		"path":              pathHops,
-		"breakdown":         map[string]interface{}{},
-		"observation_count": observationCount,
-		"observations":      observations,
+	writeJSON(w, PacketDetailResponse{
+		Packet:           packet,
+		Path:             pathHops,
+		Breakdown:        struct{}{},
+		ObservationCount: observationCount,
+		Observations:     mapSliceToObservations(observations),
 	})
 }
 
@@ -663,8 +681,8 @@ func (s *Server) handleDecode(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, err.Error())
 		return
 	}
-	writeJSON(w, map[string]interface{}{
-		"decoded": map[string]interface{}{
+	writeJSON(w, DecodeResponse{
+		Decoded: map[string]interface{}{
 			"header":  decoded.Header,
 			"path":    decoded.Path,
 			"payload": decoded.Payload,
@@ -731,9 +749,9 @@ func (s *Server) handlePostPacket(w http.ResponseWriter, r *http.Request) {
 			insertedID, obsID, obsName, snr, rssi, now)
 	}
 
-	writeJSON(w, map[string]interface{}{
-		"id": insertedID,
-		"decoded": map[string]interface{}{
+	writeJSON(w, PacketIngestResponse{
+		ID: insertedID,
+		Decoded: map[string]interface{}{
 			"header":  decoded.Header,
 			"path":    decoded.Path,
 			"payload": decoded.Payload,
@@ -763,13 +781,13 @@ func (s *Server) handleNodes(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	writeJSON(w, map[string]interface{}{"nodes": nodes, "total": total, "counts": counts})
+	writeJSON(w, NodeListResponse{Nodes: nodes, Total: total, Counts: counts})
 }
 
 func (s *Server) handleNodeSearch(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query().Get("q")
 	if strings.TrimSpace(q) == "" {
-		writeJSON(w, map[string]interface{}{"nodes": []interface{}{}})
+		writeJSON(w, NodeSearchResponse{Nodes: []map[string]interface{}{}})
 		return
 	}
 	nodes, err := s.db.SearchNodes(strings.TrimSpace(q), 10)
@@ -777,7 +795,7 @@ func (s *Server) handleNodeSearch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 500, err.Error())
 		return
 	}
-	writeJSON(w, map[string]interface{}{"nodes": nodes})
+	writeJSON(w, NodeSearchResponse{Nodes: nodes})
 }
 
 func (s *Server) handleNodeDetail(w http.ResponseWriter, r *http.Request) {
@@ -799,9 +817,9 @@ func (s *Server) handleNodeDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	recentAdverts, _ := s.db.GetRecentTransmissionsForNode(pubkey, name, 20)
 
-	writeJSON(w, map[string]interface{}{
-		"node":          node,
-		"recentAdverts": recentAdverts,
+	writeJSON(w, NodeDetailResponse{
+		Node:          node,
+		RecentAdverts: recentAdverts,
 	})
 }
 
@@ -853,7 +871,7 @@ func (s *Server) handleBulkHealth(w http.ResponseWriter, r *http.Request) {
 
 	// Batch query: per-node transmission stats
 	todayStart := time.Now().UTC().Truncate(24 * time.Hour).Format(time.RFC3339)
-	results := make([]map[string]interface{}, 0, len(nodes))
+	results := make([]BulkHealthEntry, 0, len(nodes))
 	for _, n := range nodes {
 		pk := "%" + n.pk + "%"
 		np := "%" + n.name + "%"
@@ -905,37 +923,37 @@ func (s *Server) handleBulkHealth(w http.ResponseWriter, r *http.Request) {
 			FROM packets_v pv WHERE %s AND pv.observer_id IS NOT NULL
 			GROUP BY pv.observer_id ORDER BY packetCount DESC`, pvWhere)
 		obsRows, _ := s.db.conn.Query(obsSQL, queryArgs...)
-		observers := make([]map[string]interface{}, 0)
+		observers := make([]NodeObserverStatsResp, 0)
 		if obsRows != nil {
 			for obsRows.Next() {
 				var oID, oName sql.NullString
 				var oSnr, oRssi sql.NullFloat64
 				var oPktCount int
 				obsRows.Scan(&oID, &oName, &oSnr, &oRssi, &oPktCount)
-				observers = append(observers, map[string]interface{}{
-					"observer_id": nullStr(oID), "observer_name": nullStr(oName),
-					"avgSnr": nullFloat(oSnr), "avgRssi": nullFloat(oRssi),
-					"packetCount": oPktCount,
+				observers = append(observers, NodeObserverStatsResp{
+					ObserverID: nullStr(oID), ObserverName: nullStr(oName),
+					AvgSnr: nullFloat(oSnr), AvgRssi: nullFloat(oRssi),
+					PacketCount: oPktCount,
 				})
 			}
 			obsRows.Close()
 		}
 
-		results = append(results, map[string]interface{}{
-			"public_key": n.pk,
-			"name":       nilIfEmpty(n.name),
-			"role":       nilIfEmpty(n.role),
-			"lat":        n.lat,
-			"lon":        n.lon,
-			"stats": map[string]interface{}{
-				"totalTransmissions": txCount,
-				"totalObservations":  obsCount,
-				"totalPackets":       txCount,
-				"packetsToday":       packetsToday,
-				"avgSnr":             nullFloat(avgSnr),
-				"lastHeard":          nilIfEmpty(lh),
+		results = append(results, BulkHealthEntry{
+			PublicKey: n.pk,
+			Name:      nilIfEmpty(n.name),
+			Role:      nilIfEmpty(n.role),
+			Lat:       n.lat,
+			Lon:       n.lon,
+			Stats: NodeStatsResp{
+				TotalTransmissions: txCount,
+				TotalObservations:  obsCount,
+				TotalPackets:       txCount,
+				PacketsToday:       packetsToday,
+				AvgSnr:             nullFloat(avgSnr),
+				LastHeard:          nilIfEmpty(lh),
 			},
-			"observers": observers,
+			Observers: observers,
 		})
 	}
 	writeJSON(w, results)
@@ -975,7 +993,7 @@ func (s *Server) handleNodePaths(w http.ResponseWriter, r *http.Request) {
 	pathSQL := fmt.Sprintf("SELECT path_json, hash, MAX(timestamp) as lastSeen, COUNT(*) as cnt FROM packets_v WHERE path_json IS NOT NULL AND path_json != '[]' AND %s GROUP BY path_json ORDER BY cnt DESC LIMIT 50", whereClause)
 	rows, _ := s.db.conn.Query(pathSQL, args...)
 
-	paths := make([]map[string]interface{}, 0)
+	paths := make([]PathEntryResp, 0)
 	var totalPaths, totalTx int
 	if rows != nil {
 		defer rows.Close()
@@ -988,31 +1006,31 @@ func (s *Server) handleNodePaths(w http.ResponseWriter, r *http.Request) {
 			if json.Unmarshal([]byte(pj), &hops) != nil {
 				continue
 			}
-			hopEntries := make([]map[string]interface{}, 0, len(hops))
+			hopEntries := make([]PathHopResp, 0, len(hops))
 			for _, h := range hops {
-				hopEntries = append(hopEntries, map[string]interface{}{
-					"prefix": h, "name": h, "pubkey": nil, "lat": nil, "lon": nil,
+				hopEntries = append(hopEntries, PathHopResp{
+					Prefix: h, Name: h, Pubkey: nil, Lat: nil, Lon: nil,
 				})
 			}
-			paths = append(paths, map[string]interface{}{
-				"hops": hopEntries, "count": cnt,
-				"lastSeen": nullStr(lastSeen), "sampleHash": hash,
+			paths = append(paths, PathEntryResp{
+				Hops: hopEntries, Count: cnt,
+				LastSeen: nullStr(lastSeen), SampleHash: hash,
 			})
 			totalPaths++
 			totalTx += cnt
 		}
 	}
 
-	writeJSON(w, map[string]interface{}{
-		"node": map[string]interface{}{
+	writeJSON(w, NodePathsResponse{
+		Node: map[string]interface{}{
 			"public_key": node["public_key"],
 			"name":       node["name"],
 			"lat":        node["lat"],
 			"lon":        node["lon"],
 		},
-		"paths":              paths,
-		"totalPaths":         totalPaths,
-		"totalTransmissions": totalTx,
+		Paths:              paths,
+		TotalPaths:         totalPaths,
+		TotalTransmissions: totalTx,
 	})
 }
 
@@ -1053,14 +1071,15 @@ func (s *Server) handleNodeAnalytics(w http.ResponseWriter, r *http.Request) {
 	actSQL := fmt.Sprintf(`SELECT substr(timestamp, 1, 13) || ':00:00Z' as bucket, COUNT(*) as count
 		FROM packets_v WHERE %s GROUP BY bucket ORDER BY bucket`, timeWhere)
 	aRows, _ := s.db.conn.Query(actSQL, pk, np, fromISO)
-	activityTimeline := make([]map[string]interface{}, 0)
+	activityTimeline := make([]TimeBucket, 0)
 	if aRows != nil {
 		defer aRows.Close()
 		for aRows.Next() {
 			var bucket string
 			var count int
 			aRows.Scan(&bucket, &count)
-			activityTimeline = append(activityTimeline, map[string]interface{}{"bucket": bucket, "count": count})
+			b := bucket
+			activityTimeline = append(activityTimeline, TimeBucket{Bucket: &b, Count: count})
 		}
 	}
 
@@ -1068,7 +1087,7 @@ func (s *Server) handleNodeAnalytics(w http.ResponseWriter, r *http.Request) {
 	snrSQL := fmt.Sprintf(`SELECT timestamp, snr, rssi, observer_id, observer_name
 		FROM packets_v WHERE %s AND snr IS NOT NULL ORDER BY timestamp`, timeWhere)
 	sRows, _ := s.db.conn.Query(snrSQL, pk, np, fromISO)
-	snrTrend := make([]map[string]interface{}, 0)
+	snrTrend := make([]SnrTrendEntry, 0)
 	if sRows != nil {
 		defer sRows.Close()
 		for sRows.Next() {
@@ -1076,9 +1095,9 @@ func (s *Server) handleNodeAnalytics(w http.ResponseWriter, r *http.Request) {
 			var snr, rssi sql.NullFloat64
 			var obsID, obsName sql.NullString
 			sRows.Scan(&ts, &snr, &rssi, &obsID, &obsName)
-			snrTrend = append(snrTrend, map[string]interface{}{
-				"timestamp": ts, "snr": nullFloat(snr), "rssi": nullFloat(rssi),
-				"observer_id": nullStr(obsID), "observer_name": nullStr(obsName),
+			snrTrend = append(snrTrend, SnrTrendEntry{
+				Timestamp: ts, SNR: nullFloat(snr), RSSI: nullFloat(rssi),
+				ObserverID: nullStr(obsID), ObserverName: nullStr(obsName),
 			})
 		}
 	}
@@ -1086,13 +1105,13 @@ func (s *Server) handleNodeAnalytics(w http.ResponseWriter, r *http.Request) {
 	// Packet type breakdown
 	ptSQL := fmt.Sprintf("SELECT payload_type, COUNT(*) as count FROM packets_v WHERE %s GROUP BY payload_type", timeWhere)
 	ptRows, _ := s.db.conn.Query(ptSQL, pk, np, fromISO)
-	packetTypeBreakdown := make([]map[string]interface{}, 0)
+	packetTypeBreakdown := make([]PayloadTypeCount, 0)
 	if ptRows != nil {
 		defer ptRows.Close()
 		for ptRows.Next() {
 			var pt, count int
 			ptRows.Scan(&pt, &count)
-			packetTypeBreakdown = append(packetTypeBreakdown, map[string]interface{}{"payload_type": pt, "count": count})
+			packetTypeBreakdown = append(packetTypeBreakdown, PayloadTypeCount{PayloadType: pt, Count: count})
 		}
 	}
 
@@ -1102,7 +1121,7 @@ func (s *Server) handleNodeAnalytics(w http.ResponseWriter, r *http.Request) {
 		FROM packets_v WHERE %s AND observer_id IS NOT NULL
 		GROUP BY observer_id ORDER BY packetCount DESC`, timeWhere)
 	ocRows, _ := s.db.conn.Query(ocSQL, pk, np, fromISO)
-	observerCoverage := make([]map[string]interface{}, 0)
+	observerCoverage := make([]NodeObserverStatsResp, 0)
 	if ocRows != nil {
 		defer ocRows.Close()
 		for ocRows.Next() {
@@ -1110,10 +1129,10 @@ func (s *Server) handleNodeAnalytics(w http.ResponseWriter, r *http.Request) {
 			var pktCount int
 			var avgSnr, avgRssi sql.NullFloat64
 			ocRows.Scan(&obsID, &obsName, &pktCount, &avgSnr, &avgRssi, &first, &last)
-			observerCoverage = append(observerCoverage, map[string]interface{}{
-				"observer_id": nullStr(obsID), "observer_name": nullStr(obsName),
-				"packetCount": pktCount, "avgSnr": nullFloat(avgSnr), "avgRssi": nullFloat(avgRssi),
-				"firstSeen": nullStr(first), "lastSeen": nullStr(last),
+			observerCoverage = append(observerCoverage, NodeObserverStatsResp{
+				ObserverID: nullStr(obsID), ObserverName: nullStr(obsName),
+				PacketCount: pktCount, AvgSnr: nullFloat(avgSnr), AvgRssi: nullFloat(avgRssi),
+				FirstSeen: nullStr(first), LastSeen: nullStr(last),
 			})
 		}
 	}
@@ -1144,10 +1163,10 @@ func (s *Server) handleNodeAnalytics(w http.ResponseWriter, r *http.Request) {
 	if zeroHops > 0 {
 		hopCounts["0"] += zeroHops
 	}
-	hopDistribution := make([]map[string]interface{}, 0)
+	hopDistribution := make([]HopDistEntry, 0)
 	for _, h := range []string{"0", "1", "2", "3", "4+"} {
 		if c, ok := hopCounts[h]; ok {
-			hopDistribution = append(hopDistribution, map[string]interface{}{"hops": h, "count": c})
+			hopDistribution = append(hopDistribution, HopDistEntry{Hops: h, Count: c})
 		}
 	}
 
@@ -1159,22 +1178,20 @@ func (s *Server) handleNodeAnalytics(w http.ResponseWriter, r *http.Request) {
 		FROM packets_v WHERE %s
 		GROUP BY dayOfWeek, hour ORDER BY count DESC`, timeWhere)
 	uhRows, _ := s.db.conn.Query(uhSQL, pk, np, fromISO)
-	uptimeHeatmap := make([]map[string]interface{}, 0)
+	uptimeHeatmap := make([]HeatmapCell, 0)
 	if uhRows != nil {
 		defer uhRows.Close()
 		for uhRows.Next() {
 			var dow, hr, cnt int
 			uhRows.Scan(&dow, &hr, &cnt)
-			uptimeHeatmap = append(uptimeHeatmap, map[string]interface{}{"dayOfWeek": dow, "hour": hr, "count": cnt})
+			uptimeHeatmap = append(uptimeHeatmap, HeatmapCell{DayOfWeek: dow, Hour: hr, Count: cnt})
 		}
 	}
 
 	// Computed stats
 	totalPackets := 0
 	for _, entry := range activityTimeline {
-		if c, ok := entry["count"].(int); ok {
-			totalPackets += c
-		}
+		totalPackets += entry.Count
 	}
 
 	var snrMean, snrStdDev float64
@@ -1217,8 +1234,13 @@ func (s *Server) handleNodeAnalytics(w http.ResponseWriter, r *http.Request) {
 	var longestSilenceStart interface{}
 	if len(activityTimeline) >= 2 {
 		for i := 1; i < len(activityTimeline); i++ {
-			t1Str, _ := activityTimeline[i-1]["bucket"].(string)
-			t2Str, _ := activityTimeline[i]["bucket"].(string)
+			var t1Str, t2Str string
+			if activityTimeline[i-1].Bucket != nil {
+				t1Str = *activityTimeline[i-1].Bucket
+			}
+			if activityTimeline[i].Bucket != nil {
+				t2Str = *activityTimeline[i].Bucket
+			}
 			t1, e1 := time.Parse(time.RFC3339, t1Str)
 			t2, e2 := time.Parse(time.RFC3339, t2Str)
 			if e1 == nil && e2 == nil {
@@ -1239,28 +1261,28 @@ func (s *Server) handleNodeAnalytics(w http.ResponseWriter, r *http.Request) {
 		availabilityPct = 100
 	}
 
-	writeJSON(w, map[string]interface{}{
-		"node":                node,
-		"timeRange":           map[string]interface{}{"from": fromISO, "to": toISO, "days": days},
-		"activityTimeline":    activityTimeline,
-		"snrTrend":            snrTrend,
-		"packetTypeBreakdown": packetTypeBreakdown,
-		"observerCoverage":    observerCoverage,
-		"hopDistribution":     hopDistribution,
-		"peerInteractions":    []interface{}{},
-		"uptimeHeatmap":       uptimeHeatmap,
-		"computedStats": map[string]interface{}{
-			"availabilityPct":     availabilityPct,
-			"longestSilenceMs":    longestSilenceMs,
-			"longestSilenceStart": longestSilenceStart,
-			"signalGrade":         signalGrade,
-			"snrMean":             round(snrMean, 1),
-			"snrStdDev":           round(snrStdDev, 1),
-			"relayPct":            relayPct,
-			"totalPackets":        totalPackets,
-			"uniqueObservers":     len(observerCoverage),
-			"uniquePeers":         0,
-			"avgPacketsPerDay":    avgPacketsPerDay,
+	writeJSON(w, NodeAnalyticsResponse{
+		Node:                node,
+		TimeRange:           TimeRangeResp{From: fromISO, To: toISO, Days: days},
+		ActivityTimeline:    activityTimeline,
+		SnrTrend:            snrTrend,
+		PacketTypeBreakdown: packetTypeBreakdown,
+		ObserverCoverage:    observerCoverage,
+		HopDistribution:     hopDistribution,
+		PeerInteractions:    []PeerInteraction{},
+		UptimeHeatmap:       uptimeHeatmap,
+		ComputedStats: ComputedNodeStats{
+			AvailabilityPct:     availabilityPct,
+			LongestSilenceMs:    longestSilenceMs,
+			LongestSilenceStart: longestSilenceStart,
+			SignalGrade:         signalGrade,
+			SnrMean:             round(snrMean, 1),
+			SnrStdDev:           round(snrStdDev, 1),
+			RelayPct:            relayPct,
+			TotalPackets:        totalPackets,
+			UniqueObservers:     len(observerCoverage),
+			UniquePeers:         0,
+			AvgPacketsPerDay:    avgPacketsPerDay,
 		},
 	})
 }
@@ -1293,7 +1315,7 @@ func (s *Server) handleAnalyticsRF(w http.ResponseWriter, r *http.Request) {
 	// Payload type distribution
 	ptSQL := fmt.Sprintf(`SELECT payload_type, COUNT(DISTINCT hash) as count FROM packets_v WHERE 1=1 %s GROUP BY payload_type ORDER BY count DESC`, regionFilter)
 	ptRows, _ := s.db.conn.Query(ptSQL, rArgs...)
-	payloadTypes := make([]map[string]interface{}, 0)
+	payloadTypes := make([]PayloadTypeEntry, 0)
 	ptNames := map[int]string{0: "REQ", 1: "RESPONSE", 2: "TXT_MSG", 3: "ACK", 4: "ADVERT", 5: "GRP_TXT", 7: "ANON_REQ", 8: "PATH", 9: "TRACE", 11: "CONTROL"}
 	if ptRows != nil {
 		defer ptRows.Close()
@@ -1304,7 +1326,7 @@ func (s *Server) handleAnalyticsRF(w http.ResponseWriter, r *http.Request) {
 			if name == "" {
 				name = fmt.Sprintf("UNK(%d)", pt)
 			}
-			payloadTypes = append(payloadTypes, map[string]interface{}{"type": pt, "name": name, "count": count})
+			payloadTypes = append(payloadTypes, PayloadTypeEntry{Type: pt, Name: name, Count: count})
 		}
 	}
 
@@ -1316,28 +1338,30 @@ func (s *Server) handleAnalyticsRF(w http.ResponseWriter, r *http.Request) {
 	txSQL := fmt.Sprintf("SELECT COUNT(DISTINCT hash) FROM packets_v WHERE 1=1 %s", regionFilter)
 	s.db.conn.QueryRow(txSQL, rArgs...).Scan(&totalTx)
 
-	writeJSON(w, map[string]interface{}{
-		"totalPackets":      cnt,
-		"totalAllPackets":   totalAll,
-		"totalTransmissions": totalTx,
-		"snr": map[string]interface{}{
-			"min": nullFloat(minSnr), "max": nullFloat(maxSnr),
-			"avg": nullFloat(avgSnr), "median": 0, "stddev": 0,
+	writeJSON(w, RFAnalyticsResponse{
+		TotalPackets:       cnt,
+		TotalAllPackets:    totalAll,
+		TotalTransmissions: totalTx,
+		SNR: SignalStats{
+			Min: nullFloatVal(minSnr), Max: nullFloatVal(maxSnr),
+			Avg: nullFloatVal(avgSnr), Median: 0, Stddev: 0,
 		},
-		"rssi": map[string]interface{}{
-			"min": nullFloat(minRssi), "max": nullFloat(maxRssi),
-			"avg": nullFloat(avgRssi), "median": 0, "stddev": 0,
+		RSSI: SignalStats{
+			Min: nullFloatVal(minRssi), Max: nullFloatVal(maxRssi),
+			Avg: nullFloatVal(avgRssi), Median: 0, Stddev: 0,
 		},
-		"snrValues":     map[string]interface{}{"bins": []interface{}{}, "min": 0, "max": 0},
-		"rssiValues":    map[string]interface{}{"bins": []interface{}{}, "min": 0, "max": 0},
-		"packetSizes":   map[string]interface{}{"bins": []interface{}{}, "min": 0, "max": 0},
-		"minPacketSize": 0, "maxPacketSize": 0, "avgPacketSize": 0,
-		"packetsPerHour":  []interface{}{},
-		"payloadTypes":    payloadTypes,
-		"snrByType":       []interface{}{},
-		"signalOverTime":  []interface{}{},
-		"scatterData":     []interface{}{},
-		"timeSpanHours":   0,
+		SnrValues:      Histogram{Bins: []HistogramBin{}, Min: 0, Max: 0},
+		RssiValues:     Histogram{Bins: []HistogramBin{}, Min: 0, Max: 0},
+		PacketSizes:    Histogram{Bins: []HistogramBin{}, Min: 0, Max: 0},
+		MinPacketSize:  0,
+		MaxPacketSize:  0,
+		AvgPacketSize:  0,
+		PacketsPerHour:  []HourlyCount{},
+		PayloadTypes:    payloadTypes,
+		SnrByType:       []PayloadTypeSignal{},
+		SignalOverTime:  []SignalOverTimeEntry{},
+		ScatterData:     []ScatterPoint{},
+		TimeSpanHours:   0,
 	})
 }
 
@@ -1412,10 +1436,10 @@ func (s *Server) handleAnalyticsTopology(w http.ResponseWriter, r *http.Request)
 		avgHops = round(float64(totalHopCount)/float64(totalPaths), 1)
 	}
 
-	hopDistribution := make([]map[string]interface{}, 0)
+	hopDistribution := make([]TopologyHopDist, 0)
 	for h := 1; h <= maxHops; h++ {
 		if c, ok := hopCountMap[h]; ok {
-			hopDistribution = append(hopDistribution, map[string]interface{}{"hops": h, "count": c})
+			hopDistribution = append(hopDistribution, TopologyHopDist{Hops: h, Count: c})
 		}
 	}
 
@@ -1428,12 +1452,12 @@ func (s *Server) handleAnalyticsTopology(w http.ResponseWriter, r *http.Request)
 		repSorted = append(repSorted, kv{k, v})
 	}
 	sort.Slice(repSorted, func(i, j int) bool { return repSorted[i].v > repSorted[j].v })
-	topRepeaters := make([]map[string]interface{}, 0)
+	topRepeaters := make([]TopRepeater, 0)
 	for i, rp := range repSorted {
 		if i >= 20 {
 			break
 		}
-		topRepeaters = append(topRepeaters, map[string]interface{}{"hop": rp.k, "count": rp.v, "name": nil, "pubkey": nil})
+		topRepeaters = append(topRepeaters, TopRepeater{Hop: rp.k, Count: rp.v, Name: nil, Pubkey: nil})
 	}
 
 	var pairSorted []kv
@@ -1441,28 +1465,28 @@ func (s *Server) handleAnalyticsTopology(w http.ResponseWriter, r *http.Request)
 		pairSorted = append(pairSorted, kv{k, v})
 	}
 	sort.Slice(pairSorted, func(i, j int) bool { return pairSorted[i].v > pairSorted[j].v })
-	topPairs := make([]map[string]interface{}, 0)
+	topPairs := make([]TopPair, 0)
 	for i, p := range pairSorted {
 		if i >= 20 {
 			break
 		}
 		parts := strings.SplitN(p.k, ":", 2)
-		topPairs = append(topPairs, map[string]interface{}{
-			"hopA": parts[0], "hopB": parts[1], "count": p.v,
-			"nameA": nil, "nameB": nil, "pubkeyA": nil, "pubkeyB": nil,
+		topPairs = append(topPairs, TopPair{
+			HopA: parts[0], HopB: parts[1], Count: p.v,
+			NameA: nil, NameB: nil, PubkeyA: nil, PubkeyB: nil,
 		})
 	}
 
-	hopsVsSnr := make([]map[string]interface{}, 0)
+	hopsVsSnr := make([]HopsVsSnr, 0)
 	for h := 1; h <= maxHops; h++ {
 		if cnt, ok := hopsVsSnrCnt[h]; ok && cnt > 0 {
-			hopsVsSnr = append(hopsVsSnr, map[string]interface{}{
-				"hops": h, "count": cnt, "avgSnr": round(hopsVsSnrSum[h]/float64(cnt), 1),
+			hopsVsSnr = append(hopsVsSnr, HopsVsSnr{
+				Hops: h, Count: cnt, AvgSnr: round(hopsVsSnrSum[h]/float64(cnt), 1),
 			})
 		}
 	}
 
-	obsList := make([]map[string]interface{}, 0)
+	obsList := make([]ObserverRef, 0)
 	obsRows, _ := s.db.conn.Query("SELECT id, name FROM observers")
 	if obsRows != nil {
 		defer obsRows.Close()
@@ -1470,23 +1494,23 @@ func (s *Server) handleAnalyticsTopology(w http.ResponseWriter, r *http.Request)
 			var oid string
 			var oname sql.NullString
 			obsRows.Scan(&oid, &oname)
-			obsList = append(obsList, map[string]interface{}{"id": oid, "name": nullStr(oname)})
+			obsList = append(obsList, ObserverRef{ID: oid, Name: nullStr(oname)})
 		}
 	}
 
-	writeJSON(w, map[string]interface{}{
-		"uniqueNodes":      len(nodesSeen),
-		"avgHops":          avgHops,
-		"medianHops":       0,
-		"maxHops":          maxHops,
-		"hopDistribution":  hopDistribution,
-		"topRepeaters":     topRepeaters,
-		"topPairs":         topPairs,
-		"hopsVsSnr":        hopsVsSnr,
-		"observers":        obsList,
-		"perObserverReach": map[string]interface{}{},
-		"multiObsNodes":    []interface{}{},
-		"bestPathList":     []interface{}{},
+	writeJSON(w, TopologyResponse{
+		UniqueNodes:      len(nodesSeen),
+		AvgHops:          avgHops,
+		MedianHops:       0,
+		MaxHops:          maxHops,
+		HopDistribution:  hopDistribution,
+		TopRepeaters:     topRepeaters,
+		TopPairs:         topPairs,
+		HopsVsSnr:        hopsVsSnr,
+		Observers:        obsList,
+		PerObserverReach: map[string]*ObserverReach{},
+		MultiObsNodes:    []MultiObsNode{},
+		BestPathList:     []BestPathEntry{},
 	})
 }
 
@@ -1500,13 +1524,13 @@ func (s *Server) handleAnalyticsChannels(w http.ResponseWriter, r *http.Request)
 	if channels == nil {
 		channels = make([]map[string]interface{}, 0)
 	}
-	writeJSON(w, map[string]interface{}{
-		"activeChannels":  len(channels),
-		"decryptable":     len(channels),
-		"channels":        channels,
-		"topSenders":      []interface{}{},
-		"channelTimeline": []interface{}{},
-		"msgLengths":      []interface{}{},
+	writeJSON(w, ChannelAnalyticsResponse{
+		ActiveChannels:  len(channels),
+		Decryptable:     len(channels),
+		Channels:        []ChannelAnalyticsSummary{},
+		TopSenders:      []TopSender{},
+		ChannelTimeline: []ChannelTimelineEntry{},
+		MsgLengths:      []int{},
 	})
 }
 
@@ -1533,10 +1557,10 @@ func (s *Server) handleAnalyticsDistance(w http.ResponseWriter, r *http.Request)
 
 	var totalHops, totalPaths int
 	var maxDist, distSum float64
-	topHops := make([]map[string]interface{}, 0)
-	topPaths := make([]map[string]interface{}, 0)
-	catStats := map[string]interface{}{}
-	distOverTime := make([]map[string]interface{}, 0)
+	topHops := make([]DistanceHop, 0)
+	topPaths := make([]DistancePath, 0)
+	catStats := map[string]*CategoryDistStats{}
+	distOverTime := make([]DistOverTimeEntry, 0)
 
 	if pathRows != nil {
 		defer pathRows.Close()
@@ -1559,16 +1583,16 @@ func (s *Server) handleAnalyticsDistance(w http.ResponseWriter, r *http.Request)
 		avgDist = round(distSum/float64(totalHops), 2)
 	}
 
-	writeJSON(w, map[string]interface{}{
-		"summary": map[string]interface{}{
-			"totalHops": totalHops, "totalPaths": totalPaths,
-			"avgDist": avgDist, "maxDist": maxDist,
+	writeJSON(w, DistanceAnalyticsResponse{
+		Summary: DistanceSummary{
+			TotalHops: totalHops, TotalPaths: totalPaths,
+			AvgDist: avgDist, MaxDist: maxDist,
 		},
-		"topHops":       topHops,
-		"topPaths":      topPaths,
-		"catStats":      catStats,
-		"distHistogram": []interface{}{},
-		"distOverTime":  distOverTime,
+		TopHops:       topHops,
+		TopPaths:      topPaths,
+		CatStats:      catStats,
+		DistHistogram: nil,
+		DistOverTime:  distOverTime,
 	})
 }
 
@@ -1578,12 +1602,12 @@ func (s *Server) handleAnalyticsHashSizes(w http.ResponseWriter, r *http.Request
 		writeJSON(w, s.store.GetAnalyticsHashSizes(region))
 		return
 	}
-	writeJSON(w, map[string]interface{}{
-		"total":          0,
-		"distribution":   map[string]int{"1": 0, "2": 0, "3": 0},
-		"hourly":         []interface{}{},
-		"topHops":        []interface{}{},
-		"multiByteNodes": []interface{}{},
+	writeJSON(w, HashSizeAnalyticsResponse{
+		Total:          0,
+		Distribution:   map[string]int{"1": 0, "2": 0, "3": 0},
+		Hourly:         []HashSizeHourly{},
+		TopHops:        []HashSizeHop{},
+		MultiByteNodes: []MultiByteNode{},
 	})
 }
 
@@ -1599,37 +1623,37 @@ func (s *Server) handleAnalyticsSubpaths(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, s.store.GetAnalyticsSubpaths(region, minLen, maxLen, limit))
 		return
 	}
-	writeJSON(w, map[string]interface{}{
-		"subpaths":   []interface{}{},
-		"totalPaths": 0,
+	writeJSON(w, SubpathsResponse{
+		Subpaths:   []SubpathResp{},
+		TotalPaths: 0,
 	})
 }
 
 func (s *Server) handleAnalyticsSubpathDetail(w http.ResponseWriter, r *http.Request) {
 	hops := r.URL.Query().Get("hops")
 	if hops == "" {
-		writeJSON(w, map[string]interface{}{"error": "Need at least 2 hops"})
+		writeJSON(w, ErrorResp{Error: "Need at least 2 hops"})
 		return
 	}
 	rawHops := strings.Split(hops, ",")
 	if len(rawHops) < 2 {
-		writeJSON(w, map[string]interface{}{"error": "Need at least 2 hops"})
+		writeJSON(w, ErrorResp{Error: "Need at least 2 hops"})
 		return
 	}
 	if s.store != nil {
 		writeJSON(w, s.store.GetSubpathDetail(rawHops))
 		return
 	}
-	writeJSON(w, map[string]interface{}{
-		"hops":             rawHops,
-		"nodes":            []interface{}{},
-		"totalMatches":     0,
-		"firstSeen":        nil,
-		"lastSeen":         nil,
-		"signal":           map[string]interface{}{"avgSnr": nil, "avgRssi": nil, "samples": 0},
-		"hourDistribution": make([]int, 24),
-		"parentPaths":      []interface{}{},
-		"observers":        []interface{}{},
+	writeJSON(w, SubpathDetailResponse{
+		Hops:             rawHops,
+		Nodes:            []SubpathNode{},
+		TotalMatches:     0,
+		FirstSeen:        nil,
+		LastSeen:         nil,
+		Signal:           SubpathSignal{AvgSnr: nil, AvgRssi: nil, Samples: 0},
+		HourDistribution: make([]int, 24),
+		ParentPaths:      []ParentPath{},
+		Observers:        []SubpathObserver{},
 	})
 }
 
@@ -1638,11 +1662,11 @@ func (s *Server) handleAnalyticsSubpathDetail(w http.ResponseWriter, r *http.Req
 func (s *Server) handleResolveHops(w http.ResponseWriter, r *http.Request) {
 	hopsParam := r.URL.Query().Get("hops")
 	if hopsParam == "" {
-		writeJSON(w, map[string]interface{}{"resolved": map[string]interface{}{}})
+		writeJSON(w, ResolveHopsResponse{Resolved: map[string]*HopResolution{}})
 		return
 	}
 	hops := strings.Split(hopsParam, ",")
-	resolved := map[string]interface{}{}
+	resolved := map[string]*HopResolution{}
 
 	for _, hop := range hops {
 		if hop == "" {
@@ -1651,45 +1675,46 @@ func (s *Server) handleResolveHops(w http.ResponseWriter, r *http.Request) {
 		hopLower := strings.ToLower(hop)
 		rows, err := s.db.conn.Query("SELECT public_key, name, lat, lon FROM nodes WHERE LOWER(public_key) LIKE ?", hopLower+"%")
 		if err != nil {
-			resolved[hop] = map[string]interface{}{"name": nil, "candidates": []interface{}{}, "conflicts": []interface{}{}}
+			resolved[hop] = &HopResolution{Name: nil, Candidates: []HopCandidate{}, Conflicts: []interface{}{}}
 			continue
 		}
 
-		var candidates []map[string]interface{}
+		var candidates []HopCandidate
 		for rows.Next() {
 			var pk string
 			var name sql.NullString
 			var lat, lon sql.NullFloat64
 			rows.Scan(&pk, &name, &lat, &lon)
-			candidates = append(candidates, map[string]interface{}{
-				"name": nullStr(name), "pubkey": pk,
-				"lat": nullFloat(lat), "lon": nullFloat(lon),
+			candidates = append(candidates, HopCandidate{
+				Name: nullStr(name), Pubkey: pk,
+				Lat: nullFloat(lat), Lon: nullFloat(lon),
 			})
 		}
 		rows.Close()
 
 		if len(candidates) == 0 {
-			resolved[hop] = map[string]interface{}{"name": nil, "candidates": []interface{}{}, "conflicts": []interface{}{}}
+			resolved[hop] = &HopResolution{Name: nil, Candidates: []HopCandidate{}, Conflicts: []interface{}{}}
 		} else if len(candidates) == 1 {
-			resolved[hop] = map[string]interface{}{
-				"name": candidates[0]["name"], "pubkey": candidates[0]["pubkey"],
-				"candidates": candidates, "conflicts": []interface{}{},
+			resolved[hop] = &HopResolution{
+				Name: candidates[0].Name, Pubkey: candidates[0].Pubkey,
+				Candidates: candidates, Conflicts: []interface{}{},
 			}
 		} else {
-			resolved[hop] = map[string]interface{}{
-				"name": candidates[0]["name"], "pubkey": candidates[0]["pubkey"],
-				"ambiguous": true, "candidates": candidates, "conflicts": candidates,
+			ambig := true
+			resolved[hop] = &HopResolution{
+				Name: candidates[0].Name, Pubkey: candidates[0].Pubkey,
+				Ambiguous: &ambig, Candidates: candidates, Conflicts: hopCandidatesToConflicts(candidates),
 			}
 		}
 	}
-	writeJSON(w, map[string]interface{}{"resolved": resolved})
+	writeJSON(w, ResolveHopsResponse{Resolved: resolved})
 }
 
 func (s *Server) handleChannels(w http.ResponseWriter, r *http.Request) {
 	if s.store != nil {
 		region := r.URL.Query().Get("region")
 		channels := s.store.GetChannels(region)
-		writeJSON(w, map[string]interface{}{"channels": channels})
+		writeJSON(w, ChannelListResponse{Channels: channels})
 		return
 	}
 	channels, err := s.db.GetChannels()
@@ -1697,7 +1722,7 @@ func (s *Server) handleChannels(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 500, err.Error())
 		return
 	}
-	writeJSON(w, map[string]interface{}{"channels": channels})
+	writeJSON(w, ChannelListResponse{Channels: channels})
 }
 
 func (s *Server) handleChannelMessages(w http.ResponseWriter, r *http.Request) {
@@ -1706,7 +1731,7 @@ func (s *Server) handleChannelMessages(w http.ResponseWriter, r *http.Request) {
 	offset := queryInt(r, "offset", 0)
 	if s.store != nil {
 		messages, total := s.store.GetChannelMessages(hash, limit, offset)
-		writeJSON(w, map[string]interface{}{"messages": messages, "total": total})
+		writeJSON(w, ChannelMessagesResponse{Messages: messages, Total: total})
 		return
 	}
 	messages, total, err := s.db.GetChannelMessages(hash, limit, offset)
@@ -1714,7 +1739,7 @@ func (s *Server) handleChannelMessages(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 500, err.Error())
 		return
 	}
-	writeJSON(w, map[string]interface{}{"messages": messages, "total": total})
+	writeJSON(w, ChannelMessagesResponse{Messages: messages, Total: total})
 }
 
 func (s *Server) handleObservers(w http.ResponseWriter, r *http.Request) {
@@ -1731,7 +1756,7 @@ func (s *Server) handleObservers(w http.ResponseWriter, r *http.Request) {
 	// Batch lookup: node locations (observer ID may match a node public_key)
 	nodeLocations := s.db.GetNodeLocations()
 
-	result := make([]map[string]interface{}, 0, len(observers))
+	result := make([]ObserverResp, 0, len(observers))
 	for _, o := range observers {
 		plh := 0
 		if c, ok := pktCounts[o.ID]; ok {
@@ -1744,22 +1769,21 @@ func (s *Server) handleObservers(w http.ResponseWriter, r *http.Request) {
 			nodeRole = nodeLoc["role"]
 		}
 
-		m := map[string]interface{}{
-			"id": o.ID, "name": o.Name, "iata": o.IATA,
-			"last_seen": o.LastSeen, "first_seen": o.FirstSeen,
-			"packet_count": o.PacketCount,
-			"model": o.Model, "firmware": o.Firmware,
-			"client_version": o.ClientVersion, "radio": o.Radio,
-			"battery_mv": o.BatteryMv, "uptime_secs": o.UptimeSecs,
-			"noise_floor": o.NoiseFloor,
-			"packetsLastHour": plh,
-			"lat": lat, "lon": lon, "nodeRole": nodeRole,
-		}
-		result = append(result, m)
+		result = append(result, ObserverResp{
+			ID: o.ID, Name: o.Name, IATA: o.IATA,
+			LastSeen: o.LastSeen, FirstSeen: o.FirstSeen,
+			PacketCount: o.PacketCount,
+			Model: o.Model, Firmware: o.Firmware,
+			ClientVersion: o.ClientVersion, Radio: o.Radio,
+			BatteryMv: o.BatteryMv, UptimeSecs: o.UptimeSecs,
+			NoiseFloor: o.NoiseFloor,
+			PacketsLastHour: plh,
+			Lat: lat, Lon: lon, NodeRole: nodeRole,
+		})
 	}
-	writeJSON(w, map[string]interface{}{
-		"observers":   result,
-		"server_time": time.Now().UTC().Format(time.RFC3339),
+	writeJSON(w, ObserverListResponse{
+		Observers:  result,
+		ServerTime: time.Now().UTC().Format(time.RFC3339),
 	})
 }
 
@@ -1779,15 +1803,15 @@ func (s *Server) handleObserverDetail(w http.ResponseWriter, r *http.Request) {
 		plh = c
 	}
 
-	writeJSON(w, map[string]interface{}{
-		"id": obs.ID, "name": obs.Name, "iata": obs.IATA,
-		"last_seen": obs.LastSeen, "first_seen": obs.FirstSeen,
-		"packet_count": obs.PacketCount,
-		"model": obs.Model, "firmware": obs.Firmware,
-		"client_version": obs.ClientVersion, "radio": obs.Radio,
-		"battery_mv": obs.BatteryMv, "uptime_secs": obs.UptimeSecs,
-		"noise_floor": obs.NoiseFloor,
-		"packetsLastHour": plh,
+	writeJSON(w, ObserverResp{
+		ID: obs.ID, Name: obs.Name, IATA: obs.IATA,
+		LastSeen: obs.LastSeen, FirstSeen: obs.FirstSeen,
+		PacketCount: obs.PacketCount,
+		Model: obs.Model, Firmware: obs.Firmware,
+		ClientVersion: obs.ClientVersion, Radio: obs.Radio,
+		BatteryMv: obs.BatteryMv, UptimeSecs: obs.UptimeSecs,
+		NoiseFloor: obs.NoiseFloor,
+		PacketsLastHour: plh,
 	})
 }
 
@@ -1809,14 +1833,15 @@ func (s *Server) handleObserverAnalytics(w http.ResponseWriter, r *http.Request)
 		FROM packets_v WHERE observer_id = ? AND timestamp > ?
 		GROUP BY label ORDER BY label`, bucketFmt)
 	tlRows, _ := s.db.conn.Query(tlSQL, id, since)
-	timeline := make([]map[string]interface{}, 0)
+	timeline := make([]TimeBucket, 0)
 	if tlRows != nil {
 		defer tlRows.Close()
 		for tlRows.Next() {
 			var label string
 			var count int
 			tlRows.Scan(&label, &count)
-			timeline = append(timeline, map[string]interface{}{"label": label, "count": count})
+			l := label
+			timeline = append(timeline, TimeBucket{Label: &l, Count: count})
 		}
 	}
 
@@ -1825,14 +1850,15 @@ func (s *Server) handleObserverAnalytics(w http.ResponseWriter, r *http.Request)
 		FROM packets_v WHERE observer_id = ? AND timestamp > ?
 		GROUP BY label ORDER BY label`, bucketFmt)
 	ntRows, _ := s.db.conn.Query(ntSQL, id, since)
-	nodesTimeline := make([]map[string]interface{}, 0)
+	nodesTimeline := make([]TimeBucket, 0)
 	if ntRows != nil {
 		defer ntRows.Close()
 		for ntRows.Next() {
 			var label string
 			var count int
 			ntRows.Scan(&label, &count)
-			nodesTimeline = append(nodesTimeline, map[string]interface{}{"label": label, "count": count})
+			l := label
+			nodesTimeline = append(nodesTimeline, TimeBucket{Label: &l, Count: count})
 		}
 	}
 
@@ -1843,15 +1869,15 @@ func (s *Server) handleObserverAnalytics(w http.ResponseWriter, r *http.Request)
 		FROM packets_v WHERE observer_id = ? AND timestamp > ? AND snr IS NOT NULL
 		GROUP BY rangeStart ORDER BY rangeStart`
 	snrRows, _ := s.db.conn.Query(snrSQL, id, since)
-	snrDistribution := make([]map[string]interface{}, 0)
+	snrDistribution := make([]SnrDistributionEntry, 0)
 	if snrRows != nil {
 		defer snrRows.Close()
 		for snrRows.Next() {
 			var rangeStart, count int
 			snrRows.Scan(&rangeStart, &count)
-			snrDistribution = append(snrDistribution, map[string]interface{}{
-				"range": fmt.Sprintf("%d to %d", rangeStart, rangeStart+2),
-				"count": count,
+			snrDistribution = append(snrDistribution, SnrDistributionEntry{
+				Range: fmt.Sprintf("%d to %d", rangeStart, rangeStart+2),
+				Count: count,
 			})
 		}
 	}
@@ -1859,7 +1885,7 @@ func (s *Server) handleObserverAnalytics(w http.ResponseWriter, r *http.Request)
 	// Packet type breakdown
 	ptSQL := `SELECT payload_type, COUNT(*) as count FROM packets_v WHERE observer_id = ? AND timestamp > ? GROUP BY payload_type`
 	ptRows, _ := s.db.conn.Query(ptSQL, id, since)
-	packetTypes := map[string]interface{}{}
+	packetTypes := map[string]int{}
 	if ptRows != nil {
 		defer ptRows.Close()
 		for ptRows.Next() {
@@ -1884,12 +1910,12 @@ func (s *Server) handleObserverAnalytics(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	writeJSON(w, map[string]interface{}{
-		"timeline":        timeline,
-		"packetTypes":     packetTypes,
-		"nodesTimeline":   nodesTimeline,
-		"snrDistribution": snrDistribution,
-		"recentPackets":   recentPackets,
+	writeJSON(w, ObserverAnalyticsResponse{
+		Timeline:        timeline,
+		PacketTypes:     packetTypes,
+		NodesTimeline:   nodesTimeline,
+		SnrDistribution: snrDistribution,
+		RecentPackets:   recentPackets,
 	})
 }
 
@@ -1900,66 +1926,66 @@ func (s *Server) handleTraces(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 500, err.Error())
 		return
 	}
-	writeJSON(w, map[string]interface{}{"traces": traces})
+	writeJSON(w, TraceResponse{Traces: traces})
 }
 
-var iataCoords = map[string]map[string]interface{}{
-	"SJC": {"lat": 37.3626, "lon": -121.929},
-	"SFO": {"lat": 37.6213, "lon": -122.379},
-	"OAK": {"lat": 37.7213, "lon": -122.2208},
-	"SEA": {"lat": 47.4502, "lon": -122.3088},
-	"PDX": {"lat": 45.5898, "lon": -122.5951},
-	"LAX": {"lat": 33.9425, "lon": -118.4081},
-	"SAN": {"lat": 32.7338, "lon": -117.1933},
-	"SMF": {"lat": 38.6954, "lon": -121.5908},
-	"MRY": {"lat": 36.587, "lon": -121.843},
-	"EUG": {"lat": 44.1246, "lon": -123.2119},
-	"RDD": {"lat": 40.509, "lon": -122.2934},
-	"MFR": {"lat": 42.3742, "lon": -122.8735},
-	"FAT": {"lat": 36.7762, "lon": -119.7181},
-	"SBA": {"lat": 34.4262, "lon": -119.8405},
-	"RNO": {"lat": 39.4991, "lon": -119.7681},
-	"BOI": {"lat": 43.5644, "lon": -116.2228},
-	"LAS": {"lat": 36.084, "lon": -115.1537},
-	"PHX": {"lat": 33.4373, "lon": -112.0078},
-	"SLC": {"lat": 40.7884, "lon": -111.9778},
-	"DEN": {"lat": 39.8561, "lon": -104.6737},
-	"DFW": {"lat": 32.8998, "lon": -97.0403},
-	"IAH": {"lat": 29.9844, "lon": -95.3414},
-	"AUS": {"lat": 30.1975, "lon": -97.6664},
-	"MSP": {"lat": 44.8848, "lon": -93.2223},
-	"ATL": {"lat": 33.6407, "lon": -84.4277},
-	"ORD": {"lat": 41.9742, "lon": -87.9073},
-	"JFK": {"lat": 40.6413, "lon": -73.7781},
-	"EWR": {"lat": 40.6895, "lon": -74.1745},
-	"BOS": {"lat": 42.3656, "lon": -71.0096},
-	"MIA": {"lat": 25.7959, "lon": -80.287},
-	"IAD": {"lat": 38.9531, "lon": -77.4565},
-	"CLT": {"lat": 35.2144, "lon": -80.9473},
-	"DTW": {"lat": 42.2124, "lon": -83.3534},
-	"MCO": {"lat": 28.4312, "lon": -81.3081},
-	"BNA": {"lat": 36.1263, "lon": -86.6774},
-	"RDU": {"lat": 35.8801, "lon": -78.788},
-	"YVR": {"lat": 49.1967, "lon": -123.1815},
-	"YYZ": {"lat": 43.6777, "lon": -79.6248},
-	"YYC": {"lat": 51.1215, "lon": -114.0076},
-	"YEG": {"lat": 53.3097, "lon": -113.58},
-	"YOW": {"lat": 45.3225, "lon": -75.6692},
-	"LHR": {"lat": 51.47, "lon": -0.4543},
-	"CDG": {"lat": 49.0097, "lon": 2.5479},
-	"FRA": {"lat": 50.0379, "lon": 8.5622},
-	"AMS": {"lat": 52.3105, "lon": 4.7683},
-	"MUC": {"lat": 48.3537, "lon": 11.775},
-	"SOF": {"lat": 42.6952, "lon": 23.4062},
-	"NRT": {"lat": 35.772, "lon": 140.3929},
-	"HND": {"lat": 35.5494, "lon": 139.7798},
-	"ICN": {"lat": 37.4602, "lon": 126.4407},
-	"SYD": {"lat": -33.9461, "lon": 151.1772},
-	"MEL": {"lat": -37.669, "lon": 144.841},
+var iataCoords = map[string]IataCoord{
+	"SJC": {Lat: 37.3626, Lon: -121.929},
+	"SFO": {Lat: 37.6213, Lon: -122.379},
+	"OAK": {Lat: 37.7213, Lon: -122.2208},
+	"SEA": {Lat: 47.4502, Lon: -122.3088},
+	"PDX": {Lat: 45.5898, Lon: -122.5951},
+	"LAX": {Lat: 33.9425, Lon: -118.4081},
+	"SAN": {Lat: 32.7338, Lon: -117.1933},
+	"SMF": {Lat: 38.6954, Lon: -121.5908},
+	"MRY": {Lat: 36.587, Lon: -121.843},
+	"EUG": {Lat: 44.1246, Lon: -123.2119},
+	"RDD": {Lat: 40.509, Lon: -122.2934},
+	"MFR": {Lat: 42.3742, Lon: -122.8735},
+	"FAT": {Lat: 36.7762, Lon: -119.7181},
+	"SBA": {Lat: 34.4262, Lon: -119.8405},
+	"RNO": {Lat: 39.4991, Lon: -119.7681},
+	"BOI": {Lat: 43.5644, Lon: -116.2228},
+	"LAS": {Lat: 36.084, Lon: -115.1537},
+	"PHX": {Lat: 33.4373, Lon: -112.0078},
+	"SLC": {Lat: 40.7884, Lon: -111.9778},
+	"DEN": {Lat: 39.8561, Lon: -104.6737},
+	"DFW": {Lat: 32.8998, Lon: -97.0403},
+	"IAH": {Lat: 29.9844, Lon: -95.3414},
+	"AUS": {Lat: 30.1975, Lon: -97.6664},
+	"MSP": {Lat: 44.8848, Lon: -93.2223},
+	"ATL": {Lat: 33.6407, Lon: -84.4277},
+	"ORD": {Lat: 41.9742, Lon: -87.9073},
+	"JFK": {Lat: 40.6413, Lon: -73.7781},
+	"EWR": {Lat: 40.6895, Lon: -74.1745},
+	"BOS": {Lat: 42.3656, Lon: -71.0096},
+	"MIA": {Lat: 25.7959, Lon: -80.287},
+	"IAD": {Lat: 38.9531, Lon: -77.4565},
+	"CLT": {Lat: 35.2144, Lon: -80.9473},
+	"DTW": {Lat: 42.2124, Lon: -83.3534},
+	"MCO": {Lat: 28.4312, Lon: -81.3081},
+	"BNA": {Lat: 36.1263, Lon: -86.6774},
+	"RDU": {Lat: 35.8801, Lon: -78.788},
+	"YVR": {Lat: 49.1967, Lon: -123.1815},
+	"YYZ": {Lat: 43.6777, Lon: -79.6248},
+	"YYC": {Lat: 51.1215, Lon: -114.0076},
+	"YEG": {Lat: 53.3097, Lon: -113.58},
+	"YOW": {Lat: 45.3225, Lon: -75.6692},
+	"LHR": {Lat: 51.47, Lon: -0.4543},
+	"CDG": {Lat: 49.0097, Lon: 2.5479},
+	"FRA": {Lat: 50.0379, Lon: 8.5622},
+	"AMS": {Lat: 52.3105, Lon: 4.7683},
+	"MUC": {Lat: 48.3537, Lon: 11.775},
+	"SOF": {Lat: 42.6952, Lon: 23.4062},
+	"NRT": {Lat: 35.772, Lon: 140.3929},
+	"HND": {Lat: 35.5494, Lon: 139.7798},
+	"ICN": {Lat: 37.4602, Lon: 126.4407},
+	"SYD": {Lat: -33.9461, Lon: 151.1772},
+	"MEL": {Lat: -37.669, Lon: 144.841},
 }
 
 func (s *Server) handleIATACoords(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, map[string]interface{}{"coords": iataCoords})
+	writeJSON(w, IataCoordsResponse{Coords: iataCoords})
 }
 
 func (s *Server) handleAudioLabBuckets(w http.ResponseWriter, r *http.Request) {
@@ -1971,13 +1997,13 @@ func (s *Server) handleAudioLabBuckets(w http.ResponseWriter, r *http.Request) {
 		) sub WHERE rn <= 8`
 	rows, err := s.db.conn.Query(ptSQL)
 	if err != nil {
-		writeJSON(w, map[string]interface{}{"buckets": map[string]interface{}{}})
+		writeJSON(w, AudioLabBucketsResponse{Buckets: map[string][]AudioLabPacket{}})
 		return
 	}
 	defer rows.Close()
 
 	ptNames := map[int]string{0: "REQ", 1: "RESPONSE", 2: "TXT_MSG", 3: "ACK", 4: "ADVERT", 5: "GRP_TXT", 7: "ANON_REQ", 8: "PATH", 9: "TRACE", 11: "CONTROL"}
-	buckets := map[string][]map[string]interface{}{}
+	buckets := map[string][]AudioLabPacket{}
 	for rows.Next() {
 		var pt, id int
 		var rawHex, hash, decodedJSON, pathJSON, obsID, ts sql.NullString
@@ -1987,16 +2013,16 @@ func (s *Server) handleAudioLabBuckets(w http.ResponseWriter, r *http.Request) {
 			typeName = "UNKNOWN"
 		}
 		if _, ok := buckets[typeName]; !ok {
-			buckets[typeName] = make([]map[string]interface{}, 0)
+			buckets[typeName] = make([]AudioLabPacket, 0)
 		}
-		buckets[typeName] = append(buckets[typeName], map[string]interface{}{
-			"hash": nullStr(hash), "raw_hex": nullStr(rawHex),
-			"decoded_json": nullStr(decodedJSON), "observation_count": 1,
-			"payload_type": pt, "path_json": nullStr(pathJSON),
-			"observer_id": nullStr(obsID), "timestamp": nullStr(ts),
+		buckets[typeName] = append(buckets[typeName], AudioLabPacket{
+			Hash: nullStr(hash), RawHex: nullStr(rawHex),
+			DecodedJSON: nullStr(decodedJSON), ObservationCount: 1,
+			PayloadType: pt, PathJSON: nullStr(pathJSON),
+			ObserverID: nullStr(obsID), Timestamp: nullStr(ts),
 		})
 	}
-	writeJSON(w, map[string]interface{}{"buckets": buckets})
+	writeJSON(w, AudioLabBucketsResponse{Buckets: buckets})
 }
 
 // --- Helpers ---
@@ -2086,4 +2112,92 @@ func lastN(arr []map[string]interface{}, n int) []map[string]interface{} {
 		return arr
 	}
 	return arr[len(arr)-n:]
+}
+
+// mapSliceToTransmissions converts []map[string]interface{} to []TransmissionResp
+// for type-safe JSON encoding. Used during transition from map-based to struct-based responses.
+func mapSliceToTransmissions(maps []map[string]interface{}) []TransmissionResp {
+	result := make([]TransmissionResp, 0, len(maps))
+	for _, m := range maps {
+		tx := TransmissionResp{
+			Hash:      strVal(m["hash"]),
+			FirstSeen: strVal(m["first_seen"]),
+			Timestamp: strVal(m["first_seen"]),
+		}
+		if v, ok := m["id"].(int); ok {
+			tx.ID = v
+		}
+		tx.RawHex = m["raw_hex"]
+		tx.RouteType = m["route_type"]
+		tx.PayloadType = m["payload_type"]
+		tx.PayloadVersion = m["payload_version"]
+		tx.DecodedJSON = m["decoded_json"]
+		if v, ok := m["observation_count"].(int); ok {
+			tx.ObservationCount = v
+		}
+		tx.ObserverID = m["observer_id"]
+		tx.ObserverName = m["observer_name"]
+		tx.SNR = m["snr"]
+		tx.RSSI = m["rssi"]
+		tx.PathJSON = m["path_json"]
+		tx.Direction = m["direction"]
+		tx.Score = m["score"]
+		result = append(result, tx)
+	}
+	return result
+}
+
+// mapSliceToObservations converts []map[string]interface{} to []ObservationResp.
+func mapSliceToObservations(maps []map[string]interface{}) []ObservationResp {
+	result := make([]ObservationResp, 0, len(maps))
+	for _, m := range maps {
+		obs := ObservationResp{}
+		if v, ok := m["id"].(int); ok {
+			obs.ID = v
+		}
+		obs.TransmissionID = m["transmission_id"]
+		obs.Hash = m["hash"]
+		obs.ObserverID = m["observer_id"]
+		obs.ObserverName = m["observer_name"]
+		obs.Direction = m["direction"]
+		obs.SNR = m["snr"]
+		obs.RSSI = m["rssi"]
+		obs.Score = m["score"]
+		obs.PathJSON = m["path_json"]
+		obs.Timestamp = m["timestamp"]
+		obs.RawHex = m["raw_hex"]
+		obs.PayloadType = m["payload_type"]
+		obs.DecodedJSON = m["decoded_json"]
+		obs.RouteType = m["route_type"]
+		obs.CreatedAt = m["created_at"]
+		result = append(result, obs)
+	}
+	return result
+}
+
+func strVal(v interface{}) string {
+	if v == nil {
+		return ""
+	}
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return fmt.Sprintf("%v", v)
+}
+
+// hopCandidatesToConflicts converts typed candidates to interface slice for JSON.
+func hopCandidatesToConflicts(candidates []HopCandidate) []interface{} {
+	result := make([]interface{}, len(candidates))
+	for i, c := range candidates {
+		result[i] = c
+	}
+	return result
+}
+
+// nullFloatVal extracts float64 from sql.NullFloat64, returning 0 if null.
+func nullFloatVal(n sql.NullFloat64) float64 {
+	if n.Valid {
+		return n.Float64
+	}
+	return 0
 }

@@ -526,6 +526,85 @@ func (s *PacketStore) GetCacheStats() map[string]interface{} {
 	}
 }
 
+// GetCacheStatsTyped returns cache stats as a typed struct.
+func (s *PacketStore) GetCacheStatsTyped() CacheStats {
+	s.cacheMu.Lock()
+	size := len(s.rfCache) + len(s.topoCache) + len(s.hashCache) + len(s.chanCache)
+	hits := s.cacheHits
+	misses := s.cacheMisses
+	s.cacheMu.Unlock()
+
+	var hitRate float64
+	if hits+misses > 0 {
+		hitRate = math.Round(float64(hits)/float64(hits+misses)*1000) / 10
+	}
+
+	return CacheStats{
+		Entries:    size,
+		Hits:       hits,
+		Misses:     misses,
+		StaleHits:  0,
+		Recomputes: misses,
+		HitRate:    hitRate,
+	}
+}
+
+// GetPerfStoreStatsTyped returns packet store stats as a typed struct.
+func (s *PacketStore) GetPerfStoreStatsTyped() PerfPacketStoreStats {
+	s.mu.RLock()
+	totalLoaded := len(s.packets)
+	totalObs := s.totalObs
+	hashIdx := len(s.byHash)
+	observerIdx := len(s.byObserver)
+	nodeIdx := len(s.byNode)
+
+	advertByObsCount := 0
+	if adverts, ok := s.byPayloadType[4]; ok {
+		seen := make(map[string]bool)
+		for _, tx := range adverts {
+			if tx.DecodedJSON == "" {
+				continue
+			}
+			var d map[string]interface{}
+			if json.Unmarshal([]byte(tx.DecodedJSON), &d) != nil {
+				continue
+			}
+			pk := ""
+			if v, ok := d["pubKey"].(string); ok {
+				pk = v
+			} else if v, ok := d["public_key"].(string); ok {
+				pk = v
+			}
+			if pk != "" && !seen[pk] {
+				seen[pk] = true
+				advertByObsCount++
+			}
+		}
+	}
+	s.mu.RUnlock()
+
+	estimatedMB := math.Round(float64(totalLoaded*430+totalObs*200)/1048576*10) / 10
+
+	return PerfPacketStoreStats{
+		TotalLoaded:       totalLoaded,
+		TotalObservations: totalObs,
+		Evicted:           0,
+		Inserts:           atomic.LoadInt64(&s.insertCount),
+		Queries:           atomic.LoadInt64(&s.queryCount),
+		InMemory:          totalLoaded,
+		SqliteOnly:        false,
+		MaxPackets:        2386092,
+		EstimatedMB:       estimatedMB,
+		MaxMB:             1024,
+		Indexes: PacketStoreIndexes{
+			ByHash:           hashIdx,
+			ByObserver:       observerIdx,
+			ByNode:           nodeIdx,
+			AdvertByObserver: advertByObsCount,
+		},
+	}
+}
+
 // GetTransmissionByID returns a transmission by its DB ID, formatted as a map.
 func (s *PacketStore) GetTransmissionByID(id int) map[string]interface{} {
 	s.mu.RLock()
