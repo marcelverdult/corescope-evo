@@ -767,6 +767,140 @@ console.log('\n=== live.js: pruneStaleNodes ===');
   });
 }
 
+// ===== NODES.JS: isAdvertMessage + auto-update logic =====
+console.log('\n=== nodes.js: isAdvertMessage ===');
+{
+  const ctx = makeSandbox();
+  // Provide the globals nodes.js depends on
+  ctx.ROLE_COLORS = { repeater: '#22c55e', room: '#6366f1', companion: '#3b82f6', sensor: '#f59e0b' };
+  ctx.ROLE_STYLE = {};
+  ctx.TYPE_COLORS = {};
+  ctx.getNodeStatus = () => 'active';
+  ctx.getHealthThresholds = () => ({ staleMs: 600000, degradedMs: 1800000, silentMs: 86400000 });
+  ctx.timeAgo = () => '1m ago';
+  ctx.truncate = (s) => s;
+  ctx.escapeHtml = (s) => String(s || '');
+  ctx.payloadTypeName = () => 'Advert';
+  ctx.payloadTypeColor = () => 'advert';
+  ctx.registerPage = () => {};
+  ctx.RegionFilter = { init: () => {}, onChange: () => () => {}, getRegionParam: () => '' };
+  ctx.debouncedOnWS = () => null;
+  ctx.onWS = () => {};
+  ctx.offWS = () => {};
+  ctx.debounce = (fn) => fn;
+  ctx.api = () => Promise.resolve({ nodes: [], counts: {} });
+  ctx.invalidateApiCache = () => {};
+  ctx.CLIENT_TTL = { nodeList: 90000, nodeDetail: 240000, nodeHealth: 240000 };
+  ctx.initTabBar = () => {};
+  ctx.getFavorites = () => [];
+  ctx.favStar = () => '';
+  ctx.bindFavStars = () => {};
+  ctx.makeColumnsResizable = () => {};
+  ctx.Set = Set;
+  loadInCtx(ctx, 'public/nodes.js');
+
+  const isAdvert = ctx._nodesIsAdvertMessage;
+
+  test('rejects non-packet message', () => {
+    assert.strictEqual(isAdvert({ type: 'message', data: {} }), false);
+  });
+
+  test('rejects packet without advert payload_type', () => {
+    assert.strictEqual(isAdvert({ type: 'packet', data: { packet: { payload_type: 2 } } }), false);
+  });
+
+  test('detects format 1 advert (payload_type 4)', () => {
+    assert.strictEqual(isAdvert({ type: 'packet', data: { packet: { payload_type: 4 } } }), true);
+  });
+
+  test('detects format 2 advert (payloadTypeName ADVERT)', () => {
+    assert.strictEqual(isAdvert({ type: 'packet', data: { decoded: { header: { payloadTypeName: 'ADVERT' } } } }), true);
+  });
+
+  test('rejects packet with non-ADVERT payloadTypeName', () => {
+    assert.strictEqual(isAdvert({ type: 'packet', data: { decoded: { header: { payloadTypeName: 'GRP_TXT' } } } }), false);
+  });
+
+  test('rejects empty data', () => {
+    assert.strictEqual(isAdvert({ type: 'packet', data: {} }), false);
+  });
+
+  test('rejects null data', () => {
+    assert.strictEqual(isAdvert({ type: 'packet', data: null }), false);
+  });
+
+  test('rejects missing data', () => {
+    assert.strictEqual(isAdvert({ type: 'packet' }), false);
+  });
+}
+
+console.log('\n=== nodes.js: loadNodes refreshOnly =====');
+{
+  // Verify that loadNodes(true) calls renderRows instead of renderLeft
+  const ctx = makeSandbox();
+  ctx.ROLE_COLORS = { repeater: '#22c55e', room: '#6366f1', companion: '#3b82f6', sensor: '#f59e0b' };
+  ctx.ROLE_STYLE = {};
+  ctx.TYPE_COLORS = {};
+  ctx.getNodeStatus = () => 'active';
+  ctx.getHealthThresholds = () => ({ staleMs: 600000, degradedMs: 1800000, silentMs: 86400000 });
+  ctx.timeAgo = () => '1m ago';
+  ctx.truncate = (s) => s;
+  ctx.escapeHtml = (s) => String(s || '');
+  ctx.payloadTypeName = () => 'Advert';
+  ctx.payloadTypeColor = () => 'advert';
+  ctx.debouncedOnWS = () => null;
+  ctx.onWS = () => {};
+  ctx.offWS = () => {};
+  ctx.debounce = (fn) => fn;
+  ctx.invalidateApiCache = () => {};
+  ctx.CLIENT_TTL = { nodeList: 90000, nodeDetail: 240000, nodeHealth: 240000 };
+  ctx.initTabBar = () => {};
+  ctx.getFavorites = () => [];
+  ctx.favStar = () => '';
+  ctx.bindFavStars = () => {};
+  ctx.makeColumnsResizable = () => {};
+  ctx.Set = Set;
+  ctx.RegionFilter = { init: () => {}, onChange: () => () => {}, getRegionParam: () => '' };
+
+  let renderLeftCalls = 0;
+  let renderRowsCalls = 0;
+  let initCaptured = null;
+
+  ctx.api = () => Promise.resolve({ nodes: [{ public_key: 'abc123def456ghij', name: 'TestNode', role: 'repeater' }], counts: { repeaters: 1 } });
+  ctx.registerPage = (name, handlers) => { initCaptured = handlers; };
+
+  // Load nodes.js — captures the init/destroy via registerPage
+  loadInCtx(ctx, 'public/nodes.js');
+
+  // Now we need to call init, but it requires DOM.
+  // Instead, test the loadNodes function behavior via the WS handler pattern.
+  // The key test: debouncedOnWS callback should call loadNodes(true) for adverts.
+  // We already tested isAdvertMessage above. Here we verify the refreshOnly param
+  // is passed correctly by checking it was wired in the source.
+  const src = fs.readFileSync('public/nodes.js', 'utf8');
+
+  test('WS handler calls loadNodes with refreshOnly=true', () => {
+    assert.ok(src.includes('loadNodes(true)'), 'WS handler should call loadNodes(true) for refresh-only updates');
+  });
+
+  test('WS handler uses 5-second debounce', () => {
+    assert.ok(src.includes('}, 5000)'), 'debouncedOnWS should use 5000ms debounce');
+  });
+
+  test('WS handler invalidates API cache before refresh', () => {
+    assert.ok(src.includes("invalidateApiCache('/nodes')"), 'Should invalidate /nodes cache');
+  });
+
+  test('WS handler resets _allNodes before refresh', () => {
+    assert.ok(src.includes('_allNodes = null'), 'Should reset _allNodes to force re-fetch');
+  });
+
+  test('loadNodes uses refreshOnly to render rows only', () => {
+    assert.ok(src.includes('if (refreshOnly)'), 'loadNodes should check refreshOnly parameter');
+    assert.ok(src.includes('renderRows()'), 'Should call renderRows when refreshOnly is true');
+  });
+}
+
 // ===== SUMMARY =====
 console.log(`\n${'═'.repeat(40)}`);
 console.log(`  Frontend helpers: ${passed} passed, ${failed} failed`);

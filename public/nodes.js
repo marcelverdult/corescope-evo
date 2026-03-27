@@ -206,7 +206,14 @@
     }, 250));
 
     loadNodes();
-    wsHandler = debouncedOnWS(function (msgs) { if (msgs.some(function (m) { return m.type === 'packet'; })) loadNodes(); });
+    // Auto-refresh when ADVERT packets arrive via WebSocket (fixes #131)
+    wsHandler = debouncedOnWS(function (msgs) {
+      if (msgs.some(isAdvertMessage)) {
+        _allNodes = null;
+        invalidateApiCache('/nodes');
+        loadNodes(true);
+      }
+    }, 5000);
   }
 
   async function loadFullNode(pubkey) {
@@ -426,7 +433,7 @@
 
   let _allNodes = null; // cached full node list
 
-  async function loadNodes() {
+  async function loadNodes(refreshOnly) {
     try {
       // Fetch all nodes once, filter client-side
       if (!_allNodes) {
@@ -487,7 +494,11 @@
       syncClaimedToFavorites();
 
       renderCounts();
-      renderLeft();
+      if (refreshOnly) {
+        renderRows();
+      } else {
+        renderLeft();
+      }
     } catch (e) {
       console.error('Failed to load nodes:', e);
       const tbody = document.getElementById('nodesBody');
@@ -838,5 +849,15 @@
     });
   }
 
+  function isAdvertMessage(m) {
+    if (m.type !== 'packet') return false;
+    if (m.data && m.data.packet && m.data.packet.payload_type === 4) return true;
+    if (m.data && m.data.decoded && m.data.decoded.header && m.data.decoded.header.payloadTypeName === 'ADVERT') return true;
+    return false;
+  }
+
   registerPage('nodes', { init, destroy });
+
+  // Test hooks
+  window._nodesIsAdvertMessage = isAdvertMessage;
 })();
