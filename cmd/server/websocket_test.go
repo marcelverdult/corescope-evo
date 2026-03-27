@@ -234,8 +234,8 @@ func TestPollerBroadcastsNewData(t *testing.T) {
 		if !ok {
 			t.Fatal("expected data.packet to be an object")
 		}
-		// Verify key fields exist in nested packet
-		for _, field := range []string{"id", "hash", "payload_type"} {
+		// Verify key fields exist in nested packet (timestamp required by packets.js)
+		for _, field := range []string{"id", "hash", "payload_type", "timestamp"} {
 			if _, exists := pktMap[field]; !exists {
 				t.Errorf("expected data.packet.%s to exist", field)
 			}

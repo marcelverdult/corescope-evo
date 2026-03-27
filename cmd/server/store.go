@@ -950,6 +950,7 @@ func (s *PacketStore) IngestNewFromDB(sinceID, limit int) ([]map[string]interfac
 			"raw_hex":           strOrNil(tx.RawHex),
 			"hash":              strOrNil(tx.Hash),
 			"first_seen":        strOrNil(tx.FirstSeen),
+			"timestamp":         strOrNil(tx.FirstSeen),
 			"route_type":        intPtrOrNil(tx.RouteType),
 			"payload_type":      intPtrOrNil(tx.PayloadType),
 			"decoded_json":      strOrNil(tx.DecodedJSON),
