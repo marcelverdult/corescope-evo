@@ -1341,12 +1341,32 @@ func (s *PacketStore) GetAnalyticsRF(region string) map[string]interface{} {
 	} else {
 		// No region: iterate all transmissions and their observations
 		for _, tx := range s.packets {
+			hash := tx.Hash
+			if hash != "" {
+				regionalHashes[hash] = true
+				if !seenSizeHashes[hash] && tx.RawHex != "" {
+					seenSizeHashes[hash] = true
+					packetSizes = append(packetSizes, len(tx.RawHex)/2)
+				}
+				if !seenTypeHashes[hash] && tx.PayloadType != nil {
+					seenTypeHashes[hash] = true
+					typeBuckets[*tx.PayloadType]++
+				}
+			}
+
+			// Pre-resolve type name once per transmission
+			typeName := "UNK"
+			if tx.PayloadType != nil {
+				if n, ok := ptNames[*tx.PayloadType]; ok {
+					typeName = n
+				} else {
+					typeName = fmt.Sprintf("UNK(%d)", *tx.PayloadType)
+				}
+			}
+
 			if len(tx.Observations) > 0 {
 				for _, obs := range tx.Observations {
 					totalObs++
-					if tx.Hash != "" {
-						regionalHashes[tx.Hash] = true
-					}
 					ts := obs.Timestamp
 					if ts != "" {
 						if minTimestamp == "" || ts < minTimestamp {
@@ -1358,34 +1378,31 @@ func (s *PacketStore) GetAnalyticsRF(region string) map[string]interface{} {
 					}
 
 					if obs.SNR != nil {
-						snrVals = append(snrVals, *obs.SNR)
-						typeName := "UNK"
-						if tx.PayloadType != nil {
-							if n, ok := ptNames[*tx.PayloadType]; ok {
-								typeName = n
-							} else {
-								typeName = fmt.Sprintf("UNK(%d)", *tx.PayloadType)
-							}
+						snr := *obs.SNR
+						snrVals = append(snrVals, snr)
+						entry := snrByType[typeName]
+						if entry == nil {
+							entry = &struct{ vals []float64 }{}
+							snrByType[typeName] = entry
 						}
-						if snrByType[typeName] == nil {
-							snrByType[typeName] = &struct{ vals []float64 }{}
-						}
-						snrByType[typeName].vals = append(snrByType[typeName].vals, *obs.SNR)
+						entry.vals = append(entry.vals, snr)
 
 						if obs.RSSI != nil {
-							scatterAll = append(scatterAll, struct{ snr, rssi float64 }{*obs.SNR, *obs.RSSI})
+							scatterAll = append(scatterAll, struct{ snr, rssi float64 }{snr, *obs.RSSI})
 						}
 
 						if len(ts) >= 13 {
 							hr := ts[:13]
-							if sigTime[hr] == nil {
-								sigTime[hr] = &struct {
+							st := sigTime[hr]
+							if st == nil {
+								st = &struct {
 									snrs  []float64
 									count int
 								}{}
+								sigTime[hr] = st
 							}
-							sigTime[hr].snrs = append(sigTime[hr].snrs, *obs.SNR)
-							sigTime[hr].count++
+							st.snrs = append(st.snrs, snr)
+							st.count++
 						}
 					}
 					if obs.RSSI != nil {
@@ -1395,22 +1412,10 @@ func (s *PacketStore) GetAnalyticsRF(region string) map[string]interface{} {
 					if len(ts) >= 13 {
 						hourBuckets[ts[:13]]++
 					}
-
-					if tx.Hash != "" && !seenSizeHashes[tx.Hash] && tx.RawHex != "" {
-						seenSizeHashes[tx.Hash] = true
-						packetSizes = append(packetSizes, len(tx.RawHex)/2)
-					}
-					if tx.Hash != "" && !seenTypeHashes[tx.Hash] && tx.PayloadType != nil {
-						seenTypeHashes[tx.Hash] = true
-						typeBuckets[*tx.PayloadType]++
-					}
 				}
 			} else {
 				// Legacy: transmission without observations
 				totalObs++
-				if tx.Hash != "" {
-					regionalHashes[tx.Hash] = true
-				}
 				if tx.SNR != nil {
 					snrVals = append(snrVals, *tx.SNR)
 				}
@@ -1428,14 +1433,6 @@ func (s *PacketStore) GetAnalyticsRF(region string) map[string]interface{} {
 				}
 				if len(ts) >= 13 {
 					hourBuckets[ts[:13]]++
-				}
-				if tx.Hash != "" && !seenSizeHashes[tx.Hash] && tx.RawHex != "" {
-					seenSizeHashes[tx.Hash] = true
-					packetSizes = append(packetSizes, len(tx.RawHex)/2)
-				}
-				if tx.Hash != "" && !seenTypeHashes[tx.Hash] && tx.PayloadType != nil {
-					seenTypeHashes[tx.Hash] = true
-					typeBuckets[*tx.PayloadType]++
 				}
 			}
 		}
