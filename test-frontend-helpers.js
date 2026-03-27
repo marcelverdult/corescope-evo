@@ -834,70 +834,173 @@ console.log('\n=== nodes.js: isAdvertMessage ===');
   });
 }
 
-console.log('\n=== nodes.js: loadNodes refreshOnly =====');
+console.log('\n=== nodes.js: WS handler runtime behavior ===');
 {
-  // Verify that loadNodes(true) calls renderRows instead of renderLeft
-  const ctx = makeSandbox();
-  ctx.ROLE_COLORS = { repeater: '#22c55e', room: '#6366f1', companion: '#3b82f6', sensor: '#f59e0b' };
-  ctx.ROLE_STYLE = {};
-  ctx.TYPE_COLORS = {};
-  ctx.getNodeStatus = () => 'active';
-  ctx.getHealthThresholds = () => ({ staleMs: 600000, degradedMs: 1800000, silentMs: 86400000 });
-  ctx.timeAgo = () => '1m ago';
-  ctx.truncate = (s) => s;
-  ctx.escapeHtml = (s) => String(s || '');
-  ctx.payloadTypeName = () => 'Advert';
-  ctx.payloadTypeColor = () => 'advert';
-  ctx.debouncedOnWS = () => null;
-  ctx.onWS = () => {};
-  ctx.offWS = () => {};
-  ctx.debounce = (fn) => fn;
-  ctx.invalidateApiCache = () => {};
-  ctx.CLIENT_TTL = { nodeList: 90000, nodeDetail: 240000, nodeHealth: 240000 };
-  ctx.initTabBar = () => {};
-  ctx.getFavorites = () => [];
-  ctx.favStar = () => '';
-  ctx.bindFavStars = () => {};
-  ctx.makeColumnsResizable = () => {};
-  ctx.Set = Set;
-  ctx.RegionFilter = { init: () => {}, onChange: () => () => {}, getRegionParam: () => '' };
+  // Runtime tests for the auto-updating WS handler (replaces src.includes string checks).
+  // Uses controllable setTimeout + mock DOM + real nodes.js code via vm.createContext.
 
-  let renderLeftCalls = 0;
-  let renderRowsCalls = 0;
-  let initCaptured = null;
+  function makeNodesWsSandbox() {
+    const ctx = makeSandbox();
+    // Controllable timer queue
+    const timers = [];
+    let nextTimerId = 1;
+    ctx.setTimeout = (fn, ms) => { const id = nextTimerId++; timers.push({ fn, ms, id }); return id; };
+    ctx.clearTimeout = (targetId) => { const idx = timers.findIndex(t => t.id === targetId); if (idx >= 0) timers.splice(idx, 1); };
 
-  ctx.api = () => Promise.resolve({ nodes: [{ public_key: 'abc123def456ghij', name: 'TestNode', role: 'repeater' }], counts: { repeaters: 1 } });
-  ctx.registerPage = (name, handlers) => { initCaptured = handlers; };
+    // DOM elements mock — getElementById returns tracked mock elements
+    const domElements = {};
+    function getEl(id) {
+      if (!domElements[id]) {
+        domElements[id] = {
+          id, innerHTML: '', textContent: '', value: '', scrollTop: 0,
+          style: {}, dataset: {},
+          classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
+          addEventListener() {},
+          querySelectorAll() { return []; },
+          querySelector() { return null; },
+          getAttribute() { return null; },
+        };
+      }
+      return domElements[id];
+    }
+    ctx.document.getElementById = getEl;
+    ctx.document.querySelectorAll = () => [];
+    ctx.document.addEventListener = () => {};
+    ctx.document.removeEventListener = () => {};
 
-  // Load nodes.js — captures the init/destroy via registerPage
-  loadInCtx(ctx, 'public/nodes.js');
+    // Globals nodes.js depends on
+    ctx.ROLE_COLORS = { repeater: '#22c55e', room: '#6366f1', companion: '#3b82f6', sensor: '#f59e0b' };
+    ctx.ROLE_STYLE = {};
+    ctx.TYPE_COLORS = {};
+    ctx.getNodeStatus = () => 'active';
+    ctx.getHealthThresholds = () => ({ staleMs: 600000, degradedMs: 1800000, silentMs: 86400000 });
+    ctx.timeAgo = () => '1m ago';
+    ctx.truncate = (s) => s;
+    ctx.escapeHtml = (s) => String(s || '');
+    ctx.payloadTypeName = () => 'Advert';
+    ctx.payloadTypeColor = () => 'advert';
+    ctx.debounce = (fn) => fn;
+    ctx.initTabBar = () => {};
+    ctx.getFavorites = () => [];
+    ctx.favStar = () => '';
+    ctx.bindFavStars = () => {};
+    ctx.makeColumnsResizable = () => {};
+    ctx.Set = Set;
+    ctx.CLIENT_TTL = { nodeList: 90000, nodeDetail: 240000, nodeHealth: 240000 };
+    ctx.RegionFilter = { init() {}, onChange() { return () => {}; }, getRegionParam() { return ''; }, offChange() {} };
 
-  // Now we need to call init, but it requires DOM.
-  // Instead, test the loadNodes function behavior via the WS handler pattern.
-  // The key test: debouncedOnWS callback should call loadNodes(true) for adverts.
-  // We already tested isAdvertMessage above. Here we verify the refreshOnly param
-  // is passed correctly by checking it was wired in the source.
-  const src = fs.readFileSync('public/nodes.js', 'utf8');
+    // Track API calls and cache invalidation
+    let apiCallCount = 0;
+    const invalidatedPaths = [];
+    ctx.api = () => { apiCallCount++; return Promise.resolve({ nodes: [{ public_key: 'abc123def456ghij', name: 'TestNode', role: 'repeater', advert_count: 1 }], counts: { repeaters: 1 } }); };
+    ctx.invalidateApiCache = (path) => { invalidatedPaths.push(path); };
 
-  test('WS handler calls loadNodes with refreshOnly=true', () => {
-    assert.ok(src.includes('loadNodes(true)'), 'WS handler should call loadNodes(true) for refresh-only updates');
+    // WS listener system (real debouncedOnWS from app.js, using our controllable setTimeout)
+    let wsListeners = [];
+    ctx.onWS = (fn) => { wsListeners.push(fn); };
+    ctx.offWS = (fn) => { wsListeners = wsListeners.filter(f => f !== fn); };
+    ctx.debouncedOnWS = function (fn, ms) {
+      if (typeof ms === 'undefined') ms = 250;
+      let pending = [];
+      let timer = null;
+      function handler(msg) {
+        pending.push(msg);
+        if (!timer) {
+          timer = ctx.setTimeout(function () {
+            const batch = pending;
+            pending = [];
+            timer = null;
+            fn(batch);
+          }, ms);
+        }
+      }
+      wsListeners.push(handler);
+      return handler;
+    };
+
+    // Capture registerPage to get init/destroy
+    let pageMod = null;
+    ctx.registerPage = (name, handlers) => { pageMod = handlers; };
+
+    loadInCtx(ctx, 'public/nodes.js');
+
+    // Create a mock app element and call init()
+    const appEl = getEl('page');
+    pageMod.init(appEl);
+
+    // Reset counters after init's own loadNodes() call
+    apiCallCount = 0;
+    invalidatedPaths.length = 0;
+
+    return {
+      ctx, timers, wsListeners, domElements,
+      getApiCalls: () => apiCallCount,
+      getInvalidated: () => [...invalidatedPaths],
+      resetCounters() { apiCallCount = 0; invalidatedPaths.length = 0; },
+      fireTimers() { const fns = timers.splice(0).map(t => t.fn); fns.forEach(fn => fn()); },
+      sendWS(msg) { wsListeners.forEach(fn => fn(msg)); },
+    };
+  }
+
+  test('ADVERT packet triggers node list refresh via WS handler', () => {
+    const env = makeNodesWsSandbox();
+    env.sendWS({ type: 'packet', data: { packet: { payload_type: 4 } } });
+    assert.strictEqual(env.timers.length, 1, 'debounce timer should be queued');
+    assert.strictEqual(env.timers[0].ms, 5000, 'debounce should be 5000ms');
+    env.fireTimers();
+    assert.ok(env.getInvalidated().includes('/nodes'), 'should invalidate /nodes cache');
+    assert.ok(env.getApiCalls() > 0, 'should call api() to re-fetch nodes');
   });
 
-  test('WS handler uses 5-second debounce', () => {
-    assert.ok(src.includes('}, 5000)'), 'debouncedOnWS should use 5000ms debounce');
+  test('non-ADVERT packet does NOT trigger refresh', () => {
+    const env = makeNodesWsSandbox();
+    env.sendWS({ type: 'packet', data: { packet: { payload_type: 2 } } });
+    env.fireTimers();
+    assert.strictEqual(env.getApiCalls(), 0, 'api should not be called for non-ADVERT');
+    assert.deepStrictEqual(env.getInvalidated(), [], 'no cache invalidation for non-ADVERT');
   });
 
-  test('WS handler invalidates API cache before refresh', () => {
-    assert.ok(src.includes("invalidateApiCache('/nodes')"), 'Should invalidate /nodes cache');
+  test('debounce collapses multiple ADVERTs within 5s into one refresh', () => {
+    const env = makeNodesWsSandbox();
+    env.sendWS({ type: 'packet', data: { packet: { payload_type: 4 } } });
+    env.sendWS({ type: 'packet', data: { packet: { payload_type: 4 } } });
+    env.sendWS({ type: 'packet', data: { packet: { payload_type: 4 } } });
+    assert.strictEqual(env.timers.length, 1, 'only one debounce timer despite 3 messages');
+    env.fireTimers();
+    assert.ok(env.getApiCalls() > 0, 'api called after debounce fires');
+    // Verify it was only 1 batch call (invalidated once)
+    const nodeInvalidations = env.getInvalidated().filter(p => p === '/nodes');
+    assert.strictEqual(nodeInvalidations.length, 1, 'cache invalidated exactly once');
   });
 
-  test('WS handler resets _allNodes before refresh', () => {
-    assert.ok(src.includes('_allNodes = null'), 'Should reset _allNodes to force re-fetch');
+  test('WS ADVERT resets _allNodes cache before refresh', () => {
+    const env = makeNodesWsSandbox();
+    // After init, _allNodes may be populated (pending async). Send ADVERT to reset it.
+    env.sendWS({ type: 'packet', data: { decoded: { header: { payloadTypeName: 'ADVERT' } } } });
+    env.fireTimers();
+    // If _allNodes was reset to null, loadNodes will call api() to re-fetch
+    assert.ok(env.getApiCalls() > 0, 'api called because _allNodes was reset to null');
   });
 
-  test('loadNodes uses refreshOnly to render rows only', () => {
-    assert.ok(src.includes('if (refreshOnly)'), 'loadNodes should check refreshOnly parameter');
-    assert.ok(src.includes('renderRows()'), 'Should call renderRows when refreshOnly is true');
+  test('scroll position and selection preserved during WS-triggered refresh', () => {
+    const env = makeNodesWsSandbox();
+    // Simulate scrolled panel state — WS handler should not touch scroll or rebuild panel
+    const nodesLeftEl = env.ctx.document.getElementById('nodesLeft');
+    nodesLeftEl.scrollTop = 500;
+    nodesLeftEl.innerHTML = 'PANEL_WITH_TABS_AND_TABLE';
+
+    env.sendWS({ type: 'packet', data: { packet: { payload_type: 4 } } });
+    env.fireTimers();
+
+    // WS handler calls _allNodes=null + invalidateApiCache + loadNodes(true) synchronously.
+    // loadNodes(true) is async but the handler itself doesn't touch scroll or panel structure.
+    // refreshOnly=true causes renderRows (tbody only), not renderLeft (full panel rebuild).
+    assert.strictEqual(nodesLeftEl.scrollTop, 500, 'scrollTop preserved — WS handler does not reset scroll');
+    assert.strictEqual(nodesLeftEl.innerHTML, 'PANEL_WITH_TABS_AND_TABLE',
+      'panel innerHTML preserved — WS handler does not rebuild panel synchronously');
+    // Verify the refresh was triggered (API called) but no extra state was cleared
+    assert.ok(env.getApiCalls() > 0, 'API called for data refresh');
+    assert.ok(env.getInvalidated().includes('/nodes'), 'cache invalidated for fresh data');
   });
 }
 

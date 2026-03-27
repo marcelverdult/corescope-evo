@@ -247,6 +247,100 @@ test('GRP_TXT decryptionStatus is no_key when encrypted data too short', () => {
   assert.strictEqual(p.payload.decryptionStatus, 'no_key');
 });
 
+test('GRP_TXT decryptionStatus is decrypted when key matches', () => {
+  // Mock the ChannelCrypto module to simulate successful decryption
+  const cryptoPath = require.resolve('@michaelhart/meshcore-decoder/dist/crypto/channel-crypto');
+  const originalModule = require.cache[cryptoPath];
+  require.cache[cryptoPath] = {
+    id: cryptoPath,
+    exports: {
+      ChannelCrypto: {
+        decryptGroupTextMessage: () => ({
+          success: true,
+          data: { sender: 'TestUser', message: 'Hello world', timestamp: 1700000000, flags: 0 },
+        }),
+      },
+    },
+  };
+  try {
+    const hex = '1500' + 'FF' + 'AABB' + 'CCDDEE112233';
+    const p = decodePacket(hex, { '#general': 'aabbccddaabbccddaabbccddaabbccdd' });
+    assert.strictEqual(p.payload.decryptionStatus, 'decrypted');
+    assert.strictEqual(p.payload.type, 'CHAN');
+    assert.strictEqual(p.payload.channelHashHex, 'FF');
+    assert.strictEqual(p.payload.channel, '#general');
+    assert.strictEqual(p.payload.sender, 'TestUser');
+    assert.strictEqual(p.payload.text, 'TestUser: Hello world');
+    assert.strictEqual(p.payload.sender_timestamp, 1700000000);
+    assert.strictEqual(p.payload.flags, 0);
+    assert.strictEqual(p.payload.channelHash, 0xFF);
+  } finally {
+    if (originalModule) require.cache[cryptoPath] = originalModule;
+    else delete require.cache[cryptoPath];
+  }
+});
+
+test('GRP_TXT decrypted without sender formats text correctly', () => {
+  const cryptoPath = require.resolve('@michaelhart/meshcore-decoder/dist/crypto/channel-crypto');
+  const originalModule = require.cache[cryptoPath];
+  require.cache[cryptoPath] = {
+    id: cryptoPath,
+    exports: {
+      ChannelCrypto: {
+        decryptGroupTextMessage: () => ({
+          success: true,
+          data: { sender: null, message: 'Broadcast msg', timestamp: 1700000001, flags: 1 },
+        }),
+      },
+    },
+  };
+  try {
+    const hex = '1500' + '0A' + 'AABB' + 'CCDDEE112233';
+    const p = decodePacket(hex, { '#alerts': 'deadbeefdeadbeefdeadbeefdeadbeef' });
+    assert.strictEqual(p.payload.decryptionStatus, 'decrypted');
+    assert.strictEqual(p.payload.sender, null);
+    assert.strictEqual(p.payload.text, 'Broadcast msg');
+    assert.strictEqual(p.payload.channelHashHex, '0A');
+  } finally {
+    if (originalModule) require.cache[cryptoPath] = originalModule;
+    else delete require.cache[cryptoPath];
+  }
+});
+
+test('GRP_TXT decrypted tries multiple keys, first match wins', () => {
+  const cryptoPath = require.resolve('@michaelhart/meshcore-decoder/dist/crypto/channel-crypto');
+  const originalModule = require.cache[cryptoPath];
+  let callCount = 0;
+  require.cache[cryptoPath] = {
+    id: cryptoPath,
+    exports: {
+      ChannelCrypto: {
+        decryptGroupTextMessage: (ciphertext, mac, key) => {
+          callCount++;
+          if (key === 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb') {
+            return { success: true, data: { sender: 'Bob', message: 'Found it', timestamp: 0, flags: 0 } };
+          }
+          return { success: false };
+        },
+      },
+    },
+  };
+  try {
+    const hex = '1500' + 'FF' + 'AABB' + 'CCDDEE112233';
+    const p = decodePacket(hex, {
+      '#wrong': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      '#right': 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    });
+    assert.strictEqual(p.payload.decryptionStatus, 'decrypted');
+    assert.strictEqual(p.payload.channel, '#right');
+    assert.strictEqual(p.payload.sender, 'Bob');
+    assert.strictEqual(callCount, 2);
+  } finally {
+    if (originalModule) require.cache[cryptoPath] = originalModule;
+    else delete require.cache[cryptoPath];
+  }
+});
+
 console.log('\n=== TXT_MSG payload ===');
 test('TXT_MSG decode', () => {
   // payloadType=2 → (2<<2)|1 = 0x09
