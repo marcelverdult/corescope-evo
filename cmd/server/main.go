@@ -20,6 +20,7 @@ import (
 // Set via -ldflags at build time
 var Version string
 var Commit string
+var BuildTime string
 
 func resolveCommit() string {
 	if Commit != "" {
@@ -41,6 +42,13 @@ func resolveCommit() string {
 func resolveVersion() string {
 	if Version != "" {
 		return Version
+	}
+	return "unknown"
+}
+
+func resolveBuildTime() string {
+	if BuildTime != "" {
+		return BuildTime
 	}
 	return "unknown"
 }

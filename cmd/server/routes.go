@@ -26,6 +26,7 @@ type Server struct {
 	perfStats *PerfStats
 	version   string
 	commit    string
+	buildTime string
 }
 
 // PerfStats tracks request performance.
@@ -61,6 +62,7 @@ func NewServer(db *DB, cfg *Config, hub *Hub) *Server {
 		perfStats: NewPerfStats(),
 		version:   resolveVersion(),
 		commit:    resolveCommit(),
+		buildTime: resolveBuildTime(),
 	}
 }
 
@@ -320,6 +322,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		Engine:      "go",
 		Version:     s.version,
 		Commit:      s.commit,
+		BuildTime:   s.buildTime,
 		Uptime:      int(uptime),
 		UptimeHuman: fmt.Sprintf("%dh %dm", int(uptime)/3600, (int(uptime)%3600)/60),
 		Memory: MemoryStats{
@@ -374,6 +377,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		Engine:             "go",
 		Version:            s.version,
 		Commit:             s.commit,
+		BuildTime:          s.buildTime,
 		Counts: RoleCounts{
 			Repeaters:  counts["repeaters"],
 			Rooms:      counts["rooms"],

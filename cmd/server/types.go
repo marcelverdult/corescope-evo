@@ -65,6 +65,7 @@ type StatsResponse struct {
 	Engine             string     `json:"engine"`
 	Version            string     `json:"version"`
 	Commit             string     `json:"commit"`
+	BuildTime          string     `json:"buildTime"`
 	Counts             RoleCounts `json:"counts"`
 }
 
@@ -132,6 +133,7 @@ type HealthResponse struct {
 	Engine      string                 `json:"engine"`
 	Version     string                 `json:"version"`
 	Commit      string                 `json:"commit"`
+	BuildTime   string                 `json:"buildTime"`
 	Uptime      int                    `json:"uptime"`
 	UptimeHuman string                 `json:"uptimeHuman"`
 	Memory      MemoryStats            `json:"memory"`

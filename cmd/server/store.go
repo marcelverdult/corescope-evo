@@ -80,6 +80,7 @@ type PacketStore struct {
 	hashCache     map[string]*cachedResult // region → cached hash-sizes result
 	chanCache     map[string]*cachedResult // region → cached channels result
 	distCache     map[string]*cachedResult // region → cached distance result
+	subpathCache  map[string]*cachedResult // params → cached subpaths result
 	rfCacheTTL    time.Duration
 	cacheHits     int64
 	cacheMisses int64
@@ -111,6 +112,7 @@ func NewPacketStore(db *DB) *PacketStore {
 		hashCache:     make(map[string]*cachedResult),
 		chanCache:     make(map[string]*cachedResult),
 		distCache:     make(map[string]*cachedResult),
+		subpathCache:  make(map[string]*cachedResult),
 		rfCacheTTL:    15 * time.Second,
 	}
 }
@@ -508,7 +510,7 @@ func (s *PacketStore) GetPerfStoreStats() map[string]interface{} {
 // GetCacheStats returns RF cache hit/miss statistics.
 func (s *PacketStore) GetCacheStats() map[string]interface{} {
 	s.cacheMu.Lock()
-	size := len(s.rfCache) + len(s.topoCache) + len(s.hashCache) + len(s.chanCache) + len(s.distCache)
+	size := len(s.rfCache) + len(s.topoCache) + len(s.hashCache) + len(s.chanCache) + len(s.distCache) + len(s.subpathCache)
 	hits := s.cacheHits
 	misses := s.cacheMisses
 	s.cacheMu.Unlock()
@@ -531,7 +533,7 @@ func (s *PacketStore) GetCacheStats() map[string]interface{} {
 // GetCacheStatsTyped returns cache stats as a typed struct.
 func (s *PacketStore) GetCacheStatsTyped() CacheStats {
 	s.cacheMu.Lock()
-	size := len(s.rfCache) + len(s.topoCache) + len(s.hashCache) + len(s.chanCache) + len(s.distCache)
+	size := len(s.rfCache) + len(s.topoCache) + len(s.hashCache) + len(s.chanCache) + len(s.distCache) + len(s.subpathCache)
 	hits := s.cacheHits
 	misses := s.cacheMisses
 	s.cacheMu.Unlock()
@@ -3518,6 +3520,27 @@ func (s *PacketStore) GetBulkHealth(limit int, region string) []map[string]inter
 // --- Subpaths Analytics ---
 
 func (s *PacketStore) GetAnalyticsSubpaths(region string, minLen, maxLen, limit int) map[string]interface{} {
+	cacheKey := fmt.Sprintf("%s|%d|%d|%d", region, minLen, maxLen, limit)
+
+	s.cacheMu.Lock()
+	if cached, ok := s.subpathCache[cacheKey]; ok && time.Now().Before(cached.expiresAt) {
+		s.cacheHits++
+		s.cacheMu.Unlock()
+		return cached.data
+	}
+	s.cacheMisses++
+	s.cacheMu.Unlock()
+
+	result := s.computeAnalyticsSubpaths(region, minLen, maxLen, limit)
+
+	s.cacheMu.Lock()
+	s.subpathCache[cacheKey] = &cachedResult{data: result, expiresAt: time.Now().Add(s.rfCacheTTL)}
+	s.cacheMu.Unlock()
+
+	return result
+}
+
+func (s *PacketStore) computeAnalyticsSubpaths(region string, minLen, maxLen, limit int) map[string]interface{} {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
