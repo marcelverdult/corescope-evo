@@ -2389,7 +2389,14 @@ func (s *PacketStore) GetAnalyticsTopology(region string) map[string]interface{}
 		bestPathList = bestPathList[:50]
 	}
 
-	uniqueNodes := len(hopFreq)
+	// Count only hops that resolve to real nodes (not unresolved 1-byte prefixes)
+	resolvedSet := map[string]bool{}
+	for hop := range hopFreq {
+		if r := resolveHop(hop); r != nil {
+			resolvedSet[r.PublicKey] = true
+		}
+	}
+	uniqueNodes := len(resolvedSet)
 
 	return map[string]interface{}{
 		"uniqueNodes":      uniqueNodes,
