@@ -165,17 +165,26 @@ jobs:
       - name: Deploy to staging
         run: |
           set -e
-          cd /opt/meshcore-deploy
 
-          # Source environment overrides
-          if [ -f .env ]; then
-            set -a; source .env; set +a
+          # Source environment overrides from deploy dir or home
+          if [ -f /opt/meshcore-deploy/.env ]; then
+            set -a; source /opt/meshcore-deploy/.env; set +a
+            echo "Sourced /opt/meshcore-deploy/.env"
+          elif [ -f "$HOME/.env" ]; then
+            set -a; source "$HOME/.env"; set +a
+            echo "Sourced $HOME/.env"
+          else
+            echo "No .env found, using defaults"
           fi
 
           # Ensure data directories exist
           mkdir -p "${PROD_DATA_DIR:-$HOME/meshcore-data}" "${STAGING_DATA_DIR:-$HOME/meshcore-staging-data}"
 
-          # Restart staging with the newly built image
+          # Copy compose file to deploy dir so manage.sh can use it
+          mkdir -p /opt/meshcore-deploy
+          cp docker-compose.yml /opt/meshcore-deploy/docker-compose.yml
+
+          # Run compose from the repo checkout (where docker-compose.yml lives)
           docker compose --profile staging up -d --force-recreate staging
 
           # Wait for Docker healthcheck to report healthy
