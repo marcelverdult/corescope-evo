@@ -246,13 +246,47 @@ jobs:
           curl -f http://localhost:81/api/nodes || exit 1
           echo "Staging smoke tests passed"
 
+      - name: Deploy Go staging
+        continue-on-error: true
+        run: |
+          echo "Building Go staging image..."
+          docker compose --profile staging-go build staging-go
+
+          echo "Replacing Go staging container..."
+          docker rm -f meshcore-staging-go 2>/dev/null || true
+          docker compose --profile staging-go up -d staging-go
+
+          # Wait for healthy — Go starts fast, 60s is generous
+          for i in $(seq 1 60); do
+            HEALTH=$(docker inspect meshcore-staging-go --format '{{.State.Health.Status}}' 2>/dev/null || echo "starting")
+            if [ "$HEALTH" = "healthy" ]; then
+              echo "Go staging healthy after ${i}s"
+              break
+            fi
+            if [ "$i" -eq 60 ]; then
+              echo "WARNING: Go staging did not become healthy within 60s"
+              docker logs meshcore-staging-go --tail 30
+              exit 1
+            fi
+            sleep 1
+          done
+
+          # Verify API responds with engine field
+          if curl -sf http://localhost:82/api/stats | grep -q engine; then
+            echo "Go staging verified — engine field present"
+          else
+            echo "WARNING: Go staging /api/stats did not return engine field"
+            exit 1
+          fi
+
       - name: Promotion instructions
         run: |
           echo "## Staging Deployed ✓" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Commit:** \`$(git rev-parse --short HEAD)\` — $(git log -1 --format=%s)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Staging URL:** http://<VM_HOST>:81" >> $GITHUB_STEP_SUMMARY
+          echo "**Node Staging:** http://<VM_HOST>:81" >> $GITHUB_STEP_SUMMARY
+          echo "**Go Staging:** http://<VM_HOST>:82" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "To promote to production:" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
