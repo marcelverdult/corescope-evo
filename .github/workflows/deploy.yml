@@ -70,7 +70,7 @@ jobs:
           echo "Checking proto syntax..."
           for proto in proto/*.proto; do
             echo "  ✓ $(basename "$proto")"
-            protoc --proto_path=proto --syntax_check "$proto"
+            protoc --proto_path=proto --descriptor_set_out=/dev/null "$proto"
           done
           echo "✅ All .proto files are syntactically valid"
 
