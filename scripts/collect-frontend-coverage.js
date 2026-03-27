@@ -22,7 +22,6 @@ async function collectCoverage() {
   async function safeClick(selector, timeout) {
     try {
       await page.click(selector, { timeout: timeout || 3000 });
-      await page.waitForTimeout(300);
     } catch {}
   }
 
@@ -30,7 +29,6 @@ async function collectCoverage() {
   async function safeFill(selector, text) {
     try {
       await page.fill(selector, text);
-      await page.waitForTimeout(300);
     } catch {}
   }
 
@@ -38,7 +36,6 @@ async function collectCoverage() {
   async function safeSelect(selector, value) {
     try {
       await page.selectOption(selector, value);
-      await page.waitForTimeout(300);
     } catch {}
   }
 
@@ -47,7 +44,7 @@ async function collectCoverage() {
     try {
       const els = await page.$$(selector);
       for (let i = 0; i < Math.min(els.length, max); i++) {
-        try { await els[i].click(); await page.waitForTimeout(300); } catch {}
+        try { await els[i].click(); } catch {}
       }
     } catch {}
   }
@@ -57,7 +54,7 @@ async function collectCoverage() {
     try {
       const options = await page.$$eval(`${selector} option`, opts => opts.map(o => o.value));
       for (const val of options) {
-        try { await page.selectOption(selector, val); await page.waitForTimeout(400); } catch {}
+        try { await page.selectOption(selector, val); } catch {}
       }
     } catch {}
   }
@@ -70,34 +67,26 @@ async function collectCoverage() {
   await page.goto(BASE, { waitUntil: 'networkidle', timeout: 15000 }).catch(() => {});
   await page.evaluate(() => localStorage.clear()).catch(() => {});
   await page.goto(`${BASE}/#/home`, { waitUntil: 'networkidle', timeout: 15000 }).catch(() => {});
-  await page.waitForTimeout(1500);
 
   // Click "I'm new"
   await safeClick('#chooseNew');
-  await page.waitForTimeout(1000);
 
   // Now on home page as "new" user — interact with search
   await safeFill('#homeSearch', 'test');
-  await page.waitForTimeout(600);
   // Click suggest items if any
   await clickAll('.suggest-item', 3);
   // Click suggest claim buttons
   await clickAll('.suggest-claim', 2);
   await safeFill('#homeSearch', '');
-  await page.waitForTimeout(300);
 
   // Click my-node-card elements
   await clickAll('.my-node-card', 3);
-  await page.waitForTimeout(300);
   // Click health/packets buttons on cards
   await clickAll('[data-action="health"]', 2);
-  await page.waitForTimeout(500);
   await clickAll('[data-action="packets"]', 2);
-  await page.waitForTimeout(500);
 
   // Click toggle level
   await safeClick('#toggleLevel');
-  await page.waitForTimeout(500);
 
   // Click FAQ items
   await clickAll('.faq-q, .question, [class*="accordion"]', 5);
@@ -117,46 +106,40 @@ async function collectCoverage() {
   // Switch to experienced mode
   await page.evaluate(() => localStorage.clear()).catch(() => {});
   await page.goto(`${BASE}/#/home`, { waitUntil: 'networkidle', timeout: 15000 }).catch(() => {});
-  await page.waitForTimeout(1000);
   await safeClick('#chooseExp');
-  await page.waitForTimeout(1000);
 
   // Interact with experienced home page
   await safeFill('#homeSearch', 'a');
-  await page.waitForTimeout(600);
   await clickAll('.suggest-item', 2);
   await safeFill('#homeSearch', '');
-  await page.waitForTimeout(300);
 
   // Click outside to dismiss suggest
   await page.evaluate(() => document.body.click()).catch(() => {});
-  await page.waitForTimeout(300);
 
   // ══════════════════════════════════════════════
   // NODES PAGE
   // ══════════════════════════════════════════════
   console.log('  [coverage] Nodes page...');
   await page.goto(`${BASE}/#/nodes`, { waitUntil: 'networkidle', timeout: 15000 }).catch(() => {});
-  await page.waitForTimeout(2000);
 
   // Sort by EVERY column
   for (const col of ['name', 'public_key', 'role', 'last_seen', 'advert_count']) {
-    try { await page.click(`th[data-sort="${col}"]`); await page.waitForTimeout(300); } catch {}
+    try { await page.click(`th[data-sort="${col}"]`); } catch {}
     // Click again for reverse sort
-    try { await page.click(`th[data-sort="${col}"]`); await page.waitForTimeout(300); } catch {}
+    try { await page.click(`th[data-sort="${col}"]`); } catch {}
   }
 
   // Click EVERY role tab
   const roleTabs = await page.$$('.node-tab[data-tab]');
   for (const tab of roleTabs) {
-    try { await tab.click(); await page.waitForTimeout(500); } catch {}
+    try { await tab.click(); } catch {}
   }
   // Go back to "all"
-  try { await page.click('.node-tab[data-tab="all"]'); await page.waitForTimeout(400); } catch {}
+  try { await page.click('.node-tab[data-tab="all"]'); } catch {}
 
   // Click EVERY status filter
   for (const status of ['active', 'stale', 'all']) {
-    try { await page.click(`#nodeStatusFilter .btn[data-status="${status}"]`); await page.waitForTimeout(400); } catch {}
+    try { await page.click(`#nodeStatusFilter .btn[data-status="${status}"]`); } catch {}
   }
 
   // Cycle EVERY Last Heard option
@@ -164,33 +147,28 @@ async function collectCoverage() {
 
   // Search
   await safeFill('#nodeSearch', 'test');
-  await page.waitForTimeout(500);
   await safeFill('#nodeSearch', '');
-  await page.waitForTimeout(300);
 
   // Click node rows to open side pane — try multiple
   const nodeRows = await page.$$('#nodesBody tr');
   for (let i = 0; i < Math.min(nodeRows.length, 4); i++) {
-    try { await nodeRows[i].click(); await page.waitForTimeout(600); } catch {}
+    try { await nodeRows[i].click(); } catch {}
   }
 
   // In side pane — click detail/analytics links
   await safeClick('a[href*="/nodes/"]', 2000);
-  await page.waitForTimeout(1500);
   // Click fav star
   await clickAll('.fav-star', 2);
 
   // On node detail page — interact
   // Click back button
   await safeClick('#nodeBackBtn');
-  await page.waitForTimeout(500);
 
   // Navigate to a node detail page via hash
   try {
     const firstNodeKey = await page.$eval('#nodesBody tr td:nth-child(2)', el => el.textContent.trim());
     if (firstNodeKey) {
       await page.goto(`${BASE}/#/nodes/${firstNodeKey}`, { waitUntil: 'networkidle', timeout: 15000 }).catch(() => {});
-      await page.waitForTimeout(2000);
 
       // Click tabs on detail page
       await clickAll('.tab-btn, [data-tab]', 10);
@@ -204,7 +182,7 @@ async function collectCoverage() {
 
       // Click node analytics day buttons
       for (const days of ['1', '7', '30', '365']) {
-        try { await page.click(`[data-days="${days}"]`); await page.waitForTimeout(800); } catch {}
+        try { await page.click(`[data-days="${days}"]`); } catch {}
       }
     }
   } catch {}
@@ -214,7 +192,6 @@ async function collectCoverage() {
     const firstKey = await page.$eval('#nodesBody tr td:nth-child(2)', el => el.textContent.trim()).catch(() => null);
     if (firstKey) {
       await page.goto(`${BASE}/#/nodes/${firstKey}?scroll=paths`, { waitUntil: 'networkidle', timeout: 15000 }).catch(() => {});
-      await page.waitForTimeout(1500);
     }
   } catch {}
 
@@ -223,11 +200,9 @@ async function collectCoverage() {
   // ══════════════════════════════════════════════
   console.log('  [coverage] Packets page...');
   await page.goto(`${BASE}/#/packets`, { waitUntil: 'networkidle', timeout: 15000 }).catch(() => {});
-  await page.waitForTimeout(2000);
 
   // Open filter bar
   await safeClick('#filterToggleBtn');
-  await page.waitForTimeout(500);
 
   // Type various filter expressions
   const filterExprs = [
@@ -237,7 +212,6 @@ async function collectCoverage() {
   ];
   for (const expr of filterExprs) {
     await safeFill('#packetFilterInput', expr);
-    await page.waitForTimeout(500);
   }
 
   // Cycle ALL time window options
@@ -245,70 +219,52 @@ async function collectCoverage() {
 
   // Toggle group by hash
   await safeClick('#fGroup');
-  await page.waitForTimeout(600);
   await safeClick('#fGroup');
-  await page.waitForTimeout(600);
 
   // Toggle My Nodes filter
   await safeClick('#fMyNodes');
-  await page.waitForTimeout(500);
   await safeClick('#fMyNodes');
-  await page.waitForTimeout(500);
 
   // Click observer menu trigger
   await safeClick('#observerTrigger');
-  await page.waitForTimeout(400);
   // Click items in observer menu
   await clickAll('#observerMenu input[type="checkbox"]', 5);
   await safeClick('#observerTrigger');
-  await page.waitForTimeout(300);
 
   // Click type filter trigger
   await safeClick('#typeTrigger');
-  await page.waitForTimeout(400);
   await clickAll('#typeMenu input[type="checkbox"]', 5);
   await safeClick('#typeTrigger');
-  await page.waitForTimeout(300);
 
   // Hash input
   await safeFill('#fHash', 'abc123');
-  await page.waitForTimeout(500);
   await safeFill('#fHash', '');
-  await page.waitForTimeout(300);
 
   // Node filter
   await safeFill('#fNode', 'test');
-  await page.waitForTimeout(500);
   await clickAll('.node-filter-option', 3);
   await safeFill('#fNode', '');
-  await page.waitForTimeout(300);
 
   // Observer sort
   await cycleSelect('#fObsSort');
 
   // Column toggle menu
   await safeClick('#colToggleBtn');
-  await page.waitForTimeout(400);
   await clickAll('#colToggleMenu input[type="checkbox"]', 8);
   await safeClick('#colToggleBtn');
-  await page.waitForTimeout(300);
 
   // Hex hash toggle
   await safeClick('#hexHashToggle');
-  await page.waitForTimeout(400);
   await safeClick('#hexHashToggle');
-  await page.waitForTimeout(300);
 
   // Pause button
   await safeClick('#pktPauseBtn');
-  await page.waitForTimeout(400);
   await safeClick('#pktPauseBtn');
-  await page.waitForTimeout(400);
 
   // Click packet rows to open detail pane
   const pktRows = await page.$$('#pktBody tr');
   for (let i = 0; i < Math.min(pktRows.length, 5); i++) {
-    try { await pktRows[i].click(); await page.waitForTimeout(500); } catch {}
+    try { await pktRows[i].click(); } catch {}
   }
 
   // Resize handle drag simulation
@@ -321,63 +277,50 @@ async function collectCoverage() {
         document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
       }
     });
-    await page.waitForTimeout(300);
   } catch {}
 
   // Click outside filter menus to close them
   try {
     await page.evaluate(() => document.body.click());
-    await page.waitForTimeout(300);
   } catch {}
 
   // Navigate to specific packet by hash
   await page.goto(`${BASE}/#/packets/deadbeef`, { waitUntil: 'networkidle', timeout: 15000 }).catch(() => {});
-  await page.waitForTimeout(1500);
 
   // ══════════════════════════════════════════════
   // MAP PAGE
   // ══════════════════════════════════════════════
   console.log('  [coverage] Map page...');
   await page.goto(`${BASE}/#/map`, { waitUntil: 'networkidle', timeout: 15000 }).catch(() => {});
-  await page.waitForTimeout(3000);
 
   // Toggle controls panel
   await safeClick('#mapControlsToggle');
-  await page.waitForTimeout(500);
 
   // Toggle each role checkbox on/off
   try {
     const roleChecks = await page.$$('#mcRoleChecks input[type="checkbox"]');
     for (const cb of roleChecks) {
-      try { await cb.click(); await page.waitForTimeout(300); } catch {}
-      try { await cb.click(); await page.waitForTimeout(300); } catch {}
+      try { await cb.click(); } catch {}
+      try { await cb.click(); } catch {}
     }
   } catch {}
 
   // Toggle clusters, heatmap, neighbors, hash labels
   await safeClick('#mcClusters');
-  await page.waitForTimeout(300);
   await safeClick('#mcClusters');
-  await page.waitForTimeout(300);
   await safeClick('#mcHeatmap');
-  await page.waitForTimeout(300);
   await safeClick('#mcHeatmap');
-  await page.waitForTimeout(300);
   await safeClick('#mcNeighbors');
-  await page.waitForTimeout(300);
   await safeClick('#mcNeighbors');
-  await page.waitForTimeout(300);
   await safeClick('#mcHashLabels');
-  await page.waitForTimeout(300);
   await safeClick('#mcHashLabels');
-  await page.waitForTimeout(300);
 
   // Last heard dropdown on map
   await cycleSelect('#mcLastHeard');
 
   // Status filter buttons on map
   for (const st of ['active', 'stale', 'all']) {
-    try { await page.click(`#mcStatusFilter .btn[data-status="${st}"]`); await page.waitForTimeout(400); } catch {}
+    try { await page.click(`#mcStatusFilter .btn[data-status="${st}"]`); } catch {}
   }
 
   // Click jump buttons (region jumps)
@@ -392,78 +335,61 @@ async function collectCoverage() {
 
   // Zoom controls
   await safeClick('.leaflet-control-zoom-in');
-  await page.waitForTimeout(300);
   await safeClick('.leaflet-control-zoom-out');
-  await page.waitForTimeout(300);
 
   // Toggle dark mode while on map (triggers tile layer swap)
   await safeClick('#darkModeToggle');
-  await page.waitForTimeout(800);
   await safeClick('#darkModeToggle');
-  await page.waitForTimeout(500);
 
   // ══════════════════════════════════════════════
   // ANALYTICS PAGE
   // ══════════════════════════════════════════════
   console.log('  [coverage] Analytics page...');
   await page.goto(`${BASE}/#/analytics`, { waitUntil: 'networkidle', timeout: 15000 }).catch(() => {});
-  await page.waitForTimeout(3000);
 
   // Click EVERY analytics tab
   const analyticsTabs = ['overview', 'rf', 'topology', 'channels', 'hashsizes', 'collisions', 'subpaths', 'nodes', 'distance'];
   for (const tabName of analyticsTabs) {
     try {
       await page.click(`#analyticsTabs [data-tab="${tabName}"]`, { timeout: 2000 });
-      await page.waitForTimeout(1500);
     } catch {}
   }
 
   // On topology tab — click observer selector buttons
   try {
     await page.click('#analyticsTabs [data-tab="topology"]', { timeout: 2000 });
-    await page.waitForTimeout(1500);
     await clickAll('#obsSelector .tab-btn', 5);
     // Click the "All Observers" button
     await safeClick('[data-obs="__all"]');
-    await page.waitForTimeout(500);
   } catch {}
 
   // On collisions tab — click navigate rows
   try {
     await page.click('#analyticsTabs [data-tab="collisions"]', { timeout: 2000 });
-    await page.waitForTimeout(1500);
     await clickAll('tr[data-action="navigate"]', 3);
-    await page.waitForTimeout(500);
   } catch {}
 
   // On subpaths tab — click rows
   try {
     await page.click('#analyticsTabs [data-tab="subpaths"]', { timeout: 2000 });
-    await page.waitForTimeout(1500);
     await clickAll('tr[data-action="navigate"]', 3);
-    await page.waitForTimeout(500);
   } catch {}
 
   // On nodes tab — click sortable headers
   try {
     await page.click('#analyticsTabs [data-tab="nodes"]', { timeout: 2000 });
-    await page.waitForTimeout(1500);
     await clickAll('.analytics-table th', 8);
-    await page.waitForTimeout(300);
   } catch {}
 
   // Deep-link to each analytics tab via URL
   for (const tab of analyticsTabs) {
     await page.goto(`${BASE}/#/analytics?tab=${tab}`, { waitUntil: 'networkidle', timeout: 15000 }).catch(() => {});
-    await page.waitForTimeout(1500);
   }
 
   // Region filter on analytics
   try {
     await page.click('#analyticsRegionFilter');
-    await page.waitForTimeout(300);
     await clickAll('#analyticsRegionFilter input[type="checkbox"]', 3);
-    await page.waitForTimeout(300);
   } catch {}
 
   // ══════════════════════════════════════════════
@@ -471,19 +397,16 @@ async function collectCoverage() {
   // ══════════════════════════════════════════════
   console.log('  [coverage] Customizer...');
   await page.goto(BASE, { waitUntil: 'networkidle', timeout: 15000 }).catch(() => {});
-  await page.waitForTimeout(500);
   await safeClick('#customizeToggle');
-  await page.waitForTimeout(1000);
 
   // Click EVERY customizer tab
   for (const tab of ['branding', 'theme', 'nodes', 'home', 'export']) {
-    try { await page.click(`.cust-tab[data-tab="${tab}"]`); await page.waitForTimeout(500); } catch {}
+    try { await page.click(`.cust-tab[data-tab="${tab}"]`); } catch {}
   }
 
   // On branding tab — change text inputs
   try {
     await page.click('.cust-tab[data-tab="branding"]');
-    await page.waitForTimeout(300);
     await safeFill('input[data-key="branding.siteName"]', 'Test Site');
     await safeFill('input[data-key="branding.tagline"]', 'Test Tagline');
     await safeFill('input[data-key="branding.logoUrl"]', 'https://example.com/logo.png');
@@ -493,10 +416,9 @@ async function collectCoverage() {
   // On theme tab — click EVERY preset
   try {
     await page.click('.cust-tab[data-tab="theme"]');
-    await page.waitForTimeout(300);
     const presets = await page.$$('.cust-preset-btn[data-preset]');
     for (const preset of presets) {
-      try { await preset.click(); await page.waitForTimeout(400); } catch {}
+      try { await preset.click(); } catch {}
     }
   } catch {}
 
@@ -509,7 +431,6 @@ async function collectCoverage() {
           el.value = '#ff5500';
           el.dispatchEvent(new Event('input', { bubbles: true }));
         });
-        await page.waitForTimeout(200);
       } catch {}
     }
   } catch {}
@@ -522,7 +443,6 @@ async function collectCoverage() {
   // On nodes tab — change node color inputs
   try {
     await page.click('.cust-tab[data-tab="nodes"]');
-    await page.waitForTimeout(300);
     const nodeColors = await page.$$('input[type="color"][data-node]');
     for (let i = 0; i < Math.min(nodeColors.length, 3); i++) {
       try {
@@ -530,7 +450,6 @@ async function collectCoverage() {
           el.value = '#00ff00';
           el.dispatchEvent(new Event('input', { bubbles: true }));
         });
-        await page.waitForTimeout(200);
       } catch {}
     }
     // Type color inputs
@@ -541,7 +460,6 @@ async function collectCoverage() {
           el.value = '#0000ff';
           el.dispatchEvent(new Event('input', { bubbles: true }));
         });
-        await page.waitForTimeout(200);
       } catch {}
     }
   } catch {}
@@ -549,7 +467,6 @@ async function collectCoverage() {
   // On home tab — edit home customization fields
   try {
     await page.click('.cust-tab[data-tab="home"]');
-    await page.waitForTimeout(300);
     await safeFill('input[data-key="home.heroTitle"]', 'Test Hero');
     await safeFill('input[data-key="home.heroSubtitle"]', 'Test Subtitle');
     // Edit journey steps
@@ -564,7 +481,6 @@ async function collectCoverage() {
     for (let i = 0; i < Math.min(stepTitles.length, 2); i++) {
       try {
         await stepTitles[i].fill('Test Step ' + i);
-        await page.waitForTimeout(200);
       } catch {}
     }
   } catch {}
@@ -572,27 +488,22 @@ async function collectCoverage() {
   // On export tab
   try {
     await page.click('.cust-tab[data-tab="export"]');
-    await page.waitForTimeout(500);
     // Click export/import buttons if present
     await clickAll('.cust-panel[data-panel="export"] button', 3);
   } catch {}
 
   // Reset preview and user theme
   await safeClick('#custResetPreview');
-  await page.waitForTimeout(400);
   await safeClick('#custResetUser');
-  await page.waitForTimeout(400);
 
   // Close customizer
   await safeClick('.cust-close');
-  await page.waitForTimeout(300);
 
   // ══════════════════════════════════════════════
   // CHANNELS PAGE
   // ══════════════════════════════════════════════
   console.log('  [coverage] Channels page...');
   await page.goto(`${BASE}/#/channels`, { waitUntil: 'networkidle', timeout: 15000 }).catch(() => {});
-  await page.waitForTimeout(2000);
   // Click channel rows/items
   await clickAll('.channel-item, .channel-row, .channel-card', 3);
   await clickAll('table tbody tr', 3);
@@ -602,7 +513,6 @@ async function collectCoverage() {
     const channelHash = await page.$eval('table tbody tr td:first-child', el => el.textContent.trim()).catch(() => null);
     if (channelHash) {
       await page.goto(`${BASE}/#/channels/${channelHash}`, { waitUntil: 'networkidle', timeout: 15000 }).catch(() => {});
-      await page.waitForTimeout(1500);
     }
   } catch {}
 
@@ -611,78 +521,53 @@ async function collectCoverage() {
   // ══════════════════════════════════════════════
   console.log('  [coverage] Live page...');
   await page.goto(`${BASE}/#/live`, { waitUntil: 'networkidle', timeout: 15000 }).catch(() => {});
-  await page.waitForTimeout(3000);
 
   // VCR controls
   await safeClick('#vcrPauseBtn');
-  await page.waitForTimeout(400);
   await safeClick('#vcrPauseBtn');
-  await page.waitForTimeout(400);
 
   // VCR speed cycle
   await safeClick('#vcrSpeedBtn');
-  await page.waitForTimeout(300);
   await safeClick('#vcrSpeedBtn');
-  await page.waitForTimeout(300);
   await safeClick('#vcrSpeedBtn');
-  await page.waitForTimeout(300);
 
   // VCR mode / missed
   await safeClick('#vcrMissed');
-  await page.waitForTimeout(300);
 
   // VCR prompt buttons
   await safeClick('#vcrPromptReplay');
-  await page.waitForTimeout(300);
   await safeClick('#vcrPromptSkip');
-  await page.waitForTimeout(300);
 
   // Toggle visualization options
   await safeClick('#liveHeatToggle');
-  await page.waitForTimeout(400);
   await safeClick('#liveHeatToggle');
-  await page.waitForTimeout(300);
 
   await safeClick('#liveGhostToggle');
-  await page.waitForTimeout(300);
   await safeClick('#liveGhostToggle');
-  await page.waitForTimeout(300);
 
   await safeClick('#liveRealisticToggle');
-  await page.waitForTimeout(300);
   await safeClick('#liveRealisticToggle');
-  await page.waitForTimeout(300);
 
   await safeClick('#liveFavoritesToggle');
-  await page.waitForTimeout(300);
   await safeClick('#liveFavoritesToggle');
-  await page.waitForTimeout(300);
 
   await safeClick('#liveMatrixToggle');
-  await page.waitForTimeout(300);
   await safeClick('#liveMatrixToggle');
-  await page.waitForTimeout(300);
 
   await safeClick('#liveMatrixRainToggle');
-  await page.waitForTimeout(300);
   await safeClick('#liveMatrixRainToggle');
-  await page.waitForTimeout(300);
 
   // Audio toggle and controls
   await safeClick('#liveAudioToggle');
-  await page.waitForTimeout(400);
   try {
     await page.fill('#audioBpmSlider', '120');
-    await page.waitForTimeout(300);
     // Dispatch input event on slider
     await page.evaluate(() => {
       const s = document.getElementById('audioBpmSlider');
       if (s) { s.value = '140'; s.dispatchEvent(new Event('input', { bubbles: true })); }
     });
-    await page.waitForTimeout(300);
   } catch {}
   await safeClick('#liveAudioToggle');
-  await page.waitForTimeout(300);
 
   // VCR timeline click
   try {
@@ -697,7 +582,6 @@ async function collectCoverage() {
         }));
       }
     });
-    await page.waitForTimeout(500);
   } catch {}
 
   // VCR LCD canvas
@@ -706,7 +590,6 @@ async function collectCoverage() {
       const canvas = document.getElementById('vcrLcdCanvas');
       if (canvas) canvas.getContext('2d');
     });
-    await page.waitForTimeout(300);
   } catch {}
 
   // Resize the live page panel
@@ -714,7 +597,6 @@ async function collectCoverage() {
     await page.evaluate(() => {
       window.dispatchEvent(new Event('resize'));
     });
-    await page.waitForTimeout(300);
   } catch {}
 
   // ══════════════════════════════════════════════
@@ -722,7 +604,6 @@ async function collectCoverage() {
   // ══════════════════════════════════════════════
   console.log('  [coverage] Traces page...');
   await page.goto(`${BASE}/#/traces`, { waitUntil: 'networkidle', timeout: 15000 }).catch(() => {});
-  await page.waitForTimeout(2000);
   await clickAll('table tbody tr', 3);
 
   // ══════════════════════════════════════════════
@@ -730,11 +611,10 @@ async function collectCoverage() {
   // ══════════════════════════════════════════════
   console.log('  [coverage] Observers page...');
   await page.goto(`${BASE}/#/observers`, { waitUntil: 'networkidle', timeout: 15000 }).catch(() => {});
-  await page.waitForTimeout(2000);
   // Click observer rows
   const obsRows = await page.$$('table tbody tr, .observer-card, .observer-row');
   for (let i = 0; i < Math.min(obsRows.length, 3); i++) {
-    try { await obsRows[i].click(); await page.waitForTimeout(500); } catch {}
+    try { await obsRows[i].click(); } catch {}
   }
 
   // Navigate to observer detail page
@@ -742,7 +622,6 @@ async function collectCoverage() {
     const obsLink = await page.$('a[href*="/observers/"]');
     if (obsLink) {
       await obsLink.click();
-      await page.waitForTimeout(2000);
       // Change days select
       await cycleSelect('#obsDaysSelect');
     }
@@ -753,11 +632,8 @@ async function collectCoverage() {
   // ══════════════════════════════════════════════
   console.log('  [coverage] Perf page...');
   await page.goto(`${BASE}/#/perf`, { waitUntil: 'networkidle', timeout: 15000 }).catch(() => {});
-  await page.waitForTimeout(2000);
   await safeClick('#perfRefresh');
-  await page.waitForTimeout(1000);
   await safeClick('#perfReset');
-  await page.waitForTimeout(500);
 
   // ══════════════════════════════════════════════
   // APP.JS — Router, theme, global features
@@ -766,14 +642,13 @@ async function collectCoverage() {
 
   // Navigate to bad route to trigger error/404
   await page.goto(`${BASE}/#/nonexistent-route`, { waitUntil: 'networkidle', timeout: 15000 }).catch(() => {});
-  await page.waitForTimeout(1000);
 
   // Navigate to every route via hash
   const allRoutes = ['home', 'nodes', 'packets', 'map', 'live', 'channels', 'traces', 'observers', 'analytics', 'perf'];
   for (const route of allRoutes) {
     try {
       await page.evaluate((r) => { location.hash = '#/' + r; }, route);
-      await page.waitForTimeout(800);
+      await page.waitForLoadState('networkidle').catch(() => {});
     } catch {}
   }
 
@@ -782,13 +657,11 @@ async function collectCoverage() {
     await page.evaluate(() => {
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     });
-    await page.waitForTimeout(500);
   } catch {}
 
   // Theme toggle multiple times
   for (let i = 0; i < 4; i++) {
     await safeClick('#darkModeToggle');
-    await page.waitForTimeout(300);
   }
 
   // Dispatch theme-changed event
@@ -796,65 +669,49 @@ async function collectCoverage() {
     await page.evaluate(() => {
       window.dispatchEvent(new Event('theme-changed'));
     });
-    await page.waitForTimeout(300);
   } catch {}
 
   // Hamburger menu
   await safeClick('#hamburger');
-  await page.waitForTimeout(400);
   // Click nav links in mobile menu
   await clickAll('.nav-links .nav-link', 5);
-  await page.waitForTimeout(300);
 
   // Favorites
   await safeClick('#favToggle');
-  await page.waitForTimeout(500);
   await clickAll('.fav-dd-item', 3);
   // Click outside to close
-  try { await page.evaluate(() => document.body.click()); await page.waitForTimeout(300); } catch {}
+  try { await page.evaluate(() => document.body.click()); } catch {}
   await safeClick('#favToggle');
-  await page.waitForTimeout(300);
 
   // Global search
   await safeClick('#searchToggle');
-  await page.waitForTimeout(500);
   await safeFill('#searchInput', 'test');
-  await page.waitForTimeout(1000);
   // Click search result items
   await clickAll('.search-result-item', 3);
-  await page.waitForTimeout(500);
   // Close search
   try { await page.keyboard.press('Escape'); } catch {}
-  await page.waitForTimeout(300);
 
   // Ctrl+K shortcut
   try {
     await page.keyboard.press('Control+k');
-    await page.waitForTimeout(500);
     await safeFill('#searchInput', 'node');
-    await page.waitForTimeout(800);
     await page.keyboard.press('Escape');
-    await page.waitForTimeout(300);
   } catch {}
 
   // Click search overlay background to close
   try {
     await safeClick('#searchToggle');
-    await page.waitForTimeout(300);
     await page.click('#searchOverlay', { position: { x: 5, y: 5 } });
-    await page.waitForTimeout(300);
   } catch {}
 
   // Navigate via nav links with data-route
   for (const route of allRoutes) {
     await safeClick(`a[data-route="${route}"]`);
-    await page.waitForTimeout(600);
   }
 
   // Exercise apiPerf console function
   try {
     await page.evaluate(() => { if (window.apiPerf) window.apiPerf(); });
-    await page.waitForTimeout(300);
   } catch {}
 
   // Exercise utility functions
@@ -890,7 +747,6 @@ async function collectCoverage() {
         invalidateApiCache('/test');
       }
     });
-    await page.waitForTimeout(300);
   } catch {}
 
   // ══════════════════════════════════════════════
@@ -933,21 +789,15 @@ async function collectCoverage() {
   try {
     // Open region filter on nodes page
     await page.goto(`${BASE}/#/nodes`, { waitUntil: 'networkidle', timeout: 15000 }).catch(() => {});
-    await page.waitForTimeout(1500);
     await safeClick('#nodesRegionFilter');
-    await page.waitForTimeout(300);
     await clickAll('#nodesRegionFilter input[type="checkbox"]', 3);
-    await page.waitForTimeout(300);
   } catch {}
 
   // Region filter on packets
   try {
     await page.goto(`${BASE}/#/packets`, { waitUntil: 'networkidle', timeout: 15000 }).catch(() => {});
-    await page.waitForTimeout(1500);
     await safeClick('#packetsRegionFilter');
-    await page.waitForTimeout(300);
     await clickAll('#packetsRegionFilter input[type="checkbox"]', 3);
-    await page.waitForTimeout(300);
   } catch {}
 
   // ══════════════════════════════════════════════
@@ -957,7 +807,7 @@ async function collectCoverage() {
   for (const route of allRoutes) {
     try {
       await page.evaluate((r) => { location.hash = '#/' + r; }, route);
-      await page.waitForTimeout(500);
+      await page.waitForLoadState('networkidle').catch(() => {});
     } catch {}
   }
 
