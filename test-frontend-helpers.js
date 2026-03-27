@@ -689,8 +689,81 @@ console.log('\n=== live.js: pruneStaleNodes ===');
 
     prune();
 
-    assert.ok(!markers['apiOld'], 'API node with stale last_heard should be pruned');
-    assert.ok(markers['apiFresh'], 'API node with fresh last_heard should remain');
+    assert.ok(!markers['apiOld'], 'WS node with stale last_heard should be pruned');
+    assert.ok(markers['apiFresh'], 'WS node with fresh last_heard should remain');
+  });
+
+  test('pruneStaleNodes dims API-loaded nodes instead of removing them', () => {
+    const { ctx } = makeLiveSandbox();
+    const prune = ctx.window._livePruneStaleNodes;
+    const markers = ctx.window._liveNodeMarkers();
+    const data = ctx.window._liveNodeData();
+
+    let lastStyle = {};
+    let glowStyle = {};
+    markers['apiStale'] = {
+      _glowMarker: { setStyle: function(s) { glowStyle = s; } },
+      _staleDimmed: false,
+      setStyle: function(s) { lastStyle = s; },
+    };
+    data['apiStale'] = { public_key: 'apiStale', role: 'repeater', _fromAPI: true, _liveSeen: Date.now() - 96 * 3600000 };
+
+    prune();
+
+    assert.ok(markers['apiStale'], 'API node should NOT be removed');
+    assert.ok(data['apiStale'], 'API node data should NOT be removed');
+    assert.ok(markers['apiStale']._staleDimmed, 'API node should be marked as dimmed');
+    assert.strictEqual(lastStyle.fillOpacity, 0.25, 'marker should be dimmed to 0.25 fillOpacity');
+    assert.strictEqual(glowStyle.fillOpacity, 0.04, 'glow should be dimmed to 0.04 fillOpacity');
+  });
+
+  test('pruneStaleNodes restores API nodes when they become active again', () => {
+    const { ctx } = makeLiveSandbox();
+    const prune = ctx.window._livePruneStaleNodes;
+    const markers = ctx.window._liveNodeMarkers();
+    const data = ctx.window._liveNodeData();
+
+    let lastStyle = {};
+    let glowStyle = {};
+    markers['apiNode'] = {
+      _glowMarker: { setStyle: function(s) { glowStyle = s; } },
+      _staleDimmed: true,
+      setStyle: function(s) { lastStyle = s; },
+    };
+    data['apiNode'] = { public_key: 'apiNode', role: 'repeater', _fromAPI: true, _liveSeen: Date.now() };
+
+    prune();
+
+    assert.ok(markers['apiNode'], 'API node should remain');
+    assert.strictEqual(markers['apiNode']._staleDimmed, false, 'staleDimmed should be cleared');
+    assert.strictEqual(lastStyle.fillOpacity, 0.85, 'opacity should be restored to 0.85');
+    assert.strictEqual(glowStyle.fillOpacity, 0.12, 'glow should be restored to 0.12');
+  });
+
+  test('pruneStaleNodes still removes WS-only nodes when stale', () => {
+    const { ctx } = makeLiveSandbox();
+    const prune = ctx.window._livePruneStaleNodes;
+    const markers = ctx.window._liveNodeMarkers();
+    const data = ctx.window._liveNodeData();
+
+    // WS-only node (no _fromAPI) — should be removed
+    markers['wsNode'] = { _glowMarker: null };
+    data['wsNode'] = { public_key: 'wsNode', role: 'companion', _liveSeen: Date.now() - 48 * 3600000 };
+
+    // API node — should be dimmed, not removed
+    markers['apiNode'] = {
+      _glowMarker: { setStyle: function() {} },
+      _staleDimmed: false,
+      setStyle: function() {},
+    };
+    data['apiNode'] = { public_key: 'apiNode', role: 'companion', _fromAPI: true, _liveSeen: Date.now() - 48 * 3600000 };
+
+    prune();
+
+    assert.ok(!markers['wsNode'], 'WS-only stale node should be removed');
+    assert.ok(!data['wsNode'], 'WS-only stale node data should be removed');
+    assert.ok(markers['apiNode'], 'API stale node should NOT be removed');
+    assert.ok(data['apiNode'], 'API stale node data should NOT be removed');
   });
 }
 

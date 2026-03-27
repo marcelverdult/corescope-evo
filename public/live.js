@@ -1276,6 +1276,7 @@
       var now = Date.now();
       list.forEach(n => {
         if (n.lat != null && n.lon != null && !(n.lat === 0 && n.lon === 0)) {
+          n._fromAPI = true;
           n._liveSeen = now;
           nodeData[n.public_key] = n;
           addNodeMarker(n);
@@ -1467,7 +1468,9 @@
     }
   }
 
-  // Prune nodes not seen within their role's health threshold
+  // Prune nodes not seen within their role's health threshold.
+  // API-loaded nodes (_fromAPI) are dimmed instead of removed — matches static map behavior.
+  // WS-only nodes (dynamically added from ADVERTs) are removed to prevent memory leaks.
   function pruneStaleNodes() {
     var now = Date.now();
     var pruned = false;
@@ -1477,17 +1480,33 @@
       var lastSeen = n._liveSeen || (n.last_heard ? new Date(n.last_heard).getTime() : null) || (n.last_seen ? new Date(n.last_seen).getTime() : null);
       if (lastSeen == null) continue;
       var status = window.getNodeStatus ? getNodeStatus(n.role || 'unknown', lastSeen) : 'active';
+      var marker = nodeMarkers[key];
       if (status === 'stale') {
-        var marker = nodeMarkers[key];
-        if (marker) {
-          if (nodesLayer) {
-            try { nodesLayer.removeLayer(marker); } catch (e) {}
-            if (marker._glowMarker) try { nodesLayer.removeLayer(marker._glowMarker); } catch (e) {}
+        if (n._fromAPI) {
+          // API-loaded nodes: dim instead of removing (consistent with static map)
+          if (marker && !marker._staleDimmed) {
+            marker._staleDimmed = true;
+            marker.setStyle({ fillOpacity: 0.25, opacity: 0.15 });
+            if (marker._glowMarker) marker._glowMarker.setStyle({ fillOpacity: 0.04 });
           }
+        } else {
+          // WS-only nodes: remove to prevent unbounded memory growth
+          if (marker) {
+            if (nodesLayer) {
+              try { nodesLayer.removeLayer(marker); } catch (e) {}
+              if (marker._glowMarker) try { nodesLayer.removeLayer(marker._glowMarker); } catch (e) {}
+            }
+          }
+          delete nodeMarkers[key];
+          delete nodeData[key];
+          pruned = true;
         }
-        delete nodeMarkers[key];
-        delete nodeData[key];
-        pruned = true;
+      } else if (marker && marker._staleDimmed) {
+        // Node became active again — restore full opacity
+        marker._staleDimmed = false;
+        var isRepeater = n.role === 'repeater';
+        marker.setStyle({ fillOpacity: 0.85, opacity: isRepeater ? 0.6 : 0.3 });
+        if (marker._glowMarker) marker._glowMarker.setStyle({ fillOpacity: 0.12 });
       }
     }
     if (pruned) {
