@@ -518,8 +518,8 @@ function broadcast(msg) {
   wss.clients.forEach(c => { if (c.readyState === 1) c.send(data); });
 }
 
-// Auto-create stub nodes from path hops (≥2 bytes / 4 hex chars)
-// When an advert arrives later with a full pubkey matching the prefix, upsertNode will upgrade it
+// Resolve path hops to known nodes (≥2 bytes / 4 hex chars) — never creates phantom nodes.
+// Hops that can't be resolved are displayed as raw hex prefixes by the hop-resolver.
 const hopNodeCache = new Set(); // Avoid repeated DB lookups for known hops
 // Track when nodes were last seen as relay hops in packet paths (full pubkey → ISO timestamp)
 const lastPathSeenMap = new Map();
@@ -539,14 +539,11 @@ function autoLearnHopNodes(hops, now) {
     const hopLower = hop.toLowerCase();
     const existing = db.db.prepare("SELECT public_key FROM nodes WHERE LOWER(public_key) LIKE ?").get(hopLower + '%');
     if (existing) {
-      hopNodeCache.add(hop);
       hopPrefixToKey.set(hopLower, existing.public_key);
-      continue;
     }
-    // Create stub node — role is likely repeater (most hops are)
-    db.upsertNode({ public_key: hopLower, name: null, role: 'repeater', lat: null, lon: null, last_seen: now });
+    // Cache either way to avoid repeated DB lookups — but never create phantom nodes.
+    // Unresolved hops are displayed as raw prefixes by the hop-resolver.
     hopNodeCache.add(hop);
-    hopPrefixToKey.set(hopLower, hopLower); // stub uses prefix as key
   }
 }
 
@@ -675,7 +672,7 @@ for (const source of mqttSources) {
         if (decoded.path.hops.length > 0) {
           // Auto-create stub nodes from 2+ byte path hops
           autoLearnHopNodes(decoded.path.hops, now);
-          // Track when each hop node was last seen relaying
+          // Track when each resolved hop node was last seen relaying
           updatePathSeenTimestamps(decoded.path.hops, now);
         }
 
@@ -2917,6 +2914,8 @@ app.get('/{*splat}', (req, res) => {
 // --- Start ---
 const listenPort = process.env.PORT || config.port;
 if (require.main === module) {
+// Clean up phantom nodes created by the old autoLearnHopNodes behavior (fixes #133)
+db.removePhantomNodes();
 server.listen(listenPort, () => {
   const protocol = isHttps ? 'https' : 'http';
   console.log(`MeshCore Analyzer running on ${protocol}://localhost:${listenPort}`);

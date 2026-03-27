@@ -603,6 +603,18 @@ if (require.main === module) {
   console.log('Stats:', getStats());
 }
 
+// Remove phantom nodes created by autoLearnHopNodes before this fix.
+// Real MeshCore pubkeys are 32 bytes (64 hex chars). Phantom nodes have only
+// the hop prefix as their public_key (typically 4-8 hex chars).
+// Threshold: public_key <= 16 hex chars (8 bytes) is too short to be real.
+function removePhantomNodes() {
+  const result = db.prepare(`DELETE FROM nodes WHERE LENGTH(public_key) <= 16`).run();
+  if (result.changes > 0) {
+    console.log(`[cleanup] Removed ${result.changes} phantom node(s) with short public_key prefixes`);
+  }
+  return result.changes;
+}
+
 function searchNodes(query, limit = 10) {
   return db.prepare(`
     SELECT * FROM nodes
@@ -830,4 +842,4 @@ function getNodeAnalytics(pubkey, days) {
   };
 }
 
-module.exports = { db, schemaVersion, observerIdToRowid, resolveObserverIdx, insertTransmission, upsertNode, upsertObserver, updateObserverStatus, getPackets, getPacket, getTransmission, getNodes, getNode, getObservers, getStats, searchNodes, getNodeHealth, getNodeAnalytics };
+module.exports = { db, schemaVersion, observerIdToRowid, resolveObserverIdx, insertTransmission, upsertNode, upsertObserver, updateObserverStatus, getPackets, getPacket, getTransmission, getNodes, getNode, getObservers, getStats, searchNodes, getNodeHealth, getNodeAnalytics, removePhantomNodes };

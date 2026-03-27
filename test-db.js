@@ -388,6 +388,59 @@ console.log('\nv3 dedup:');
   assert(result2.observationId > 0, 'different observer is not a dupe');
 }
 
+// --- removePhantomNodes ---
+console.log('\nremovePhantomNodes:');
+{
+  // Insert phantom nodes (short public_keys like hop prefixes)
+  db.upsertNode({ public_key: 'aabb', name: null, role: 'repeater' });
+  db.upsertNode({ public_key: 'ccddee', name: null, role: 'repeater' });
+  db.upsertNode({ public_key: 'ff001122', name: null, role: 'repeater' });
+  db.upsertNode({ public_key: '0011223344556677', name: null, role: 'repeater' }); // 16 chars — still phantom
+
+  // Verify they exist
+  assert(db.getNode('aabb') !== null, 'phantom node aabb exists before cleanup');
+  assert(db.getNode('ccddee') !== null, 'phantom node ccddee exists before cleanup');
+  assert(db.getNode('ff001122') !== null, 'phantom node ff001122 exists before cleanup');
+  assert(db.getNode('0011223344556677') !== null, 'phantom 16-char exists before cleanup');
+
+  // Verify real node still exists
+  assert(db.getNode('aabbccdd11223344aabbccdd11223344') !== null, 'real node exists before cleanup');
+
+  // Run cleanup
+  const removed = db.removePhantomNodes();
+  assert(removed === 4, `removed 4 phantom nodes (got ${removed})`);
+
+  // Verify phantoms are gone
+  assert(db.getNode('aabb') === null, 'phantom aabb removed');
+  assert(db.getNode('ccddee') === null, 'phantom ccddee removed');
+  assert(db.getNode('ff001122') === null, 'phantom ff001122 removed');
+  assert(db.getNode('0011223344556677') === null, 'phantom 16-char removed');
+
+  // Verify real node is still there
+  assert(db.getNode('aabbccdd11223344aabbccdd11223344') !== null, 'real node preserved after cleanup');
+
+  // Running again should remove 0
+  const removed2 = db.removePhantomNodes();
+  assert(removed2 === 0, 'second cleanup removes nothing');
+}
+
+// --- stats exclude phantom nodes ---
+console.log('\nstats exclude phantom nodes:');
+{
+  const statsBefore = db.getStats();
+  const countBefore = statsBefore.totalNodesAllTime;
+
+  // Insert a phantom — should be cleanable
+  db.upsertNode({ public_key: 'deadbeef', name: null, role: 'repeater' });
+  const statsWithPhantom = db.getStats();
+  assert(statsWithPhantom.totalNodesAllTime === countBefore + 1, 'phantom inflates totalNodesAllTime');
+
+  // Clean it
+  db.removePhantomNodes();
+  const statsAfter = db.getStats();
+  assert(statsAfter.totalNodesAllTime === countBefore, 'phantom removed from totalNodesAllTime');
+}
+
 cleanup();
 delete process.env.DB_PATH;
 
