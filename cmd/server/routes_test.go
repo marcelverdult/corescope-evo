@@ -1538,7 +1538,7 @@ func TestHandlerErrorChannels(t *testing.T) {
 	router := mux.NewRouter()
 	srv.RegisterRoutes(router)
 
-	db.conn.Exec("DROP VIEW IF EXISTS packets_v")
+	db.conn.Exec("DROP TABLE IF EXISTS transmissions")
 
 	req := httptest.NewRequest("GET", "/api/channels", nil)
 	w := httptest.NewRecorder()
@@ -1710,7 +1710,7 @@ func TestHandlerErrorChannelMessages(t *testing.T) {
 	router := mux.NewRouter()
 	srv.RegisterRoutes(router)
 
-	db.conn.Exec("DROP VIEW IF EXISTS packets_v")
+	db.conn.Exec("DROP TABLE IF EXISTS observations")
 
 	req := httptest.NewRequest("GET", "/api/channels/%23test/messages", nil)
 	w := httptest.NewRecorder()

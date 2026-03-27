@@ -980,6 +980,8 @@ func (s *PacketStore) IngestNewFromDB(sinceID, limit int) ([]map[string]interfac
 		s.topoCache = make(map[string]*cachedResult)
 		s.hashCache = make(map[string]*cachedResult)
 		s.chanCache = make(map[string]*cachedResult)
+		s.distCache = make(map[string]*cachedResult)
+		s.subpathCache = make(map[string]*cachedResult)
 		s.cacheMu.Unlock()
 	}
 

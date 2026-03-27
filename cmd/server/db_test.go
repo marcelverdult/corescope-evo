@@ -1339,6 +1339,53 @@ func TestNullHelpers(t *testing.T) {
 	}
 }
 
+// TestGetChannelsStaleMessage verifies that GetChannels returns the newest message
+// per channel even when an older message has a later observation timestamp.
+// This is the regression test for #171.
+func TestGetChannelsStaleMessage(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	db.conn.Exec(`INSERT INTO observers (id, name, iata) VALUES ('obs1', 'Observer1', 'SJC')`)
+	db.conn.Exec(`INSERT INTO observers (id, name, iata) VALUES ('obs2', 'Observer2', 'SFO')`)
+
+	// Older message (first_seen T1)
+	db.conn.Exec(`INSERT INTO transmissions (raw_hex, hash, first_seen, route_type, payload_type, decoded_json)
+		VALUES ('AA', 'oldhash1', '2026-01-15T10:00:00Z', 1, 5,
+		'{"type":"CHAN","channel":"#test","text":"Alice: Old message","sender":"Alice"}')`)
+	// Newer message (first_seen T2 > T1)
+	db.conn.Exec(`INSERT INTO transmissions (raw_hex, hash, first_seen, route_type, payload_type, decoded_json)
+		VALUES ('BB', 'newhash2', '2026-01-15T10:05:00Z', 1, 5,
+		'{"type":"CHAN","channel":"#test","text":"Bob: New message","sender":"Bob"}')`)
+
+	// Observations: older message re-observed AFTER newer message (stale scenario)
+	db.conn.Exec(`INSERT INTO observations (transmission_id, observer_idx, snr, rssi, timestamp)
+		VALUES (1, 1, 12.0, -90, 1736935200)`) // old msg first obs
+	db.conn.Exec(`INSERT INTO observations (transmission_id, observer_idx, snr, rssi, timestamp)
+		VALUES (2, 1, 14.0, -88, 1736935500)`) // new msg obs
+	db.conn.Exec(`INSERT INTO observations (transmission_id, observer_idx, snr, rssi, timestamp)
+		VALUES (1, 2, 10.0, -95, 1736935800)`) // old msg re-observed LATER
+
+	channels, err := db.GetChannels()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(channels) != 1 {
+		t.Fatalf("expected 1 channel, got %d", len(channels))
+	}
+	ch := channels[0]
+
+	if ch["lastMessage"] != "New message" {
+		t.Errorf("expected lastMessage='New message' (newest by first_seen), got %q", ch["lastMessage"])
+	}
+	if ch["lastSender"] != "Bob" {
+		t.Errorf("expected lastSender='Bob', got %q", ch["lastSender"])
+	}
+	if ch["messageCount"] != 2 {
+		t.Errorf("expected messageCount=2 (unique transmissions), got %v", ch["messageCount"])
+	}
+}
+
 func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }

@@ -1213,8 +1213,11 @@ func (db *DB) GetTraces(hash string) ([]map[string]interface{}, error) {
 }
 
 // GetChannels returns channel list from GRP_TXT packets.
+// Queries transmissions directly (not packets_v) to avoid observation-level
+// duplicates that could cause stale lastMessage when an older message has
+// a later re-observation timestamp.
 func (db *DB) GetChannels() ([]map[string]interface{}, error) {
-	rows, err := db.conn.Query(`SELECT decoded_json, timestamp FROM packets_v WHERE payload_type = 5 ORDER BY timestamp ASC`)
+	rows, err := db.conn.Query(`SELECT decoded_json, first_seen FROM transmissions WHERE payload_type = 5 ORDER BY first_seen ASC`)
 	if err != nil {
 		return nil, err
 	}
@@ -1222,8 +1225,8 @@ func (db *DB) GetChannels() ([]map[string]interface{}, error) {
 
 	channelMap := map[string]map[string]interface{}{}
 	for rows.Next() {
-		var dj, ts sql.NullString
-		rows.Scan(&dj, &ts)
+		var dj, fs sql.NullString
+		rows.Scan(&dj, &fs)
 		if !dj.Valid {
 			continue
 		}
@@ -1246,13 +1249,13 @@ func (db *DB) GetChannels() ([]map[string]interface{}, error) {
 			ch = map[string]interface{}{
 				"hash": key, "name": channelName,
 				"lastMessage": nil, "lastSender": nil,
-				"messageCount": 0, "lastActivity": nullStr(ts),
+				"messageCount": 0, "lastActivity": nullStr(fs),
 			}
 			channelMap[key] = ch
 		}
 		ch["messageCount"] = ch["messageCount"].(int) + 1
-		if ts.Valid {
-			ch["lastActivity"] = ts.String
+		if fs.Valid {
+			ch["lastActivity"] = fs.String
 		}
 		if text, ok := decoded["text"].(string); ok && text != "" {
 			idx := strings.Index(text, ": ")
@@ -1275,12 +1278,32 @@ func (db *DB) GetChannels() ([]map[string]interface{}, error) {
 }
 
 // GetChannelMessages returns messages for a specific channel.
+// Uses transmission-level ordering (first_seen) to ensure correct message
+// sequence even when observations arrive out of order.
 func (db *DB) GetChannelMessages(channelHash string, limit, offset int) ([]map[string]interface{}, int, error) {
 	if limit <= 0 {
 		limit = 100
 	}
-	rows, err := db.conn.Query(`SELECT id, hash, decoded_json, timestamp, observer_id, observer_name, snr, path_json
-		FROM packets_v WHERE payload_type = 5 ORDER BY timestamp ASC`)
+
+	var querySQL string
+	if db.isV3 {
+		querySQL = `SELECT o.id, t.hash, t.decoded_json, t.first_seen,
+				obs.id, obs.name, o.snr, o.path_json
+			FROM observations o
+			JOIN transmissions t ON t.id = o.transmission_id
+			LEFT JOIN observers obs ON obs.rowid = o.observer_idx
+			WHERE t.payload_type = 5
+			ORDER BY t.first_seen ASC`
+	} else {
+		querySQL = `SELECT o.id, t.hash, t.decoded_json, t.first_seen,
+				o.observer_id, o.observer_name, o.snr, o.path_json
+			FROM observations o
+			JOIN transmissions t ON t.id = o.transmission_id
+			WHERE t.payload_type = 5
+			ORDER BY t.first_seen ASC`
+	}
+
+	rows, err := db.conn.Query(querySQL)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -1295,9 +1318,9 @@ func (db *DB) GetChannelMessages(channelHash string, limit, offset int) ([]map[s
 
 	for rows.Next() {
 		var pktID int
-		var pktHash, dj, ts, obsID, obsName, pathJSON sql.NullString
+		var pktHash, dj, fs, obsID, obsName, pathJSON sql.NullString
 		var snr sql.NullFloat64
-		rows.Scan(&pktID, &pktHash, &dj, &ts, &obsID, &obsName, &snr, &pathJSON)
+		rows.Scan(&pktID, &pktHash, &dj, &fs, &obsID, &obsName, &snr, &pathJSON)
 		if !dj.Valid {
 			continue
 		}
@@ -1354,7 +1377,7 @@ func (db *DB) GetChannelMessages(channelHash string, limit, offset int) ([]map[s
 				Data: map[string]interface{}{
 					"sender":           displaySender,
 					"text":             displayText,
-					"timestamp":        nullStr(ts),
+					"timestamp":        nullStr(fs),
 					"sender_timestamp": senderTs,
 					"packetId":         pktID,
 					"packetHash":       nullStr(pktHash),
