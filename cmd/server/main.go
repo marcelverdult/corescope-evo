@@ -89,7 +89,7 @@ func main() {
 	absPublic, _ := filepath.Abs(publicDir)
 	if _, err := os.Stat(absPublic); err == nil {
 		fs := http.FileServer(http.Dir(absPublic))
-		router.PathPrefix("/").Handler(spaHandler(absPublic, fs))
+		router.PathPrefix("/").Handler(wsOrStatic(hub, spaHandler(absPublic, fs)))
 		log.Printf("[static] serving %s", absPublic)
 	} else {
 		log.Printf("[static] directory %s not found — API-only mode", absPublic)

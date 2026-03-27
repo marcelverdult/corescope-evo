@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -91,6 +92,17 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
 
 	go client.writePump()
 	go client.readPump(h)
+}
+
+// wsOrStatic upgrades WebSocket requests at any path, serves static files otherwise.
+func wsOrStatic(hub *Hub, static http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+			hub.ServeWS(w, r)
+			return
+		}
+		static.ServeHTTP(w, r)
+	})
 }
 
 func (c *Client) readPump(hub *Hub) {
