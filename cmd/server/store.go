@@ -60,9 +60,10 @@ type PacketStore struct {
 	byPayloadType map[int][]*StoreTx      // payload_type → transmissions
 	loaded        bool
 	totalObs      int
-	// Response caches
-	rfCache       map[string]*cachedResult // region → cached RF result
-	rfCacheTTL    time.Duration
+	// Response caches (separate mutex to avoid contention with store RWMutex)
+	cacheMu    sync.Mutex
+	rfCache    map[string]*cachedResult // region → cached RF result
+	rfCacheTTL time.Duration
 }
 
 type cachedResult struct {
@@ -731,11 +732,6 @@ func (s *PacketStore) IngestNewFromDB(sinceID, limit int) ([]map[string]interfac
 		pickBestObservation(tx)
 	}
 
-	// Invalidate RF cache on new data
-	for k := range s.rfCache {
-		delete(s.rfCache, k)
-	}
-
 	// Build broadcast maps (same shape as GetNewTransmissionsSince)
 	result := make([]map[string]interface{}, 0, len(broadcastOrder))
 	for _, txID := range broadcastOrder {
@@ -1240,21 +1236,21 @@ func (s *PacketStore) GetChannelMessages(channelHash string, limit, offset int) 
 
 // GetAnalyticsRF returns full RF analytics computed from in-memory observations.
 func (s *PacketStore) GetAnalyticsRF(region string) map[string]interface{} {
-	// Check cache first (no lock needed — rfCache is only written under RLock)
-	s.mu.RLock()
+	// Check cache first
+	s.cacheMu.Lock()
 	if cached, ok := s.rfCache[region]; ok && time.Now().Before(cached.expiresAt) {
-		s.mu.RUnlock()
+		s.cacheMu.Unlock()
 		return cached.data
 	}
-	s.mu.RUnlock()
+	s.cacheMu.Unlock()
 
 	// Compute fresh result
 	result := s.computeAnalyticsRF(region)
 
 	// Cache result
-	s.mu.RLock()
+	s.cacheMu.Lock()
 	s.rfCache[region] = &cachedResult{data: result, expiresAt: time.Now().Add(s.rfCacheTTL)}
-	s.mu.RUnlock()
+	s.cacheMu.Unlock()
 
 	return result
 }
