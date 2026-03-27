@@ -876,10 +876,11 @@ app.use(express.json());
 
 app.get('/api/stats', (req, res) => {
   const stats = db.getStats();
-  // Get role counts
+  // Get role counts (active nodes only — same 7-day window as totalNodes)
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 3600000).toISOString();
   const counts = {};
   for (const role of ['repeater', 'room', 'companion', 'sensor']) {
-    const r = db.db.prepare(`SELECT COUNT(*) as count FROM nodes WHERE role = ?`).get(role);
+    const r = db.db.prepare(`SELECT COUNT(*) as count FROM nodes WHERE role = ? AND last_seen > ?`).get(role, sevenDaysAgo);
     counts[role + 's'] = r.count;
   }
   res.json({ ...stats, counts });

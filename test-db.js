@@ -213,6 +213,33 @@ console.log('\ngetStats:');
   assert(stats.totalObservers >= 1, 'totalObservers');
   assert(typeof stats.totalPackets === 'number', 'totalPackets is number');
   assert(typeof stats.packetsLastHour === 'number', 'packetsLastHour is number');
+  assert(typeof stats.totalNodesAllTime === 'number', 'totalNodesAllTime is number');
+  assert(stats.totalNodesAllTime >= stats.totalNodes, 'totalNodesAllTime >= totalNodes');
+}
+
+// --- getStats active node filtering ---
+console.log('\ngetStats active node filtering:');
+{
+  // Insert a node with last_seen 30 days ago (should be excluded from totalNodes)
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 3600000).toISOString();
+  db.upsertNode({ public_key: 'deadnode0000000000000000deadnode00', name: 'DeadNode', role: 'repeater', last_seen: thirtyDaysAgo, first_seen: thirtyDaysAgo });
+
+  // Insert a node with last_seen now (should be included)
+  db.upsertNode({ public_key: 'livenode0000000000000000livenode00', name: 'LiveNode', role: 'companion', last_seen: new Date().toISOString() });
+
+  const stats = db.getStats();
+  assert(stats.totalNodesAllTime > stats.totalNodes, 'dead node excluded from totalNodes but included in totalNodesAllTime');
+
+  // Verify the dead node is in totalNodesAllTime
+  const allTime = stats.totalNodesAllTime;
+  assert(allTime >= 3, 'totalNodesAllTime includes dead + live nodes');
+
+  // Verify active count doesn't include the 30-day-old node
+  // The dead node's last_seen is 30 days ago, window is 7 days
+  const nodeInDb = db.getNode('deadnode0000000000000000deadnode00');
+  assert(nodeInDb !== null, 'dead node exists in DB');
+  const liveNode = db.getNode('livenode0000000000000000livenode00');
+  assert(liveNode !== null, 'live node exists in DB');
 }
 
 // --- getNodeHealth ---

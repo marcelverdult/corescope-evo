@@ -346,6 +346,8 @@ const stmts = {
   getObservers: db.prepare(`SELECT * FROM observers ORDER BY last_seen DESC`),
   countPackets: db.prepare(`SELECT COUNT(*) as count FROM observations`),
   countNodes: db.prepare(`SELECT COUNT(*) as count FROM nodes`),
+  countActiveNodes: db.prepare(`SELECT COUNT(*) as count FROM nodes WHERE last_seen > ?`),
+  countActiveNodesByRole: db.prepare(`SELECT COUNT(*) as count FROM nodes WHERE role = ? AND last_seen > ?`),
   countObservers: db.prepare(`SELECT COUNT(*) as count FROM observers`),
   countRecentPackets: schemaVersion >= 3
     ? db.prepare(`SELECT COUNT(*) as count FROM observations WHERE timestamp > CAST(strftime('%s', ?) AS INTEGER)`)
@@ -579,6 +581,7 @@ function getObservers() {
 
 function getStats() {
   const oneHourAgo = new Date(Date.now() - 3600000).toISOString();
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 3600000).toISOString();
   // Try to get transmission count from normalized schema
   let totalTransmissions = null;
   try {
@@ -588,7 +591,8 @@ function getStats() {
     totalPackets: totalTransmissions || stmts.countPackets.get().count,
     totalTransmissions,
     totalObservations: stmts.countPackets.get().count,
-    totalNodes: stmts.countNodes.get().count,
+    totalNodes: stmts.countActiveNodes.get(sevenDaysAgo).count,
+    totalNodesAllTime: stmts.countNodes.get().count,
     totalObservers: stmts.countObservers.get().count,
     packetsLastHour: stmts.countRecentPackets.get(oneHourAgo).count,
   };
