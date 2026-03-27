@@ -17,8 +17,8 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 # Pipeline: go-test ──┐
-#                      ├──→ build ──→ deploy-node ──→ deploy-go
-#           node-test ─┘
+#                      ├──→ build ──┬──→ deploy-node
+#           node-test ─┘             └──→ deploy-go (parallel)
 
 jobs:
   # ───────────────────────────────────────────────────────────────
@@ -380,7 +380,7 @@ jobs:
   # ───────────────────────────────────────────────────────────────
   deploy-go:
     name: "🚀 Deploy Go Staging"
-    needs: deploy-node
+    needs: build
     runs-on: self-hosted
     steps:
       - name: Checkout code
