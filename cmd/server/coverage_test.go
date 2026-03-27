@@ -2122,18 +2122,18 @@ func TestStoreGetAnalyticsChannelsNumericHash(t *testing.T) {
 	db.conn.Exec(`INSERT INTO transmissions (raw_hex, hash, first_seen, route_type, payload_type, decoded_json)
 		VALUES ('DD01', 'grp_num_hash_1', ?, 1, 5, '{"type":"GRP_TXT","channelHash":97,"channelHashHex":"61","decryptionStatus":"no_key"}')`, recent)
 	db.conn.Exec(`INSERT INTO observations (transmission_id, observer_idx, snr, rssi, path_json, timestamp)
-		VALUES (3, 1, 10.0, -90, '[]', ?)`, recentEpoch)
+		VALUES (4, 1, 10.0, -90, '[]', ?)`, recentEpoch)
 
 	db.conn.Exec(`INSERT INTO transmissions (raw_hex, hash, first_seen, route_type, payload_type, decoded_json)
 		VALUES ('DD02', 'grp_num_hash_2', ?, 1, 5, '{"type":"GRP_TXT","channelHash":42,"channelHashHex":"2A","decryptionStatus":"no_key"}')`, recent)
 	db.conn.Exec(`INSERT INTO observations (transmission_id, observer_idx, snr, rssi, path_json, timestamp)
-		VALUES (4, 1, 10.0, -90, '[]', ?)`, recentEpoch)
+		VALUES (5, 1, 10.0, -90, '[]', ?)`, recentEpoch)
 
 	// Also a decrypted CHAN with numeric channelHash
 	db.conn.Exec(`INSERT INTO transmissions (raw_hex, hash, first_seen, route_type, payload_type, decoded_json)
 		VALUES ('DD03', 'chan_num_hash_3', ?, 1, 5, '{"type":"CHAN","channel":"general","channelHash":97,"channelHashHex":"61","text":"hello","sender":"Alice"}')`, recent)
 	db.conn.Exec(`INSERT INTO observations (transmission_id, observer_idx, snr, rssi, path_json, timestamp)
-		VALUES (5, 1, 12.0, -88, '[]', ?)`, recentEpoch)
+		VALUES (6, 1, 12.0, -88, '[]', ?)`, recentEpoch)
 
 	store := NewPacketStore(db)
 	store.Load()
@@ -2144,11 +2144,22 @@ func TestStoreGetAnalyticsChannelsNumericHash(t *testing.T) {
 		t.Errorf("expected at least 2 channels (hash 97 + hash 42), got %d", len(channels))
 	}
 
-	// Verify no channel has hash "?" (would mean parsing failed)
+	// Verify the numeric-hash channels we inserted have proper hashes (not "?")
+	found97 := false
+	found42 := false
 	for _, ch := range channels {
-		if ch["hash"] == "?" {
-			t.Errorf("channel has hash '?' — numeric channelHash was not parsed: %v", ch)
+		if ch["hash"] == "97" {
+			found97 = true
 		}
+		if ch["hash"] == "42" {
+			found42 = true
+		}
+	}
+	if !found97 {
+		t.Error("expected to find channel with hash '97' (numeric channelHash parsing)")
+	}
+	if !found42 {
+		t.Error("expected to find channel with hash '42' (numeric channelHash parsing)")
 	}
 
 	// Verify the decrypted CHAN channel has the correct name
@@ -2525,6 +2536,536 @@ func TestStoreGetPacketByHash(t *testing.T) {
 			t.Error("expected nil for not found")
 		}
 	})
+}
+
+// --- Coverage gap-filling tests ---
+
+func TestResolvePayloadTypeNameUnknown(t *testing.T) {
+	// nil → UNKNOWN
+	if got := resolvePayloadTypeName(nil); got != "UNKNOWN" {
+		t.Errorf("expected UNKNOWN for nil, got %s", got)
+	}
+	// known type
+	pt4 := 4
+	if got := resolvePayloadTypeName(&pt4); got != "ADVERT" {
+		t.Errorf("expected ADVERT, got %s", got)
+	}
+	// unknown type → UNK(N) format
+	pt99 := 99
+	if got := resolvePayloadTypeName(&pt99); got != "UNK(99)" {
+		t.Errorf("expected UNK(99), got %s", got)
+	}
+}
+
+func TestCacheHitTopology(t *testing.T) {
+	db := setupRichTestDB(t)
+	defer db.Close()
+	store := NewPacketStore(db)
+	store.Load()
+
+	// First call — cache miss
+	r1 := store.GetAnalyticsTopology("")
+	if r1 == nil {
+		t.Fatal("expected topology result")
+	}
+
+	// Second call — cache hit
+	r2 := store.GetAnalyticsTopology("")
+	if r2 == nil {
+		t.Fatal("expected cached topology result")
+	}
+
+	stats := store.GetCacheStats()
+	hits := stats["hits"].(int64)
+	if hits < 1 {
+		t.Errorf("expected cache hit, got %d hits", hits)
+	}
+}
+
+func TestCacheHitHashSizes(t *testing.T) {
+	db := setupRichTestDB(t)
+	defer db.Close()
+	store := NewPacketStore(db)
+	store.Load()
+
+	r1 := store.GetAnalyticsHashSizes("")
+	if r1 == nil {
+		t.Fatal("expected hash sizes result")
+	}
+
+	r2 := store.GetAnalyticsHashSizes("")
+	if r2 == nil {
+		t.Fatal("expected cached hash sizes result")
+	}
+
+	stats := store.GetCacheStats()
+	hits := stats["hits"].(int64)
+	if hits < 1 {
+		t.Errorf("expected cache hit, got %d", hits)
+	}
+}
+
+func TestCacheHitChannels(t *testing.T) {
+	db := setupRichTestDB(t)
+	defer db.Close()
+	store := NewPacketStore(db)
+	store.Load()
+
+	r1 := store.GetAnalyticsChannels("")
+	if r1 == nil {
+		t.Fatal("expected channels result")
+	}
+
+	r2 := store.GetAnalyticsChannels("")
+	if r2 == nil {
+		t.Fatal("expected cached channels result")
+	}
+
+	stats := store.GetCacheStats()
+	hits := stats["hits"].(int64)
+	if hits < 1 {
+		t.Errorf("expected cache hit, got %d", hits)
+	}
+}
+
+func TestGetChannelMessagesEdgeCases(t *testing.T) {
+	db := setupRichTestDB(t)
+	defer db.Close()
+	store := NewPacketStore(db)
+	store.Load()
+
+	// Channel not found — empty result
+	msgs, total := store.GetChannelMessages("nonexistent_channel", 10, 0)
+	if total != 0 {
+		t.Errorf("expected 0 total for nonexistent channel, got %d", total)
+	}
+	if len(msgs) != 0 {
+		t.Errorf("expected empty msgs, got %d", len(msgs))
+	}
+
+	// Default limit (0 → 100)
+	msgs, _ = store.GetChannelMessages("#test", 0, 0)
+	_ = msgs // just exercises the default limit path
+
+	// Offset beyond range
+	msgs, total = store.GetChannelMessages("#test", 10, 9999)
+	if len(msgs) != 0 {
+		t.Errorf("expected empty msgs for large offset, got %d", len(msgs))
+	}
+	if total == 0 {
+		t.Error("total should be > 0 even with large offset")
+	}
+
+	// Negative offset
+	msgs, _ = store.GetChannelMessages("#test", 10, -5)
+	_ = msgs // exercises the start < 0 path
+}
+
+func TestFilterPacketsEmptyRegion(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	seedTestData(t, db)
+	store := NewPacketStore(db)
+	store.Load()
+
+	// Region with no observers → empty result
+	results := store.QueryPackets(PacketQuery{Region: "NONEXISTENT", Limit: 100})
+	if results.Total != 0 {
+		t.Errorf("expected 0 results for nonexistent region, got %d", results.Total)
+	}
+}
+
+func TestFilterPacketsSinceUntil(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	seedTestData(t, db)
+	store := NewPacketStore(db)
+	store.Load()
+
+	// Since far future → empty
+	results := store.QueryPackets(PacketQuery{Since: "2099-01-01T00:00:00Z", Limit: 100})
+	if results.Total != 0 {
+		t.Errorf("expected 0 results for far future since, got %d", results.Total)
+	}
+
+	// Until far past → empty
+	results = store.QueryPackets(PacketQuery{Until: "2000-01-01T00:00:00Z", Limit: 100})
+	if results.Total != 0 {
+		t.Errorf("expected 0 results for far past until, got %d", results.Total)
+	}
+
+	// Route filter
+	rt := 1
+	results = store.QueryPackets(PacketQuery{Route: &rt, Limit: 100})
+	if results.Total == 0 {
+		t.Error("expected results for route_type=1 filter")
+	}
+}
+
+func TestFilterPacketsHashOnly(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	seedTestData(t, db)
+	store := NewPacketStore(db)
+	store.Load()
+
+	// Single hash fast-path — found
+	results := store.QueryPackets(PacketQuery{Hash: "abc123def4567890", Limit: 100})
+	if results.Total != 1 {
+		t.Errorf("expected 1 result for known hash, got %d", results.Total)
+	}
+
+	// Single hash fast-path — not found
+	results = store.QueryPackets(PacketQuery{Hash: "0000000000000000", Limit: 100})
+	if results.Total != 0 {
+		t.Errorf("expected 0 results for unknown hash, got %d", results.Total)
+	}
+}
+
+func TestFilterPacketsObserverWithType(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	seedTestData(t, db)
+	store := NewPacketStore(db)
+	store.Load()
+
+	// Observer + type filter (takes non-indexed path)
+	pt := 4
+	results := store.QueryPackets(PacketQuery{Observer: "obs1", Type: &pt, Limit: 100})
+	_ = results // exercises the combined observer+type filter path
+}
+
+func TestFilterPacketsNodeFilter(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	seedTestData(t, db)
+	store := NewPacketStore(db)
+	store.Load()
+
+	// Node filter — exercises DecodedJSON containment check
+	results := store.QueryPackets(PacketQuery{Node: "aabbccdd11223344", Limit: 100})
+	if results.Total == 0 {
+		t.Error("expected results for node filter")
+	}
+
+	// Node filter with hash combined
+	results = store.QueryPackets(PacketQuery{Node: "aabbccdd11223344", Hash: "abc123def4567890", Limit: 100})
+	_ = results
+}
+
+func TestGetNodeHashSizeInfoEdgeCases(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UTC()
+	recent := now.Add(-1 * time.Hour).Format(time.RFC3339)
+	recentEpoch := now.Add(-1 * time.Hour).Unix()
+
+	// Observers
+	db.conn.Exec(`INSERT INTO observers (id, name, iata, last_seen, first_seen, packet_count)
+		VALUES ('obs1', 'Obs', 'SJC', ?, '2026-01-01T00:00:00Z', 10)`, recent)
+
+	// Adverts with various edge cases
+	// 1. Valid advert with pubKey
+	db.conn.Exec(`INSERT INTO transmissions (raw_hex, hash, first_seen, route_type, payload_type, decoded_json)
+		VALUES ('0140aabbccdd', 'hs_valid_1', ?, 1, 4, '{"pubKey":"aabbccdd11223344","name":"NodeA","type":"ADVERT"}')`, recent)
+	db.conn.Exec(`INSERT INTO observations (transmission_id, observer_idx, snr, rssi, path_json, timestamp)
+		VALUES (1, 1, 10.0, -90, '[]', ?)`, recentEpoch)
+
+	// 2. Short raw_hex (< 4 chars)
+	db.conn.Exec(`INSERT INTO transmissions (raw_hex, hash, first_seen, route_type, payload_type, decoded_json)
+		VALUES ('01', 'hs_short_hex', ?, 1, 4, '{"pubKey":"eeff00112233aabb","name":"NodeB","type":"ADVERT"}')`, recent)
+	db.conn.Exec(`INSERT INTO observations (transmission_id, observer_idx, snr, rssi, path_json, timestamp)
+		VALUES (2, 1, 10.0, -90, '[]', ?)`, recentEpoch)
+
+	// 3. Invalid hex in path byte position
+	db.conn.Exec(`INSERT INTO transmissions (raw_hex, hash, first_seen, route_type, payload_type, decoded_json)
+		VALUES ('01GGHHII', 'hs_bad_hex', ?, 1, 4, '{"pubKey":"1122334455667788","name":"NodeC","type":"ADVERT"}')`, recent)
+	db.conn.Exec(`INSERT INTO observations (transmission_id, observer_idx, snr, rssi, path_json, timestamp)
+		VALUES (3, 1, 10.0, -90, '[]', ?)`, recentEpoch)
+
+	// 4. Invalid JSON
+	db.conn.Exec(`INSERT INTO transmissions (raw_hex, hash, first_seen, route_type, payload_type, decoded_json)
+		VALUES ('0140aabb', 'hs_bad_json', ?, 1, 4, 'not-json')`, recent)
+	db.conn.Exec(`INSERT INTO observations (transmission_id, observer_idx, snr, rssi, path_json, timestamp)
+		VALUES (4, 1, 10.0, -90, '[]', ?)`, recentEpoch)
+
+	// 5. JSON with public_key field instead of pubKey
+	db.conn.Exec(`INSERT INTO transmissions (raw_hex, hash, first_seen, route_type, payload_type, decoded_json)
+		VALUES ('0180eeff', 'hs_alt_key', ?, 1, 4, '{"public_key":"aabbccdd11223344","name":"NodeA","type":"ADVERT"}')`, recent)
+	db.conn.Exec(`INSERT INTO observations (transmission_id, observer_idx, snr, rssi, path_json, timestamp)
+		VALUES (5, 1, 10.0, -90, '[]', ?)`, recentEpoch)
+
+	// 6. JSON with no pubKey at all
+	db.conn.Exec(`INSERT INTO transmissions (raw_hex, hash, first_seen, route_type, payload_type, decoded_json)
+		VALUES ('01C0ffee', 'hs_no_pk', ?, 1, 4, '{"name":"NodeZ","type":"ADVERT"}')`, recent)
+	db.conn.Exec(`INSERT INTO observations (transmission_id, observer_idx, snr, rssi, path_json, timestamp)
+		VALUES (6, 1, 10.0, -90, '[]', ?)`, recentEpoch)
+
+	// 7. Empty decoded_json
+	db.conn.Exec(`INSERT INTO transmissions (raw_hex, hash, first_seen, route_type, payload_type, decoded_json)
+		VALUES ('0140bbcc', 'hs_empty_json', ?, 1, 4, '')`, recent)
+	db.conn.Exec(`INSERT INTO observations (transmission_id, observer_idx, snr, rssi, path_json, timestamp)
+		VALUES (7, 1, 10.0, -90, '[]', ?)`, recentEpoch)
+
+	// 8-10. Multiple adverts for same node with different hash sizes (flip-flop test)
+	db.conn.Exec(`INSERT INTO transmissions (raw_hex, hash, first_seen, route_type, payload_type, decoded_json)
+		VALUES ('0140dd01', 'hs_flip_1', ?, 1, 4, '{"pubKey":"ffff000011112222","name":"Flipper","type":"ADVERT"}')`, recent)
+	db.conn.Exec(`INSERT INTO observations (transmission_id, observer_idx, snr, rssi, path_json, timestamp)
+		VALUES (8, 1, 10.0, -90, '[]', ?)`, recentEpoch)
+	db.conn.Exec(`INSERT INTO transmissions (raw_hex, hash, first_seen, route_type, payload_type, decoded_json)
+		VALUES ('0180dd02', 'hs_flip_2', ?, 1, 4, '{"pubKey":"ffff000011112222","name":"Flipper","type":"ADVERT"}')`, recent)
+	db.conn.Exec(`INSERT INTO observations (transmission_id, observer_idx, snr, rssi, path_json, timestamp)
+		VALUES (9, 1, 10.0, -90, '[]', ?)`, recentEpoch)
+	db.conn.Exec(`INSERT INTO transmissions (raw_hex, hash, first_seen, route_type, payload_type, decoded_json)
+		VALUES ('0140dd03', 'hs_flip_3', ?, 1, 4, '{"pubKey":"ffff000011112222","name":"Flipper","type":"ADVERT"}')`, recent)
+	db.conn.Exec(`INSERT INTO observations (transmission_id, observer_idx, snr, rssi, path_json, timestamp)
+		VALUES (10, 1, 10.0, -90, '[]', ?)`, recentEpoch)
+
+	store := NewPacketStore(db)
+	store.Load()
+	info := store.GetNodeHashSizeInfo()
+
+	// Valid node should be present
+	if _, ok := info["aabbccdd11223344"]; !ok {
+		t.Error("expected aabbccdd11223344 in hash size info")
+	}
+
+	// Flipper should have inconsistent flag (2→3→2 = 2 transitions, 2 unique sizes, 3 obs)
+	if flipper, ok := info["ffff000011112222"]; ok {
+		if len(flipper.AllSizes) < 2 {
+			t.Errorf("expected 2+ unique sizes for flipper, got %d", len(flipper.AllSizes))
+		}
+		if !flipper.Inconsistent {
+			t.Error("expected Inconsistent=true for flip-flop node")
+		}
+	} else {
+		t.Error("expected ffff000011112222 in hash size info")
+	}
+
+	// Bad entries (short hex, bad hex, bad json, no pk) should not corrupt results
+	if _, ok := info["eeff00112233aabb"]; ok {
+		t.Error("short raw_hex node should not be in results")
+	}
+	if _, ok := info["1122334455667788"]; ok {
+		t.Error("bad hex node should not be in results")
+	}
+}
+
+func TestHandleResolveHopsEdgeCases(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	seedTestData(t, db)
+
+	cfg := &Config{Port: 3000}
+	hub := NewHub()
+	srv := NewServer(db, cfg, hub)
+	router := mux.NewRouter()
+	srv.RegisterRoutes(router)
+
+	// Empty hops param
+	req := httptest.NewRequest("GET", "/api/resolve-hops", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+	var body map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &body)
+	resolved := body["resolved"].(map[string]interface{})
+	if len(resolved) != 0 {
+		t.Errorf("expected empty resolved for empty hops, got %d", len(resolved))
+	}
+
+	// Multiple hops with empty string included
+	req = httptest.NewRequest("GET", "/api/resolve-hops?hops=aabb,,eeff", nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+	json.Unmarshal(w.Body.Bytes(), &body)
+	resolved = body["resolved"].(map[string]interface{})
+	// Empty string should be skipped
+	if _, ok := resolved[""]; ok {
+		t.Error("empty hop should be skipped")
+	}
+
+	// Nonexistent prefix — zero candidates
+	req = httptest.NewRequest("GET", "/api/resolve-hops?hops=nonexistent_prefix_xyz", nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestHandleObserversError(t *testing.T) {
+	// Use a closed DB to trigger an error from GetObservers
+	db := setupTestDB(t)
+	seedTestData(t, db)
+
+	cfg := &Config{Port: 3000}
+	hub := NewHub()
+	srv := NewServer(db, cfg, hub)
+	router := mux.NewRouter()
+	srv.RegisterRoutes(router)
+	db.Close() // force error after routes registered
+
+	req := httptest.NewRequest("GET", "/api/observers", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != 500 {
+		t.Errorf("expected 500 for closed DB, got %d", w.Code)
+	}
+}
+
+func TestHandleAnalyticsChannelsDBFallback(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	seedTestData(t, db)
+
+	// Server with NO store — takes DB fallback path
+	cfg := &Config{Port: 3000}
+	hub := NewHub()
+	srv := NewServer(db, cfg, hub)
+	router := mux.NewRouter()
+	srv.RegisterRoutes(router)
+
+	req := httptest.NewRequest("GET", "/api/analytics/channels", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+	var body map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &body)
+	if _, ok := body["activeChannels"]; !ok {
+		t.Error("expected activeChannels in DB-fallback response")
+	}
+	if _, ok := body["channels"]; !ok {
+		t.Error("expected channels in DB-fallback response")
+	}
+}
+
+func TestGetChannelMessagesDedupeRepeats(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UTC()
+	recent := now.Add(-1 * time.Hour).Format(time.RFC3339)
+	recentEpoch := now.Add(-1 * time.Hour).Unix()
+
+	db.conn.Exec(`INSERT INTO observers (id, name, iata, last_seen, first_seen, packet_count)
+		VALUES ('obs1', 'Obs1', 'SJC', ?, '2026-01-01T00:00:00Z', 10)`, recent)
+	db.conn.Exec(`INSERT INTO observers (id, name, iata, last_seen, first_seen, packet_count)
+		VALUES ('obs2', 'Obs2', 'LAX', ?, '2026-01-01T00:00:00Z', 10)`, recent)
+
+	// Insert two copies of same CHAN message (same hash, different observers)
+	db.conn.Exec(`INSERT INTO transmissions (raw_hex, hash, first_seen, route_type, payload_type, decoded_json)
+		VALUES ('CC01', 'dedup_chan_1', ?, 1, 5, '{"type":"CHAN","channel":"#general","text":"Alice: hello","sender":"Alice"}')`, recent)
+	db.conn.Exec(`INSERT INTO observations (transmission_id, observer_idx, snr, rssi, path_json, timestamp)
+		VALUES (1, 1, 12.0, -88, '["aa"]', ?)`, recentEpoch)
+
+	// Same sender + hash → different observation (simulates dedup)
+	db.conn.Exec(`INSERT INTO transmissions (raw_hex, hash, first_seen, route_type, payload_type, decoded_json)
+		VALUES ('CC02', 'dedup_chan_1', ?, 1, 5, '{"type":"CHAN","channel":"#general","text":"Alice: hello","sender":"Alice"}')`, recent)
+	// Note: won't load due to UNIQUE constraint on hash → tests the code path with single tx having multiple obs
+
+	// Second different message
+	db.conn.Exec(`INSERT INTO transmissions (raw_hex, hash, first_seen, route_type, payload_type, decoded_json)
+		VALUES ('CC03', 'dedup_chan_2', ?, 1, 5, '{"type":"CHAN","channel":"#general","text":"Bob: world","sender":"Bob"}')`, recent)
+	db.conn.Exec(`INSERT INTO observations (transmission_id, observer_idx, snr, rssi, path_json, timestamp)
+		VALUES (2, 2, 10.0, -90, '["bb"]', ?)`, recentEpoch)
+
+	// GRP_TXT (not CHAN) — should be skipped by GetChannelMessages
+	db.conn.Exec(`INSERT INTO transmissions (raw_hex, hash, first_seen, route_type, payload_type, decoded_json)
+		VALUES ('DD01', 'grp_msg_hash_1', ?, 1, 5, '{"type":"GRP_TXT","channelHash":"42","text":"encrypted"}')`, recent)
+	db.conn.Exec(`INSERT INTO observations (transmission_id, observer_idx, snr, rssi, path_json, timestamp)
+		VALUES (3, 1, 10.0, -90, '[]', ?)`, recentEpoch)
+
+	store := NewPacketStore(db)
+	store.Load()
+
+	msgs, total := store.GetChannelMessages("#general", 10, 0)
+	if total == 0 {
+		t.Error("expected messages for #general")
+	}
+
+	// Check message structure
+	for _, msg := range msgs {
+		if _, ok := msg["sender"]; !ok {
+			t.Error("expected sender field")
+		}
+		if _, ok := msg["text"]; !ok {
+			t.Error("expected text field")
+		}
+		if _, ok := msg["observers"]; !ok {
+			t.Error("expected observers field")
+		}
+	}
+}
+
+func TestTransmissionsForObserverFromSlice(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	seedTestData(t, db)
+	store := NewPacketStore(db)
+	store.Load()
+
+	// Test with from=nil (index path) — for non-existent observer
+	result := store.transmissionsForObserver("nonexistent_obs", nil)
+	if len(result) != 0 {
+		t.Errorf("expected nil/empty for nonexistent observer, got %d", len(result))
+	}
+
+	// Test with from=non-nil slice (filter path)
+	allPackets := store.packets
+	result = store.transmissionsForObserver("obs1", allPackets)
+	if len(result) == 0 {
+		t.Error("expected results for obs1 from filter path")
+	}
+}
+
+func TestGetPerfStoreStatsPublicKeyField(t *testing.T) {
+	db := setupRichTestDB(t)
+	defer db.Close()
+	store := NewPacketStore(db)
+	store.Load()
+
+	stats := store.GetPerfStoreStats()
+	indexes := stats["indexes"].(map[string]interface{})
+	// advertByObserver should count distinct pubkeys from advert packets
+	aboc := indexes["advertByObserver"].(int)
+	if aboc == 0 {
+		t.Error("expected advertByObserver > 0 for rich test DB")
+	}
+}
+
+func TestHandleAudioLabBucketsQueryError(t *testing.T) {
+	// Use closed DB to trigger query error
+	db := setupTestDB(t)
+	seedTestData(t, db)
+
+	cfg := &Config{Port: 3000}
+	hub := NewHub()
+	srv := NewServer(db, cfg, hub)
+	router := mux.NewRouter()
+	srv.RegisterRoutes(router)
+	db.Close()
+
+	req := httptest.NewRequest("GET", "/api/audio-lab/buckets", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Errorf("expected 200 (empty buckets on error), got %d", w.Code)
+	}
+	var body map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &body)
+	buckets := body["buckets"].(map[string]interface{})
+	if len(buckets) != 0 {
+		t.Errorf("expected empty buckets on query error, got %d", len(buckets))
+	}
 }
 
 func TestStoreGetTransmissionByID(t *testing.T) {
