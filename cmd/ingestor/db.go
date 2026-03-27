@@ -1,0 +1,348 @@
+package main
+
+import (
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"log"
+	"os"
+	"path/filepath"
+	"time"
+
+	_ "modernc.org/sqlite"
+)
+
+// Store wraps the SQLite database for packet ingestion.
+type Store struct {
+	db *sql.DB
+
+	stmtGetTxByHash        *sql.Stmt
+	stmtInsertTransmission *sql.Stmt
+	stmtUpdateTxFirstSeen  *sql.Stmt
+	stmtInsertObservation  *sql.Stmt
+	stmtUpsertNode         *sql.Stmt
+	stmtUpsertObserver     *sql.Stmt
+	stmtGetObserverRowid   *sql.Stmt
+}
+
+// OpenStore opens or creates a SQLite DB at the given path, applying the
+// v3 schema that is compatible with the Node.js server.
+func OpenStore(dbPath string) (*Store, error) {
+	dir := filepath.Dir(dbPath)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, fmt.Errorf("creating data dir: %w", err)
+	}
+
+	db, err := sql.Open("sqlite", dbPath+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(ON)")
+	if err != nil {
+		return nil, fmt.Errorf("opening db: %w", err)
+	}
+
+	if err := db.Ping(); err != nil {
+		return nil, fmt.Errorf("pinging db: %w", err)
+	}
+
+	if err := applySchema(db); err != nil {
+		return nil, fmt.Errorf("applying schema: %w", err)
+	}
+
+	s := &Store{db: db}
+	if err := s.prepareStatements(); err != nil {
+		return nil, fmt.Errorf("preparing statements: %w", err)
+	}
+
+	return s, nil
+}
+
+func applySchema(db *sql.DB) error {
+	schema := `
+		CREATE TABLE IF NOT EXISTS nodes (
+			public_key TEXT PRIMARY KEY,
+			name TEXT,
+			role TEXT,
+			lat REAL,
+			lon REAL,
+			last_seen TEXT,
+			first_seen TEXT,
+			advert_count INTEGER DEFAULT 0
+		);
+
+		CREATE TABLE IF NOT EXISTS observers (
+			id TEXT PRIMARY KEY,
+			name TEXT,
+			iata TEXT,
+			last_seen TEXT,
+			first_seen TEXT,
+			packet_count INTEGER DEFAULT 0,
+			model TEXT,
+			firmware TEXT,
+			client_version TEXT,
+			radio TEXT,
+			battery_mv INTEGER,
+			uptime_secs INTEGER,
+			noise_floor INTEGER
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_nodes_last_seen ON nodes(last_seen);
+		CREATE INDEX IF NOT EXISTS idx_observers_last_seen ON observers(last_seen);
+
+		CREATE TABLE IF NOT EXISTS transmissions (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			raw_hex TEXT NOT NULL,
+			hash TEXT NOT NULL UNIQUE,
+			first_seen TEXT NOT NULL,
+			route_type INTEGER,
+			payload_type INTEGER,
+			payload_version INTEGER,
+			decoded_json TEXT,
+			created_at TEXT DEFAULT (datetime('now'))
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_transmissions_hash ON transmissions(hash);
+		CREATE INDEX IF NOT EXISTS idx_transmissions_first_seen ON transmissions(first_seen);
+		CREATE INDEX IF NOT EXISTS idx_transmissions_payload_type ON transmissions(payload_type);
+	`
+	if _, err := db.Exec(schema); err != nil {
+		return fmt.Errorf("base schema: %w", err)
+	}
+
+	// Create observations table (v3 schema)
+	obsExists := false
+	row := db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='observations'")
+	var dummy string
+	if row.Scan(&dummy) == nil {
+		obsExists = true
+	}
+
+	if !obsExists {
+		obs := `
+			CREATE TABLE observations (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				transmission_id INTEGER NOT NULL REFERENCES transmissions(id),
+				observer_idx INTEGER,
+				direction TEXT,
+				snr REAL,
+				rssi REAL,
+				score INTEGER,
+				path_json TEXT,
+				timestamp INTEGER NOT NULL
+			);
+			CREATE INDEX idx_observations_transmission_id ON observations(transmission_id);
+			CREATE INDEX idx_observations_observer_idx ON observations(observer_idx);
+			CREATE INDEX idx_observations_timestamp ON observations(timestamp);
+			CREATE UNIQUE INDEX IF NOT EXISTS idx_observations_dedup ON observations(transmission_id, observer_idx, COALESCE(path_json, ''));
+		`
+		if _, err := db.Exec(obs); err != nil {
+			return fmt.Errorf("observations schema: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (s *Store) prepareStatements() error {
+	var err error
+
+	s.stmtGetTxByHash, err = s.db.Prepare("SELECT id, first_seen FROM transmissions WHERE hash = ?")
+	if err != nil {
+		return err
+	}
+
+	s.stmtInsertTransmission, err = s.db.Prepare(`
+		INSERT INTO transmissions (raw_hex, hash, first_seen, route_type, payload_type, payload_version, decoded_json)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`)
+	if err != nil {
+		return err
+	}
+
+	s.stmtUpdateTxFirstSeen, err = s.db.Prepare("UPDATE transmissions SET first_seen = ? WHERE id = ?")
+	if err != nil {
+		return err
+	}
+
+	s.stmtInsertObservation, err = s.db.Prepare(`
+		INSERT OR IGNORE INTO observations (transmission_id, observer_idx, direction, snr, rssi, score, path_json, timestamp)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	`)
+	if err != nil {
+		return err
+	}
+
+	s.stmtUpsertNode, err = s.db.Prepare(`
+		INSERT INTO nodes (public_key, name, role, lat, lon, last_seen, first_seen, advert_count)
+		VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+		ON CONFLICT(public_key) DO UPDATE SET
+			name = COALESCE(?, name),
+			role = COALESCE(?, role),
+			lat = COALESCE(?, lat),
+			lon = COALESCE(?, lon),
+			last_seen = ?,
+			advert_count = advert_count + 1
+	`)
+	if err != nil {
+		return err
+	}
+
+	s.stmtUpsertObserver, err = s.db.Prepare(`
+		INSERT INTO observers (id, name, iata, last_seen, first_seen, packet_count)
+		VALUES (?, ?, ?, ?, ?, 1)
+		ON CONFLICT(id) DO UPDATE SET
+			name = COALESCE(?, name),
+			iata = COALESCE(?, iata),
+			last_seen = ?,
+			packet_count = packet_count + 1
+	`)
+	if err != nil {
+		return err
+	}
+
+	s.stmtGetObserverRowid, err = s.db.Prepare("SELECT rowid FROM observers WHERE id = ?")
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// InsertTransmission inserts a decoded packet into transmissions + observations.
+func (s *Store) InsertTransmission(data *PacketData) error {
+	hash := data.Hash
+	if hash == "" {
+		return nil
+	}
+
+	now := data.Timestamp
+	if now == "" {
+		now = time.Now().UTC().Format(time.RFC3339)
+	}
+
+	var txID int64
+
+	// Check for existing transmission
+	var existingID int64
+	var existingFirstSeen string
+	err := s.stmtGetTxByHash.QueryRow(hash).Scan(&existingID, &existingFirstSeen)
+	if err == nil {
+		// Existing transmission
+		txID = existingID
+		if now < existingFirstSeen {
+			_, _ = s.stmtUpdateTxFirstSeen.Exec(now, txID)
+		}
+	} else {
+		// New transmission
+		result, err := s.stmtInsertTransmission.Exec(
+			data.RawHex, hash, now,
+			data.RouteType, data.PayloadType, data.PayloadVersion,
+			data.DecodedJSON,
+		)
+		if err != nil {
+			return fmt.Errorf("insert transmission: %w", err)
+		}
+		txID, _ = result.LastInsertId()
+	}
+
+	// Resolve observer_idx
+	var observerIdx *int64
+	if data.ObserverID != "" {
+		var rowid int64
+		err := s.stmtGetObserverRowid.QueryRow(data.ObserverID).Scan(&rowid)
+		if err == nil {
+			observerIdx = &rowid
+		}
+	}
+
+	// Insert observation
+	epochTs := time.Now().Unix()
+	if t, err := time.Parse(time.RFC3339, now); err == nil {
+		epochTs = t.Unix()
+	}
+
+	_, err = s.stmtInsertObservation.Exec(
+		txID, observerIdx, nil, // direction
+		data.SNR, data.RSSI, nil, // score
+		data.PathJSON, epochTs,
+	)
+	if err != nil {
+		log.Printf("[db] observation insert (non-fatal): %v", err)
+	}
+
+	return nil
+}
+
+// UpsertNode inserts or updates a node.
+func (s *Store) UpsertNode(pubKey, name, role string, lat, lon *float64, lastSeen string) error {
+	now := lastSeen
+	if now == "" {
+		now = time.Now().UTC().Format(time.RFC3339)
+	}
+	_, err := s.stmtUpsertNode.Exec(
+		pubKey, name, role, lat, lon, now, now,
+		name, role, lat, lon, now,
+	)
+	return err
+}
+
+// UpsertObserver inserts or updates an observer.
+func (s *Store) UpsertObserver(id, name, iata string) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err := s.stmtUpsertObserver.Exec(
+		id, name, iata, now, now,
+		name, iata, now,
+	)
+	return err
+}
+
+// Close closes the database.
+func (s *Store) Close() error {
+	return s.db.Close()
+}
+
+// PacketData holds the data needed to insert a packet into the DB.
+type PacketData struct {
+	RawHex         string
+	Timestamp      string
+	ObserverID     string
+	ObserverName   string
+	SNR            *float64
+	RSSI           *float64
+	Hash           string
+	RouteType      int
+	PayloadType    int
+	PayloadVersion int
+	PathJSON       string
+	DecodedJSON    string
+}
+
+// MQTTPacketMessage is the JSON payload from an MQTT raw packet message.
+type MQTTPacketMessage struct {
+	Raw    string   `json:"raw"`
+	SNR    *float64 `json:"SNR"`
+	RSSI   *float64 `json:"RSSI"`
+	Origin string   `json:"origin"`
+}
+
+// BuildPacketData constructs a PacketData from a decoded packet and MQTT message.
+func BuildPacketData(msg *MQTTPacketMessage, decoded *DecodedPacket, observerID, region string) *PacketData {
+	now := time.Now().UTC().Format(time.RFC3339)
+	pathJSON := "[]"
+	if len(decoded.Path.Hops) > 0 {
+		b, _ := json.Marshal(decoded.Path.Hops)
+		pathJSON = string(b)
+	}
+
+	return &PacketData{
+		RawHex:         msg.Raw,
+		Timestamp:      now,
+		ObserverID:     observerID,
+		ObserverName:   msg.Origin,
+		SNR:            msg.SNR,
+		RSSI:           msg.RSSI,
+		Hash:           ComputeContentHash(msg.Raw),
+		RouteType:      decoded.Header.RouteType,
+		PayloadType:    decoded.Header.PayloadType,
+		PayloadVersion: decoded.Header.PayloadVersion,
+		PathJSON:       pathJSON,
+		DecodedJSON:    PayloadJSON(&decoded.Payload),
+	}
+}

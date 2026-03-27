@@ -1,0 +1,83 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+)
+
+// MQTTSource represents a single MQTT broker connection.
+type MQTTSource struct {
+	Name               string   `json:"name"`
+	Broker             string   `json:"broker"`
+	Username           string   `json:"username,omitempty"`
+	Password           string   `json:"password,omitempty"`
+	RejectUnauthorized *bool    `json:"rejectUnauthorized,omitempty"`
+	Topics             []string `json:"topics"`
+	IATAFilter         []string `json:"iataFilter,omitempty"`
+}
+
+// MQTTLegacy is the old single-broker config format.
+type MQTTLegacy struct {
+	Broker string `json:"broker"`
+	Topic  string `json:"topic"`
+}
+
+// Config holds the ingestor configuration, compatible with the Node.js config.json format.
+type Config struct {
+	DBPath      string       `json:"dbPath"`
+	MQTT        *MQTTLegacy  `json:"mqtt,omitempty"`
+	MQTTSources []MQTTSource `json:"mqttSources,omitempty"`
+	LogLevel    string       `json:"logLevel,omitempty"`
+}
+
+// LoadConfig reads configuration from a JSON file, with env var overrides.
+func LoadConfig(path string) (*Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading config %s: %w", path, err)
+	}
+
+	var cfg Config
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("parsing config %s: %w", path, err)
+	}
+
+	// Env var overrides
+	if v := os.Getenv("DB_PATH"); v != "" {
+		cfg.DBPath = v
+	}
+	if v := os.Getenv("MQTT_BROKER"); v != "" {
+		// Single broker from env — create a source
+		topic := os.Getenv("MQTT_TOPIC")
+		if topic == "" {
+			topic = "meshcore/#"
+		}
+		cfg.MQTTSources = []MQTTSource{{
+			Name:   "env",
+			Broker: v,
+			Topics: []string{topic},
+		}}
+	}
+
+	// Default DB path
+	if cfg.DBPath == "" {
+		cfg.DBPath = "data/meshcore.db"
+	}
+
+	// Normalize: convert legacy single mqtt config to mqttSources
+	if len(cfg.MQTTSources) == 0 && cfg.MQTT != nil && cfg.MQTT.Broker != "" {
+		cfg.MQTTSources = []MQTTSource{{
+			Name:   "default",
+			Broker: cfg.MQTT.Broker,
+			Topics: []string{cfg.MQTT.Topic, "meshcore/#"},
+		}}
+	}
+
+	return &cfg, nil
+}
+
+// ResolvedSources returns the final list of MQTT sources to connect to.
+func (c *Config) ResolvedSources() []MQTTSource {
+	return c.MQTTSources
+}
