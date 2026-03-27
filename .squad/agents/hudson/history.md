@@ -461,3 +461,26 @@ This meant switching between `./manage.sh start` and `docker compose up prod` wo
 
 ### Key Insight
 On the production VM, `~/meshcore-data/` exists as the bind-mount path. The compose default matches. If someone had been using the old `caddy-data-prod` volume, they'd need to `docker volume rm caddy-data-prod` and let Caddy re-provision certs on first start.
+
+## Learnings - Go Staging Port Conflict + MQTT Fix (2026-03-27 08:42 UTC)
+
+### Task: Fix Go staging infrastructure
+**Requester:** Kpa-clawbot
+
+### Problem 1: Port Conflict
+- staging-go shared STAGING_HTTP_PORT (default 81) and STAGING_MQTT_PORT (default 1884) with Node.js staging
+- When Go staging was running, CI failed with port already allocated
+
+### Problem 2: MQTT Not Connecting
+- Go ingestor read mqttSources from mounted config pointing to prod external IP (unreachable from inside Docker)
+- The Go container has its own mosquitto (via supervisord) but the ingestor was not connecting to it
+
+### Fix Applied
+1. Changed staging-go HTTP port to 82 via new STAGING_GO_HTTP_PORT env var
+2. Changed staging-go MQTT port to 1885 via new STAGING_GO_MQTT_PORT env var
+3. Added MQTT_BROKER=mqtt://localhost:1883 env var so Go ingestor connects to its own internal mosquitto
+
+### Key Insight
+- Go ingestor LoadConfig() in cmd/ingestor/config.go supports MQTT_BROKER env var override (lines 51-62) replacing all configured sources with a single one
+- Use dedicated env var names (STAGING_GO_*) to avoid sharing port config between Node.js and Go staging services
+
