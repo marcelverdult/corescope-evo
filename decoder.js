@@ -143,11 +143,14 @@ function decodeAdvert(buf) {
 function decodeGrpTxt(buf, channelKeys) {
   if (buf.length < 3) return { error: 'too short', raw: buf.toString('hex') };
   const channelHash = buf[0];
+  const channelHashHex = channelHash.toString(16).padStart(2, '0').toUpperCase();
   const mac = buf.subarray(1, 3).toString('hex');
   const encryptedData = buf.subarray(3).toString('hex');
 
+  const hasKeys = channelKeys && Object.keys(channelKeys).length > 0;
+
   // Try decryption with known channel keys
-  if (channelKeys && encryptedData.length >= 10) {
+  if (hasKeys && encryptedData.length >= 10) {
     try {
       const { ChannelCrypto } = require('@michaelhart/meshcore-decoder/dist/crypto/channel-crypto');
       for (const [name, key] of Object.entries(channelKeys)) {
@@ -157,6 +160,8 @@ function decodeGrpTxt(buf, channelKeys) {
             type: 'CHAN',
             channel: name,
             channelHash,
+            channelHashHex,
+            decryptionStatus: 'decrypted',
             sender: result.data.sender || null,
             text: result.data.sender && result.data.message
               ? `${result.data.sender}: ${result.data.message}`
@@ -167,9 +172,11 @@ function decodeGrpTxt(buf, channelKeys) {
         }
       }
     } catch (e) { /* decryption failed, fall through */ }
+
+    return { type: 'GRP_TXT', channelHash, channelHashHex, decryptionStatus: 'decryption_failed', mac, encryptedData };
   }
 
-  return { type: 'GRP_TXT', channelHash, mac, encryptedData };
+  return { type: 'GRP_TXT', channelHash, channelHashHex, decryptionStatus: 'no_key', mac, encryptedData };
 }
 
 /** ANON_REQ: dest(6) + ephemeral_pubkey(32) + MAC(4) + encrypted */

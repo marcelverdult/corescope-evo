@@ -210,6 +210,43 @@ test('GRP_TXT too short', () => {
   assert(p.payload.error);
 });
 
+test('GRP_TXT has channelHashHex field', () => {
+  const hex = '1500' + '1A' + 'AABB' + 'CCDDEE';
+  const p = decodePacket(hex);
+  assert.strictEqual(p.payload.channelHashHex, '1A');
+});
+
+test('GRP_TXT channelHashHex zero-pads single digit', () => {
+  const hex = '1500' + '03' + 'AABB' + 'CCDDEE';
+  const p = decodePacket(hex);
+  assert.strictEqual(p.payload.channelHashHex, '03');
+});
+
+test('GRP_TXT decryptionStatus is no_key when no keys provided', () => {
+  const hex = '1500' + 'FF' + 'AABB' + 'CCDDEE112233';
+  const p = decodePacket(hex);
+  assert.strictEqual(p.payload.decryptionStatus, 'no_key');
+});
+
+test('GRP_TXT decryptionStatus is no_key when keys empty', () => {
+  const hex = '1500' + 'FF' + 'AABB' + 'CCDDEE112233';
+  const p = decodePacket(hex, {});
+  assert.strictEqual(p.payload.decryptionStatus, 'no_key');
+});
+
+test('GRP_TXT decryptionStatus is decryption_failed with bad keys', () => {
+  const hex = '1500' + 'FF' + 'AABB' + 'CCDDEE112233';
+  const p = decodePacket(hex, { '#test': 'deadbeefdeadbeefdeadbeefdeadbeef' });
+  assert.strictEqual(p.payload.decryptionStatus, 'decryption_failed');
+});
+
+test('GRP_TXT decryptionStatus is no_key when encrypted data too short', () => {
+  // encryptedData < 10 hex chars (5 bytes) — not enough to attempt decryption
+  const hex = '1500' + 'FF' + 'AABB' + 'CCDD';
+  const p = decodePacket(hex, { '#test': 'deadbeefdeadbeefdeadbeefdeadbeef' });
+  assert.strictEqual(p.payload.decryptionStatus, 'no_key');
+});
+
 console.log('\n=== TXT_MSG payload ===');
 test('TXT_MSG decode', () => {
   // payloadType=2 → (2<<2)|1 = 0x09

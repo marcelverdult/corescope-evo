@@ -1104,6 +1104,12 @@
       const role = decoded.flags?.repeater ? '📡' : decoded.flags?.room ? '🏠' : decoded.flags?.sensor ? '🌡' : '📻';
       return `${role} <a href="#/nodes/${encodeURIComponent(decoded.pubKey)}" class="hop-link hop-named" data-hop-link="true">${escapeHtml(decoded.name)}</a>`;
     }
+    // Undecrypted channel messages — show channel hash and decryption status
+    if (decoded.type === 'GRP_TXT' && decoded.channelHash != null) {
+      const hashHex = decoded.channelHashHex || decoded.channelHash.toString(16).padStart(2, '0').toUpperCase();
+      const statusLabel = decoded.decryptionStatus === 'no_key' ? 'no key' : 'decryption failed';
+      return `🔒 Ch 0x${hashHex} <span class="muted">(${statusLabel})</span>`;
+    }
     // Direct messages
     if (decoded.type === 'TXT_MSG') return `✉️ ${decoded.srcHash?.slice(0,8) || '?'} → ${decoded.destHash?.slice(0,8) || '?'}`;
     // Path updates
@@ -1244,6 +1250,12 @@
       messageHtml = `<div class="detail-message" style="padding:12px;margin:8px 0;background:var(--card-bg);border-radius:8px;border-left:3px solid var(--accent)">
         <div style="font-size:1.1em">${escapeHtml(decoded.text)}</div>
         ${meta ? `<div style="font-size:0.85em;color:var(--muted);margin-top:4px">${meta}</div>` : ''}
+      </div>`;
+    } else if (decoded.type === 'GRP_TXT' && decoded.channelHash != null) {
+      const hashHex = decoded.channelHashHex || decoded.channelHash.toString(16).padStart(2, '0').toUpperCase();
+      const statusLabel = decoded.decryptionStatus === 'no_key' ? 'no key' : 'decryption failed';
+      messageHtml = `<div class="detail-message" style="padding:12px;margin:8px 0;background:var(--card-bg);border-radius:8px;border-left:3px solid var(--warning, #f0ad4e)">
+        <div style="font-size:1.1em">🔒 Channel Hash: 0x${hashHex} <span style="color:var(--muted)">(${statusLabel})</span></div>
       </div>`;
     }
 
@@ -1489,7 +1501,9 @@
         }
       }
     } else if (decoded.type === 'GRP_TXT') {
-      rows += fieldRow(off, 'Channel Hash', decoded.channelHash, '');
+      const hashHex = decoded.channelHashHex || (decoded.channelHash != null ? decoded.channelHash.toString(16).padStart(2, '0').toUpperCase() : '??');
+      const statusLabel = decoded.decryptionStatus === 'no_key' ? '(no key)' : decoded.decryptionStatus === 'decryption_failed' ? '(decryption failed)' : '';
+      rows += fieldRow(off, 'Channel Hash', `0x${hashHex} ${statusLabel}`, '');
       rows += fieldRow(off + 1, 'MAC (2B)', decoded.mac || '', '');
       rows += fieldRow(off + 3, 'Encrypted Data', truncate(decoded.encryptedData || '', 30), '');
     } else if (decoded.type === 'CHAN') {
