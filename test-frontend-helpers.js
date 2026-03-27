@@ -1271,6 +1271,22 @@ console.log('\n=== app.js: formatVersionBadge ===');
   });
 }
 
+// ===== CSS: version-badge link contrast (issue #139) =====
+console.log('\n=== style.css: version-badge link contrast ===');
+{
+  const cssContent = fs.readFileSync(__dirname + '/public/style.css', 'utf8');
+  test('version-badge a has explicit color', () => {
+    assert.ok(cssContent.includes('.version-badge a'), 'should have .version-badge a rule');
+    assert.ok(/\.version-badge a\s*\{[^}]*color:\s*var\(--nav-text-muted\)/.test(cssContent),
+      'link color should use var(--nav-text-muted)');
+  });
+  test('version-badge a has hover state', () => {
+    assert.ok(cssContent.includes('.version-badge a:hover'), 'should have .version-badge a:hover rule');
+    assert.ok(/\.version-badge a:hover\s*\{[^}]*color:\s*var\(--nav-text\)/.test(cssContent),
+      'hover color should use var(--nav-text)');
+  });
+}
+
 // ===== SUMMARY =====
 console.log(`\n${'═'.repeat(40)}`);
 console.log(`  Frontend helpers: ${passed} passed, ${failed} failed`);

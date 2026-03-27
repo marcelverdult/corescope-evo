@@ -171,6 +171,12 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
   padding: 1px 5px; border-radius: var(--badge-radius);
   letter-spacing: 0.5px;
 }
+.nav-stats .version-badge a {
+  color: var(--nav-text-muted); text-decoration: none;
+}
+.nav-stats .version-badge a:hover {
+  color: var(--nav-text); text-decoration: underline;
+}
 
 /* === Layout === */
 #app { height: calc(100vh - 52px); height: calc(100dvh - 52px); overflow: hidden; }
