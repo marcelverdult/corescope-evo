@@ -2,15 +2,19 @@ FROM golang:1.22-alpine AS builder
 
 RUN apk add --no-cache build-base
 
-WORKDIR /build
-
 # Build server
-COPY cmd/server/ ./cmd/server/
-RUN cd cmd/server && go build -o /meshcore-server .
+WORKDIR /build/server
+COPY cmd/server/go.mod cmd/server/go.sum ./
+RUN go mod download
+COPY cmd/server/ ./
+RUN go build -o /meshcore-server .
 
 # Build ingestor
-COPY cmd/ingestor/ ./cmd/ingestor/
-RUN cd cmd/ingestor && go build -o /meshcore-ingestor .
+WORKDIR /build/ingestor
+COPY cmd/ingestor/go.mod cmd/ingestor/go.sum ./
+RUN go mod download
+COPY cmd/ingestor/ ./
+RUN go build -o /meshcore-ingestor .
 
 # Runtime image
 FROM alpine:3.20
