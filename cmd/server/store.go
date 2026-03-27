@@ -1321,7 +1321,7 @@ func (s *PacketStore) GetAnalyticsChannels(region string) map[string]interface{}
 
 	channelMap := map[string]*chanInfo{}
 	senderCounts := map[string]int{}
-	var msgLengths []int
+	msgLengths := make([]int, 0)
 	timeline := map[string]int{} // hour|channelName → count
 
 	grpTxts := s.byPayloadType[5]
@@ -2946,6 +2946,95 @@ func (s *PacketStore) GetAnalyticsHashSizes(region string) map[string]interface{
 	}
 }
 
+
+// hashSizeNodeInfo holds per-node hash size tracking data.
+type hashSizeNodeInfo struct {
+	HashSize     int
+	AllSizes     map[int]bool
+	Seq          []int
+	Inconsistent bool
+}
+
+// GetNodeHashSizeInfo scans advert packets to compute per-node hash size data.
+func (s *PacketStore) GetNodeHashSizeInfo() map[string]*hashSizeNodeInfo {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	info := make(map[string]*hashSizeNodeInfo)
+
+	adverts := s.byPayloadType[4]
+	for _, tx := range adverts {
+		if tx.RawHex == "" || tx.DecodedJSON == "" {
+			continue
+		}
+		if len(tx.RawHex) < 4 {
+			continue
+		}
+		pathByte, err := strconv.ParseUint(tx.RawHex[2:4], 16, 8)
+		if err != nil {
+			continue
+		}
+		hs := int((pathByte>>6)&0x3) + 1
+
+		var d map[string]interface{}
+		if json.Unmarshal([]byte(tx.DecodedJSON), &d) != nil {
+			continue
+		}
+		pk := ""
+		if v, ok := d["pubKey"].(string); ok {
+			pk = v
+		} else if v, ok := d["public_key"].(string); ok {
+			pk = v
+		}
+		if pk == "" {
+			continue
+		}
+
+		ni := info[pk]
+		if ni == nil {
+			ni = &hashSizeNodeInfo{AllSizes: make(map[int]bool)}
+			info[pk] = ni
+		}
+		ni.HashSize = hs
+		ni.AllSizes[hs] = true
+		ni.Seq = append(ni.Seq, hs)
+	}
+
+	// Compute flip-flop (inconsistent) flag: need >= 3 observations,
+	// >= 2 unique sizes, and >= 2 transitions in the sequence.
+	for _, ni := range info {
+		if len(ni.Seq) < 3 || len(ni.AllSizes) < 2 {
+			continue
+		}
+		transitions := 0
+		for i := 1; i < len(ni.Seq); i++ {
+			if ni.Seq[i] != ni.Seq[i-1] {
+				transitions++
+			}
+		}
+		ni.Inconsistent = transitions >= 2
+	}
+
+	return info
+}
+
+// EnrichNodeWithHashSize populates hash_size, hash_size_inconsistent, and
+// hash_sizes_seen on a node map using precomputed hash size info.
+func EnrichNodeWithHashSize(node map[string]interface{}, info *hashSizeNodeInfo) {
+	if info == nil {
+		return
+	}
+	node["hash_size"] = info.HashSize
+	node["hash_size_inconsistent"] = info.Inconsistent
+	if len(info.AllSizes) > 1 {
+		sizes := make([]int, 0, len(info.AllSizes))
+		for s := range info.AllSizes {
+			sizes = append(sizes, s)
+		}
+		sort.Ints(sizes)
+		node["hash_sizes_seen"] = sizes
+	}
+}
 // --- Bulk Health (in-memory) ---
 
 func (s *PacketStore) GetBulkHealth(limit int, region string) []map[string]interface{} {

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	"github.com/gorilla/mux"
@@ -1742,6 +1743,197 @@ func TestHandlerErrorBulkHealth(t *testing.T) {
 	}
 }
 
+
+func TestAnalyticsChannelsNoNullArrays(t *testing.T) {
+_, router := setupTestServer(t)
+req := httptest.NewRequest("GET", "/api/analytics/channels", nil)
+w := httptest.NewRecorder()
+router.ServeHTTP(w, req)
+
+if w.Code != 200 {
+t.Fatalf("expected 200, got %d", w.Code)
+}
+
+raw := w.Body.String()
+var body map[string]interface{}
+if err := json.Unmarshal([]byte(raw), &body); err != nil {
+t.Fatalf("invalid JSON: %v", err)
+}
+
+arrayFields := []string{"channels", "topSenders", "channelTimeline", "msgLengths"}
+for _, field := range arrayFields {
+val, exists := body[field]
+if !exists {
+t.Errorf("missing field %q", field)
+continue
+}
+if val == nil {
+t.Errorf("field %q is null, expected empty array []", field)
+continue
+}
+if _, ok := val.([]interface{}); !ok {
+t.Errorf("field %q is not an array, got %T", field, val)
+}
+}
+}
+
+func TestAnalyticsChannelsNoStoreFallbackNoNulls(t *testing.T) {
+db := setupTestDB(t)
+seedTestData(t, db)
+cfg := &Config{Port: 3000}
+hub := NewHub()
+srv := NewServer(db, cfg, hub)
+router := mux.NewRouter()
+srv.RegisterRoutes(router)
+
+req := httptest.NewRequest("GET", "/api/analytics/channels", nil)
+w := httptest.NewRecorder()
+router.ServeHTTP(w, req)
+
+if w.Code != 200 {
+t.Fatalf("expected 200, got %d", w.Code)
+}
+
+var body map[string]interface{}
+json.Unmarshal(w.Body.Bytes(), &body)
+
+arrayFields := []string{"channels", "topSenders", "channelTimeline", "msgLengths"}
+for _, field := range arrayFields {
+if body[field] == nil {
+t.Errorf("field %q is null in DB fallback, expected []", field)
+}
+}
+}
+
+func TestNodeHashSizeEnrichment(t *testing.T) {
+t.Run("nil info leaves defaults", func(t *testing.T) {
+node := map[string]interface{}{
+"public_key":             "abc123",
+"hash_size":              nil,
+"hash_size_inconsistent": false,
+}
+EnrichNodeWithHashSize(node, nil)
+if node["hash_size"] != nil {
+t.Error("expected hash_size to remain nil with nil info")
+}
+})
+
+t.Run("enriches with computed data", func(t *testing.T) {
+node := map[string]interface{}{
+"public_key":             "abc123",
+"hash_size":              nil,
+"hash_size_inconsistent": false,
+}
+info := &hashSizeNodeInfo{
+HashSize:     2,
+AllSizes:     map[int]bool{1: true, 2: true},
+Seq:          []int{1, 2, 1, 2},
+Inconsistent: true,
+}
+EnrichNodeWithHashSize(node, info)
+if node["hash_size"] != 2 {
+t.Errorf("expected hash_size 2, got %v", node["hash_size"])
+}
+if node["hash_size_inconsistent"] != true {
+t.Error("expected hash_size_inconsistent true")
+}
+sizes, ok := node["hash_sizes_seen"].([]int)
+if !ok {
+t.Fatal("expected hash_sizes_seen to be []int")
+}
+if len(sizes) != 2 || sizes[0] != 1 || sizes[1] != 2 {
+t.Errorf("expected [1,2], got %v", sizes)
+}
+})
+
+t.Run("single size omits sizes_seen", func(t *testing.T) {
+node := map[string]interface{}{
+"public_key":             "abc123",
+"hash_size":              nil,
+"hash_size_inconsistent": false,
+}
+info := &hashSizeNodeInfo{
+HashSize: 3,
+AllSizes: map[int]bool{3: true},
+Seq:      []int{3, 3, 3},
+}
+EnrichNodeWithHashSize(node, info)
+if node["hash_size"] != 3 {
+t.Errorf("expected hash_size 3, got %v", node["hash_size"])
+}
+if node["hash_size_inconsistent"] != false {
+t.Error("expected hash_size_inconsistent false")
+}
+if _, exists := node["hash_sizes_seen"]; exists {
+t.Error("hash_sizes_seen should not be set for single size")
+}
+})
+}
+
+func TestGetNodeHashSizeInfoFlipFlop(t *testing.T) {
+db := setupTestDB(t)
+seedTestData(t, db)
+store := NewPacketStore(db)
+store.Load()
+
+pk := "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+db.conn.Exec("INSERT OR IGNORE INTO nodes (public_key, name, role) VALUES (?, 'TestNode', 'repeater')", pk)
+
+decoded := `{"name":"TestNode","pubKey":"` + pk + `"}`
+raw1 := "04" + "00" + "aabb"
+raw2 := "04" + "40" + "aabb"
+
+payloadType := 4
+for i := 0; i < 3; i++ {
+rawHex := raw1
+if i%2 == 1 {
+rawHex = raw2
+}
+tx := &StoreTx{
+ID:          9000 + i,
+RawHex:      rawHex,
+Hash:        "testhash" + strconv.Itoa(i),
+FirstSeen:   "2024-01-01T00:00:00Z",
+PayloadType: &payloadType,
+DecodedJSON: decoded,
+}
+store.packets = append(store.packets, tx)
+store.byPayloadType[4] = append(store.byPayloadType[4], tx)
+}
+
+info := store.GetNodeHashSizeInfo()
+ni := info[pk]
+if ni == nil {
+t.Fatal("expected hash info for test node")
+}
+if len(ni.AllSizes) != 2 {
+t.Errorf("expected 2 unique sizes, got %d", len(ni.AllSizes))
+}
+if !ni.Inconsistent {
+t.Error("expected inconsistent flag to be true for flip-flop pattern")
+}
+}
+
+func TestAnalyticsHashSizesNoNullArrays(t *testing.T) {
+_, router := setupTestServer(t)
+req := httptest.NewRequest("GET", "/api/analytics/hash-sizes", nil)
+w := httptest.NewRecorder()
+router.ServeHTTP(w, req)
+
+if w.Code != 200 {
+t.Fatalf("expected 200, got %d", w.Code)
+}
+
+var body map[string]interface{}
+json.Unmarshal(w.Body.Bytes(), &body)
+
+arrayFields := []string{"hourly", "topHops", "multiByteNodes"}
+for _, field := range arrayFields {
+if body[field] == nil {
+t.Errorf("field %q is null, expected []", field)
+}
+}
+}
 func min(a, b int) int {
 	if a < b {
 		return a

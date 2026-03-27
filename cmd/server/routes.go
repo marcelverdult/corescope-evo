@@ -678,6 +678,14 @@ func (s *Server) handleNodes(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 500, err.Error())
 		return
 	}
+	if s.store != nil {
+		hashInfo := s.store.GetNodeHashSizeInfo()
+		for _, node := range nodes {
+			if pk, ok := node["public_key"].(string); ok {
+				EnrichNodeWithHashSize(node, hashInfo[pk])
+			}
+		}
+	}
 	writeJSON(w, map[string]interface{}{"nodes": nodes, "total": total, "counts": counts})
 }
 
@@ -701,6 +709,11 @@ func (s *Server) handleNodeDetail(w http.ResponseWriter, r *http.Request) {
 	if err != nil || node == nil {
 		writeError(w, 404, "Not found")
 		return
+	}
+
+	if s.store != nil {
+		hashInfo := s.store.GetNodeHashSizeInfo()
+		EnrichNodeWithHashSize(node, hashInfo[pubkey])
 	}
 
 	name := ""
@@ -1073,8 +1086,10 @@ func (s *Server) handleAnalyticsChannels(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, s.store.GetAnalyticsChannels(region))
 		return
 	}
-	var channels []map[string]interface{}
-	channels, _ = s.db.GetChannels()
+	channels, _ := s.db.GetChannels()
+	if channels == nil {
+		channels = make([]map[string]interface{}, 0)
+	}
 	writeJSON(w, map[string]interface{}{
 		"activeChannels":  len(channels),
 		"decryptable":     len(channels),
