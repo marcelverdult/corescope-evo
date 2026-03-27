@@ -71,8 +71,8 @@ func TestPacketsEndpoint(t *testing.T) {
 	if !ok {
 		t.Fatal("expected packets array")
 	}
-	if len(packets) != 3 {
-		t.Errorf("expected 3 packets, got %d", len(packets))
+	if len(packets) != 2 {
+		t.Errorf("expected 2 packets (transmissions), got %d", len(packets))
 	}
 }
 
@@ -1510,7 +1510,8 @@ func TestHandlerErrorPackets(t *testing.T) {
 	router := mux.NewRouter()
 	srv.RegisterRoutes(router)
 
-	db.conn.Exec("DROP VIEW IF EXISTS packets_v")
+	// Drop transmissions table to trigger error in transmission-centric query
+	db.conn.Exec("DROP TABLE IF EXISTS transmissions")
 
 	req := httptest.NewRequest("GET", "/api/packets?limit=10", nil)
 	w := httptest.NewRecorder()

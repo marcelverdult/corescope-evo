@@ -86,7 +86,7 @@ func setupTestDB(t *testing.T) *DB {
 		t.Fatal(err)
 	}
 
-	return &DB{conn: conn}
+	return &DB{conn: conn, isV3: true}
 }
 
 func seedTestData(t *testing.T, db *DB) {
@@ -170,11 +170,32 @@ func TestQueryPackets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Total != 3 {
-		t.Errorf("expected 3 total packets, got %d", result.Total)
+	// Transmission-centric: 2 unique transmissions (not 3 observations)
+	if result.Total != 2 {
+		t.Errorf("expected 2 total transmissions, got %d", result.Total)
 	}
-	if len(result.Packets) != 3 {
-		t.Errorf("expected 3 packets, got %d", len(result.Packets))
+	if len(result.Packets) != 2 {
+		t.Errorf("expected 2 packets, got %d", len(result.Packets))
+	}
+	// Verify transmission shape has required fields
+	if len(result.Packets) > 0 {
+		p := result.Packets[0]
+		if _, ok := p["first_seen"]; !ok {
+			t.Error("expected first_seen field in packet")
+		}
+		if _, ok := p["observation_count"]; !ok {
+			t.Error("expected observation_count field in packet")
+		}
+		if _, ok := p["timestamp"]; !ok {
+			t.Error("expected timestamp field in packet")
+		}
+		// Should NOT have observation-level fields at top
+		if _, ok := p["created_at"]; ok {
+			t.Error("did not expect created_at in transmission-level response")
+		}
+		if _, ok := p["score"]; ok {
+			t.Error("did not expect score in transmission-level response")
+		}
 	}
 }
 
@@ -188,8 +209,9 @@ func TestQueryPacketsWithTypeFilter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Total != 2 {
-		t.Errorf("expected 2 ADVERT packets, got %d", result.Total)
+	// 1 transmission with payload_type=4 (has 2 observations, but we return transmissions)
+	if result.Total != 1 {
+		t.Errorf("expected 1 ADVERT transmission, got %d", result.Total)
 	}
 }
 
@@ -477,9 +499,9 @@ func TestGetTransmissionByIDNotFound(t *testing.T) {
 	defer db.Close()
 	seedTestData(t, db)
 
-	_, err := db.GetTransmissionByID(9999)
-	if err == nil {
-		t.Error("expected error for nonexistent transmission")
+	result, _ := db.GetTransmissionByID(9999)
+	if result != nil {
+		t.Error("expected nil result for nonexistent transmission")
 	}
 }
 
@@ -488,9 +510,9 @@ func TestGetPacketByHashNotFound(t *testing.T) {
 	defer db.Close()
 	seedTestData(t, db)
 
-	_, err := db.GetPacketByHash("nonexistenthash1")
-	if err == nil {
-		t.Error("expected error for nonexistent hash")
+	result, _ := db.GetPacketByHash("nonexistenthash1")
+	if result != nil {
+		t.Error("expected nil result for nonexistent hash")
 	}
 }
 
@@ -737,8 +759,9 @@ func TestBuildPacketWhereFilters(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if result.Total != 2 {
-			t.Errorf("expected 2 results for hash filter, got %d", result.Total)
+		// 1 transmission with this hash (has 2 observations, but transmission-centric)
+		if result.Total != 1 {
+			t.Errorf("expected 1 result for hash filter, got %d", result.Total)
 		}
 	})
 

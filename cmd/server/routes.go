@@ -486,7 +486,7 @@ func (s *Server) handleNodeDetail(w http.ResponseWriter, r *http.Request) {
 	if n, ok := node["name"]; ok && n != nil {
 		name = fmt.Sprintf("%v", n)
 	}
-	recentAdverts, _ := s.db.GetRecentPacketsForNode(pubkey, name, 20)
+	recentAdverts, _ := s.db.GetRecentTransmissionsForNode(pubkey, name, 20)
 
 	writeJSON(w, map[string]interface{}{
 		"node":          node,
