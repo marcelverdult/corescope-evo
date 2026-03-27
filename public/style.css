@@ -159,6 +159,12 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 }
 .nav-stats .stat-val { color: var(--nav-text); font-weight: 600; transition: color 0.3s ease; }
 .nav-stats .stat-val.updated { color: var(--accent); }
+.nav-stats .engine-badge {
+  font-size: 10px; font-weight: 600; font-family: var(--mono);
+  color: var(--nav-text-muted); background: rgba(255,255,255,0.1);
+  padding: 1px 5px; border-radius: var(--badge-radius);
+  letter-spacing: 0.5px; text-transform: lowercase;
+}
 
 /* === Layout === */
 #app { height: calc(100vh - 52px); height: calc(100dvh - 52px); overflow: hidden; }

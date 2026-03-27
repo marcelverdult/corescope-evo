@@ -1140,6 +1140,29 @@ console.log('\n=== compare.js: comparePacketSets ===');
   });
 }
 
+// ===== APP.JS: formatEngineBadge =====
+console.log('\n=== app.js: formatEngineBadge ===');
+{
+  const ctx = makeSandbox();
+  loadInCtx(ctx, 'public/roles.js');
+  loadInCtx(ctx, 'public/app.js');
+  const formatEngineBadge = ctx.formatEngineBadge;
+
+  test('returns empty string for null', () => assert.strictEqual(formatEngineBadge(null), ''));
+  test('returns empty string for undefined', () => assert.strictEqual(formatEngineBadge(undefined), ''));
+  test('returns empty string for empty string', () => assert.strictEqual(formatEngineBadge(''), ''));
+  test('returns badge span for "go"', () => {
+    const result = formatEngineBadge('go');
+    assert.ok(result.includes('engine-badge'), 'should contain engine-badge class');
+    assert.ok(result.includes('>go<'), 'should contain engine name');
+  });
+  test('returns badge span for "node"', () => {
+    const result = formatEngineBadge('node');
+    assert.ok(result.includes('engine-badge'), 'should contain engine-badge class');
+    assert.ok(result.includes('>node<'), 'should contain engine name');
+  });
+}
+
 // ===== SUMMARY =====
 console.log(`\n${'═'.repeat(40)}`);
 console.log(`  Frontend helpers: ${passed} passed, ${failed} failed`);
