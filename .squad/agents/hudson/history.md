@@ -399,3 +399,65 @@ The problematic DB has **23.5× observation fan-out** (1.17M observations / 50K 
 - Caddy: running fine on port 81
 - Mosquitto: running fine on port 1884
 - Node.js: crash-looping every ~38 seconds
+
+## Learnings - Prod+Staging Database Merge (2026-03-27 07:14-07:19 UTC)
+
+### Merge Procedure
+1. **Pre-flight:** Verify schema v3, disk space (15GB free), record row counts
+2. **Backup:** Stop prod, copy both DBs to `/home/deploy/backups/pre-merge-YYYYMMDD-HHMMSS/`
+3. **Merge:** Copy staging DB as base (it's the superset). ATTACH prod DB. `INSERT OR IGNORE` for transmissions (hash uniqueness). For observations: JOIN through prod transmissions → main transmissions via hash to remap `transmission_id` (autoincrement IDs differ between DBs). Nodes/observers: UPDATE existing with latest-wins, INSERT prod-only rows.
+4. **Deploy:** Set up bind-mount data dir, start compose `prod` service with latest image
+5. **Validate:** Healthcheck, stats API, memory, integrity
+6. **Cleanup:** Backup retention, temp file removal
+
+### Actual Row Counts
+| Table | Prod | Staging | Merged |
+|-------|------|---------|--------|
+| transmissions | 1,620 | 50,328 | 51,723 |
+| observations | 51,866 | 1,185,895 | 1,237,186 |
+| nodes | 551 | 746 | 751 |
+| observers | 29 | 30 | 30 |
+
+### Timing
+- Merge SQL: ~5 seconds (SSD-backed SQLite 3.45.1)
+- Total downtime: ~2 minutes (much less than the planned 20-25 min)
+- DB load after merge: 8,491ms for 186MB DB
+
+### Issues Encountered
+1. **`az vm user update` resets group memberships** — the deploy user lost docker group access. Had to re-add via `az vm run-command invoke` with `usermod -aG docker deploy`.
+2. **PowerShell escaping hell** — `$(date ...)`, `$BACKUP_DIR`, Python f-strings with escaped quotes all clash with PowerShell. Solution: pipe here-strings to `ssh ... "cat > script.sh && bash script.sh"`.
+3. **Prod DB in Docker volume, not bind mount** — the old `meshcore-analyzer` container used `meshcore-data` Docker volume. The compose `prod` service uses bind mounts at `~/meshcore-data/`. Had to set up the bind mount dir and remove the old container.
+4. **Observation transmission_id remapping** — Kobayashi's plan didn't address that autoincrement IDs differ between DBs. Had to JOIN observations through transmissions via hash to get correct merged IDs.
+5. **Data paths under /home/deploy/, not /home/deploy/** — staging data and old prod config were under the deploy user's home dir. Required sudo to copy.
+
+### Key Learnings
+- Always use `INSERT OR IGNORE` + hash join for observation merge — never directly copy transmission_ids between DBs
+- SQLite ATTACH + cross-database queries work well for merges
+- The RAM fix (v2.6.0, CI #519) handles 186MB DB with 860MiB RSS — no NODE_OPTIONS hack needed
+- Write shell scripts to VM via pipe, don't try to inline complex bash in PowerShell SSH commands
+- Backups at `/home/deploy/backups/pre-merge-20260327-071425/`, retention until 2026-04-03
+
+## Learnings - Unified Volume Paths (2026-03-27 00:24 UTC)
+
+### Problem
+docker-compose.yml and manage.sh used different Docker volume names for Caddy TLS certs:
+- manage.sh: `caddy-data` (named volume)
+- compose: `caddy-data-prod` (named volume, different name!)
+
+This meant switching between `./manage.sh start` and `docker compose up prod` would lose Caddy TLS certificates because the data lived in differently-named volumes.
+
+### Fix Applied
+- Renamed `caddy-data-prod` → `caddy-data` in docker-compose.yml to match manage.sh
+- Removed deprecated `version: '3.8'` key (Docker warns about it)
+- All other mount paths were already aligned (config.json, Caddyfile, data dir)
+
+### Volume Alignment Summary
+| Mount | manage.sh (docker run) | docker-compose.yml |
+|-------|----------------------|-------------------|
+| config.json | `C:\Projects\meshcore-analyzer/config.json:/app/config.json:ro` | `./config.json:/app/config.json:ro` |
+| Caddyfile | `C:\Projects\meshcore-analyzer/caddy-config/Caddyfile:/etc/caddy/Caddyfile:ro` | `./caddy-config/Caddyfile:/etc/caddy/Caddyfile:ro` |
+| Data | `C:\Users\KpaBap/meshcore-data:/app/data` (or named vol) | `PROD_DATA_DIR:-~/meshcore-data:/app/data` |
+| Caddy certs | `caddy-data:/data/caddy` | `caddy-data:/data/caddy` ✅ now matches |
+
+### Key Insight
+On the production VM, `~/meshcore-data/` exists as the bind-mount path. The compose default matches. If someone had been using the old `caddy-data-prod` volume, they'd need to `docker volume rm caddy-data-prod` and let Caddy re-provision certs on first start.
