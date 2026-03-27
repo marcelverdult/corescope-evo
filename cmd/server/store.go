@@ -430,6 +430,31 @@ func (s *PacketStore) GetPerfStoreStats() map[string]interface{} {
 	observerIdx := len(s.byObserver)
 	nodeIdx := len(s.byNode)
 	ptIdx := len(s.byPayloadType)
+
+	// Count distinct pubkeys with ADVERT observations (matches Node.js _advertByObserver.size)
+	advertByObsCount := 0
+	if adverts, ok := s.byPayloadType[4]; ok {
+		seen := make(map[string]bool)
+		for _, tx := range adverts {
+			if tx.DecodedJSON == "" {
+				continue
+			}
+			var d map[string]interface{}
+			if json.Unmarshal([]byte(tx.DecodedJSON), &d) != nil {
+				continue
+			}
+			pk := ""
+			if v, ok := d["pubKey"].(string); ok {
+				pk = v
+			} else if v, ok := d["public_key"].(string); ok {
+				pk = v
+			}
+			if pk != "" && !seen[pk] {
+				seen[pk] = true
+				advertByObsCount++
+			}
+		}
+	}
 	s.mu.RUnlock()
 
 	// Rough estimate: ~430 bytes per packet + ~200 per observation
@@ -447,12 +472,13 @@ func (s *PacketStore) GetPerfStoreStats() map[string]interface{} {
 		"estimatedMB":       estimatedMB,
 		"maxMB":             1024,
 		"indexes": map[string]interface{}{
-			"byHash":        hashIdx,
-			"byTxID":        txIdx,
-			"byObsID":       obsIdx,
-			"byObserver":    observerIdx,
-			"byNode":        nodeIdx,
-			"byPayloadType": ptIdx,
+			"byHash":           hashIdx,
+			"byTxID":           txIdx,
+			"byObsID":          obsIdx,
+			"byObserver":       observerIdx,
+			"byNode":           nodeIdx,
+			"byPayloadType":    ptIdx,
+			"advertByObserver": advertByObsCount,
 		},
 	}
 }

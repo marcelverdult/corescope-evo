@@ -115,9 +115,12 @@ func seedTestData(t *testing.T, db *DB) {
 
 	// Seed transmissions
 	db.conn.Exec(`INSERT INTO transmissions (raw_hex, hash, first_seen, route_type, payload_type, decoded_json)
-		VALUES ('AABB', 'abc123def4567890', ?, 1, 4, '{"pubKey":"aabbccdd11223344","name":"TestRepeater","type":"ADVERT"}')`, recent)
+		VALUES ('AABB', 'abc123def4567890', ?, 1, 4, '{"pubKey":"aabbccdd11223344","name":"TestRepeater","type":"ADVERT","timestamp":1700000000,"timestampISO":"2023-11-14T22:13:20.000Z","signature":"abcdef","flags":{"isRepeater":true},"lat":37.5,"lon":-122.0}')`, recent)
 	db.conn.Exec(`INSERT INTO transmissions (raw_hex, hash, first_seen, route_type, payload_type, decoded_json)
 		VALUES ('CCDD', '1234567890abcdef', ?, 1, 5, '{"type":"CHAN","channel":"#test","text":"Hello: World","sender":"TestUser"}')`, yesterday)
+	// Second ADVERT for same node with different hash_size (raw_hex byte 0x1F → hs=1 vs 0xBB → hs=3)
+	db.conn.Exec(`INSERT INTO transmissions (raw_hex, hash, first_seen, route_type, payload_type, decoded_json)
+		VALUES ('AA1F', 'def456abc1230099', ?, 1, 4, '{"pubKey":"aabbccdd11223344","name":"TestRepeater","type":"ADVERT","timestamp":1700000100,"timestampISO":"2023-11-14T22:14:40.000Z","signature":"fedcba","flags":{"isRepeater":true},"lat":37.5,"lon":-122.0}')`, yesterday)
 
 	// Seed observations (use unix timestamps)
 	db.conn.Exec(`INSERT INTO observations (transmission_id, observer_idx, snr, rssi, path_json, timestamp)
@@ -126,6 +129,8 @@ func seedTestData(t *testing.T, db *DB) {
 		VALUES (1, 2, 8.0, -95, '["aa"]', ?)`, recentEpoch-100)
 	db.conn.Exec(`INSERT INTO observations (transmission_id, observer_idx, snr, rssi, path_json, timestamp)
 		VALUES (2, 1, 15.0, -85, '[]', ?)`, yesterdayEpoch)
+	db.conn.Exec(`INSERT INTO observations (transmission_id, observer_idx, snr, rssi, path_json, timestamp)
+		VALUES (3, 1, 10.0, -92, '["cc"]', ?)`, yesterdayEpoch)
 }
 
 func TestGetStats(t *testing.T) {
@@ -138,8 +143,8 @@ func TestGetStats(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if stats.TotalTransmissions != 2 {
-		t.Errorf("expected 2 transmissions, got %d", stats.TotalTransmissions)
+	if stats.TotalTransmissions != 3 {
+		t.Errorf("expected 3 transmissions, got %d", stats.TotalTransmissions)
 	}
 	if stats.TotalNodes != 3 {
 		t.Errorf("expected 3 nodes, got %d", stats.TotalNodes)
@@ -147,8 +152,8 @@ func TestGetStats(t *testing.T) {
 	if stats.TotalObservers != 2 {
 		t.Errorf("expected 2 observers, got %d", stats.TotalObservers)
 	}
-	if stats.TotalObservations != 3 {
-		t.Errorf("expected 3 observations, got %d", stats.TotalObservations)
+	if stats.TotalObservations != 4 {
+		t.Errorf("expected 4 observations, got %d", stats.TotalObservations)
 	}
 }
 
@@ -184,17 +189,31 @@ func TestGetDBSizeStats(t *testing.T) {
 	if !ok {
 		t.Fatal("expected rows map in DB size stats")
 	}
-	if rows["transmissions"] != 2 {
-		t.Errorf("expected 2 transmissions rows, got %d", rows["transmissions"])
+	if rows["transmissions"] != 3 {
+		t.Errorf("expected 3 transmissions rows, got %d", rows["transmissions"])
 	}
-	if rows["observations"] != 3 {
-		t.Errorf("expected 3 observations rows, got %d", rows["observations"])
+	if rows["observations"] != 4 {
+		t.Errorf("expected 4 observations rows, got %d", rows["observations"])
 	}
 	if rows["nodes"] != 3 {
 		t.Errorf("expected 3 nodes rows, got %d", rows["nodes"])
 	}
 	if rows["observers"] != 2 {
 		t.Errorf("expected 2 observers rows, got %d", rows["observers"])
+	}
+
+	// Verify new PRAGMA-based fields
+	if _, ok := stats["freelistMB"]; !ok {
+		t.Error("expected freelistMB in DB size stats")
+	}
+	walPages, ok := stats["walPages"].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected walPages object in DB size stats")
+	}
+	for _, key := range []string{"total", "checkpointed", "busy"} {
+		if _, ok := walPages[key]; !ok {
+			t.Errorf("expected %s in walPages", key)
+		}
 	}
 }
 
@@ -207,12 +226,12 @@ func TestQueryPackets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Transmission-centric: 2 unique transmissions (not 3 observations)
-	if result.Total != 2 {
-		t.Errorf("expected 2 total transmissions, got %d", result.Total)
+	// Transmission-centric: 3 unique transmissions (not 4 observations)
+	if result.Total != 3 {
+		t.Errorf("expected 3 total transmissions, got %d", result.Total)
 	}
-	if len(result.Packets) != 2 {
-		t.Errorf("expected 2 packets, got %d", len(result.Packets))
+	if len(result.Packets) != 3 {
+		t.Errorf("expected 3 packets, got %d", len(result.Packets))
 	}
 	// Verify transmission shape has required fields
 	if len(result.Packets) > 0 {
@@ -246,9 +265,9 @@ func TestQueryPacketsWithTypeFilter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 1 transmission with payload_type=4 (has 2 observations, but we return transmissions)
-	if result.Total != 1 {
-		t.Errorf("expected 1 ADVERT transmission, got %d", result.Total)
+	// 2 transmissions with payload_type=4 (ADVERT)
+	if result.Total != 2 {
+		t.Errorf("expected 2 ADVERT transmissions, got %d", result.Total)
 	}
 }
 
@@ -261,8 +280,8 @@ func TestQueryGroupedPackets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Total != 2 {
-		t.Errorf("expected 2 grouped packets (unique hashes), got %d", result.Total)
+	if result.Total != 3 {
+		t.Errorf("expected 3 grouped packets (unique hashes), got %d", result.Total)
 	}
 }
 
@@ -439,8 +458,8 @@ func TestGetMaxTransmissionID(t *testing.T) {
 	seedTestData(t, db)
 
 	maxID := db.GetMaxTransmissionID()
-	if maxID != 2 {
-		t.Errorf("expected max ID 2, got %d", maxID)
+	if maxID != 3 {
+		t.Errorf("expected max ID 3, got %d", maxID)
 	}
 }
 
@@ -453,16 +472,16 @@ func TestGetNewTransmissionsSince(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(txs) != 2 {
-		t.Errorf("expected 2 new transmissions, got %d", len(txs))
+	if len(txs) != 3 {
+		t.Errorf("expected 3 new transmissions, got %d", len(txs))
 	}
 
 	txs, err = db.GetNewTransmissionsSince(1, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(txs) != 1 {
-		t.Errorf("expected 1 new transmission after ID 1, got %d", len(txs))
+	if len(txs) != 2 {
+		t.Errorf("expected 2 new transmissions after ID 1, got %d", len(txs))
 	}
 }
 

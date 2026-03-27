@@ -117,8 +117,8 @@ func TestStatsEndpoint(t *testing.T) {
 	}
 	var body map[string]interface{}
 	json.Unmarshal(w.Body.Bytes(), &body)
-	if body["totalTransmissions"] != float64(2) {
-		t.Errorf("expected 2 transmissions, got %v", body["totalTransmissions"])
+	if body["totalTransmissions"] != float64(3) {
+		t.Errorf("expected 3 transmissions, got %v", body["totalTransmissions"])
 	}
 	if body["totalNodes"] != float64(3) {
 		t.Errorf("expected 3 nodes, got %v", body["totalNodes"])
@@ -149,8 +149,8 @@ func TestPacketsEndpoint(t *testing.T) {
 	if !ok {
 		t.Fatal("expected packets array")
 	}
-	if len(packets) != 2 {
-		t.Errorf("expected 2 packets (transmissions), got %d", len(packets))
+	if len(packets) != 3 {
+		t.Errorf("expected 3 packets (transmissions), got %d", len(packets))
 	}
 }
 
@@ -169,8 +169,8 @@ func TestPacketsGrouped(t *testing.T) {
 	if !ok {
 		t.Fatal("expected packets array")
 	}
-	if len(packets) != 2 {
-		t.Errorf("expected 2 grouped packets, got %d", len(packets))
+	if len(packets) != 3 {
+		t.Errorf("expected 3 grouped packets, got %d", len(packets))
 	}
 }
 

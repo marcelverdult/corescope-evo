@@ -235,6 +235,30 @@ func (db *DB) GetDBSizeStats() map[string]interface{} {
 	}
 	result["walSizeMB"] = walSizeMB
 
+	// Freelist size via PRAGMA (matches Node.js: page_size * freelist_count)
+	var pageSize, freelistCount int64
+	db.conn.QueryRow("PRAGMA page_size").Scan(&pageSize)
+	db.conn.QueryRow("PRAGMA freelist_count").Scan(&freelistCount)
+	freelistMB := math.Round(float64(pageSize*freelistCount)/1048576*10) / 10
+	result["freelistMB"] = freelistMB
+
+	// WAL checkpoint info (matches Node.js: PRAGMA wal_checkpoint(PASSIVE))
+	var walBusy, walLog, walCheckpointed int
+	err := db.conn.QueryRow("PRAGMA wal_checkpoint(PASSIVE)").Scan(&walBusy, &walLog, &walCheckpointed)
+	if err == nil {
+		result["walPages"] = map[string]interface{}{
+			"total":        walLog,
+			"checkpointed": walCheckpointed,
+			"busy":         walBusy,
+		}
+	} else {
+		result["walPages"] = map[string]interface{}{
+			"total":        0,
+			"checkpointed": 0,
+			"busy":         0,
+		}
+	}
+
 	// Row counts per table
 	rows := map[string]int{}
 	for _, table := range []string{"transmissions", "observations", "nodes", "observers"} {
@@ -769,13 +793,125 @@ func (db *DB) GetRecentTransmissionsForNode(pubkey string, name string, limit in
 	defer rows.Close()
 
 	packets := make([]map[string]interface{}, 0)
+	var txIDs []int
 	for rows.Next() {
 		p := db.scanTransmissionRow(rows)
 		if p != nil {
+			// Parse _parsedPath from path_json
+			if pj, ok := p["path_json"].(string); ok && pj != "" {
+				var pathArr []interface{}
+				if json.Unmarshal([]byte(pj), &pathArr) == nil {
+					strs := make([]string, 0, len(pathArr))
+					for _, v := range pathArr {
+						if s, ok := v.(string); ok {
+							strs = append(strs, s)
+						}
+					}
+					p["_parsedPath"] = strs
+				} else {
+					p["_parsedPath"] = []string{}
+				}
+			} else {
+				p["_parsedPath"] = []string{}
+			}
+			// Parse _parsedDecoded from decoded_json
+			if dj, ok := p["decoded_json"].(string); ok && dj != "" {
+				var decoded map[string]interface{}
+				if json.Unmarshal([]byte(dj), &decoded) == nil {
+					p["_parsedDecoded"] = decoded
+				} else {
+					p["_parsedDecoded"] = map[string]interface{}{}
+				}
+			} else {
+				p["_parsedDecoded"] = map[string]interface{}{}
+			}
+			// Placeholder for observations — filled below
+			p["observations"] = []map[string]interface{}{}
+			if id, ok := p["id"].(int); ok {
+				txIDs = append(txIDs, id)
+			}
 			packets = append(packets, p)
 		}
 	}
+
+	// Fetch observations for all transmissions
+	if len(txIDs) > 0 {
+		obsMap := db.getObservationsForTransmissions(txIDs)
+		for _, p := range packets {
+			if id, ok := p["id"].(int); ok {
+				if obs, found := obsMap[id]; found {
+					p["observations"] = obs
+				}
+			}
+		}
+	}
+
 	return packets, nil
+}
+
+// getObservationsForTransmissions fetches all observations for a set of transmission IDs,
+// returning a map of txID → []observation maps (matching Node.js recentAdverts shape).
+func (db *DB) getObservationsForTransmissions(txIDs []int) map[int][]map[string]interface{} {
+	result := make(map[int][]map[string]interface{})
+	if len(txIDs) == 0 {
+		return result
+	}
+
+	// Build IN clause
+	placeholders := make([]string, len(txIDs))
+	args := make([]interface{}, len(txIDs))
+	for i, id := range txIDs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+
+	var querySQL string
+	if db.isV3 {
+		querySQL = fmt.Sprintf(`SELECT o.transmission_id, o.id, obs.id AS observer_id, obs.name AS observer_name,
+			o.direction, o.snr, o.rssi, o.path_json, datetime(o.timestamp, 'unixepoch') AS obs_timestamp
+			FROM observations o
+			LEFT JOIN observers obs ON obs.rowid = o.observer_idx
+			WHERE o.transmission_id IN (%s)
+			ORDER BY o.timestamp DESC`, strings.Join(placeholders, ","))
+	} else {
+		querySQL = fmt.Sprintf(`SELECT o.transmission_id, o.id, o.observer_id, o.observer_name,
+			o.direction, o.snr, o.rssi, o.path_json, o.timestamp AS obs_timestamp
+			FROM observations o
+			WHERE o.transmission_id IN (%s)
+			ORDER BY o.timestamp DESC`, strings.Join(placeholders, ","))
+	}
+
+	rows, err := db.conn.Query(querySQL, args...)
+	if err != nil {
+		return result
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var txID, obsID int
+		var observerID, observerName, direction, pathJSON, obsTimestamp sql.NullString
+		var snr, rssi sql.NullFloat64
+
+		if err := rows.Scan(&txID, &obsID, &observerID, &observerName, &direction,
+			&snr, &rssi, &pathJSON, &obsTimestamp); err != nil {
+			continue
+		}
+
+		obs := map[string]interface{}{
+			"id":              obsID,
+			"transmission_id": txID,
+			"observer_id":     nullStr(observerID),
+			"observer_name":   nullStr(observerName),
+			"direction":       nullStr(direction),
+			"snr":             nullFloat(snr),
+			"rssi":            nullFloat(rssi),
+			"path_json":       nullStr(pathJSON),
+			"timestamp":       nullStr(obsTimestamp),
+		}
+		result[txID] = append(result[txID], obs)
+	}
+
+	return result
 }
 
 // GetObservers returns all observers sorted by last_seen DESC.
