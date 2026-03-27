@@ -197,6 +197,12 @@ func (p *Poller) Start() {
 					if id > lastID {
 						lastID = id
 					}
+					// Copy packet fields for the nested packet (avoids circular ref)
+					pkt := make(map[string]interface{}, len(tx))
+					for k, v := range tx {
+						pkt[k] = v
+					}
+					tx["packet"] = pkt
 					p.hub.Broadcast(map[string]interface{}{
 						"type": "packet",
 						"data": tx,

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -207,11 +208,37 @@ func TestPollerBroadcastsNewData(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 	poller.Stop()
 
-	// Check if client received broadcast
+	// Check if client received broadcast with packet field (fixes #162)
 	select {
 	case msg := <-client.send:
 		if len(msg) == 0 {
 			t.Error("expected non-empty broadcast message")
+		}
+		var parsed map[string]interface{}
+		if err := json.Unmarshal(msg, &parsed); err != nil {
+			t.Fatalf("failed to parse broadcast: %v", err)
+		}
+		if parsed["type"] != "packet" {
+			t.Errorf("expected type=packet, got %v", parsed["type"])
+		}
+		data, ok := parsed["data"].(map[string]interface{})
+		if !ok {
+			t.Fatal("expected data to be an object")
+		}
+		// packets.js filters on m.data.packet — must exist
+		pkt, ok := data["packet"]
+		if !ok || pkt == nil {
+			t.Error("expected data.packet to exist (required by packets.js WS handler)")
+		}
+		pktMap, ok := pkt.(map[string]interface{})
+		if !ok {
+			t.Fatal("expected data.packet to be an object")
+		}
+		// Verify key fields exist in nested packet
+		for _, field := range []string{"id", "hash", "payload_type"} {
+			if _, exists := pktMap[field]; !exists {
+				t.Errorf("expected data.packet.%s to exist", field)
+			}
 		}
 	default:
 		// Might not have received due to timing

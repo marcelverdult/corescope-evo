@@ -343,6 +343,27 @@ func TestIngestNewFromDB(t *testing.T) {
 		t.Errorf("expected >=1 broadcast maps, got %d", len(broadcastMaps))
 	}
 
+	// Verify broadcast map contains nested "packet" field (fixes #162)
+	if len(broadcastMaps) > 0 {
+		bm := broadcastMaps[0]
+		pkt, ok := bm["packet"]
+		if !ok || pkt == nil {
+			t.Error("broadcast map missing 'packet' field (required by packets.js)")
+		}
+		pktMap, ok := pkt.(map[string]interface{})
+		if ok {
+			for _, field := range []string{"id", "hash", "payload_type", "observer_id"} {
+				if _, exists := pktMap[field]; !exists {
+					t.Errorf("packet sub-object missing field %q", field)
+				}
+			}
+		}
+		// Verify decoded also present at top level (for live.js)
+		if _, ok := bm["decoded"]; !ok {
+			t.Error("broadcast map missing 'decoded' field (required by live.js)")
+		}
+	}
+
 	// Verify ingested into store
 	updatedMax := store.MaxTransmissionID()
 	if updatedMax < newMax {

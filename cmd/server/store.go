@@ -863,7 +863,8 @@ func (s *PacketStore) IngestNewFromDB(sinceID, limit int) ([]map[string]interfac
 				decoded["payload"] = payload
 			}
 		}
-		result = append(result, map[string]interface{}{
+		// Build the nested packet object (packets.js checks m.data.packet)
+		pkt := map[string]interface{}{
 			"id":                tx.ID,
 			"raw_hex":           strOrNil(tx.RawHex),
 			"hash":              strOrNil(tx.Hash),
@@ -871,14 +872,21 @@ func (s *PacketStore) IngestNewFromDB(sinceID, limit int) ([]map[string]interfac
 			"route_type":        intPtrOrNil(tx.RouteType),
 			"payload_type":      intPtrOrNil(tx.PayloadType),
 			"decoded_json":      strOrNil(tx.DecodedJSON),
-			"decoded":           decoded,
 			"observer_id":       strOrNil(tx.ObserverID),
 			"observer_name":     strOrNil(tx.ObserverName),
 			"snr":               floatPtrOrNil(tx.SNR),
 			"rssi":              floatPtrOrNil(tx.RSSI),
 			"path_json":         strOrNil(tx.PathJSON),
 			"observation_count": tx.ObservationCount,
-		})
+		}
+		// Broadcast map: top-level fields for live.js + nested packet for packets.js
+		broadcastMap := make(map[string]interface{}, len(pkt)+2)
+		for k, v := range pkt {
+			broadcastMap[k] = v
+		}
+		broadcastMap["decoded"] = decoded
+		broadcastMap["packet"] = pkt
+		result = append(result, broadcastMap)
 	}
 
 	// Invalidate analytics caches since new data was ingested
