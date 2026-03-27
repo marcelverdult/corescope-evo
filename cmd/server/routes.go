@@ -457,13 +457,22 @@ func (s *Server) handlePerf(w http.ResponseWriter, r *http.Request) {
 		sqliteStats = s.db.GetDBSizeStats()
 	}
 
+	uptimeSec := int(time.Since(s.perfStats.StartedAt).Seconds())
+	wsClients := 0
+	if s.hub != nil {
+		wsClients = s.hub.ClientCount()
+	}
+
 	writeJSON(w, map[string]interface{}{
-		"uptime":        int(time.Since(s.perfStats.StartedAt).Seconds()),
+		"status":        "ok",
+		"uptime":        uptimeSec,
+		"uptimeHuman":   fmt.Sprintf("%dh %dm", uptimeSec/3600, (uptimeSec%3600)/60),
 		"totalRequests": s.perfStats.Requests,
 		"avgMs":         safeAvg(s.perfStats.TotalMs, float64(s.perfStats.Requests)),
 		"endpoints":     summary,
 		"slowQueries":   lastN(s.perfStats.SlowQueries, 20),
 		"cache":         cacheStats,
+		"websocket":     map[string]interface{}{"clients": wsClients},
 		"goRuntime":     goRuntime,
 		"packetStore":   pktStoreStats,
 		"sqlite":        sqliteStats,
