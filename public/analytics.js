@@ -639,69 +639,193 @@
   }
 
   // ===================== CHANNELS =====================
+  var _channelSortState = null;
+  var _channelData = null;
+  var CHANNEL_SORT_KEY = 'meshcore-channel-sort';
+
+  function loadChannelSort() {
+    try {
+      var s = localStorage.getItem(CHANNEL_SORT_KEY);
+      if (s) { var p = JSON.parse(s); if (p.col && p.dir) return p; }
+    } catch (e) {}
+    return { col: 'lastActivity', dir: 'desc' };
+  }
+
+  function saveChannelSort(state) {
+    try { localStorage.setItem(CHANNEL_SORT_KEY, JSON.stringify(state)); } catch (e) {}
+  }
+
+  function sortChannels(channels, col, dir) {
+    var sorted = channels.slice();
+    var mult = dir === 'asc' ? 1 : -1;
+    sorted.sort(function (a, b) {
+      var av, bv;
+      switch (col) {
+        case 'name':
+          av = (a.name || '').toLowerCase(); bv = (b.name || '').toLowerCase();
+          return av < bv ? -1 * mult : av > bv ? 1 * mult : 0;
+        case 'hash':
+          av = typeof a.hash === 'number' ? a.hash : String(a.hash);
+          bv = typeof b.hash === 'number' ? b.hash : String(b.hash);
+          if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * mult;
+          av = String(av).toLowerCase(); bv = String(bv).toLowerCase();
+          return av < bv ? -1 * mult : av > bv ? 1 * mult : 0;
+        case 'messages': return (a.messages - b.messages) * mult;
+        case 'senders': return (a.senders - b.senders) * mult;
+        case 'lastActivity':
+          av = a.lastActivity || ''; bv = b.lastActivity || '';
+          return av < bv ? -1 * mult : av > bv ? 1 * mult : 0;
+        case 'encrypted':
+          av = a.encrypted ? 1 : 0; bv = b.encrypted ? 1 : 0;
+          return (av - bv) * mult;
+        default: return 0;
+      }
+    });
+    return sorted;
+  }
+
+  function channelRowHtml(c) {
+    return '<tr class="clickable-row" data-action="navigate" data-value="#/channels?ch=' + c.hash + '" tabindex="0" role="row">' +
+      '<td><strong>' + esc(c.name || 'Unknown') + '</strong></td>' +
+      '<td class="mono">' + (typeof c.hash === 'number' ? '0x' + c.hash.toString(16).toUpperCase().padStart(2, '0') : c.hash) + '</td>' +
+      '<td>' + c.messages + '</td>' +
+      '<td>' + c.senders + '</td>' +
+      '<td>' + timeAgo(c.lastActivity) + '</td>' +
+      '<td>' + (c.encrypted ? '🔒' : '✅') + '</td>' +
+    '</tr>';
+  }
+
+  function channelTbodyHtml(channels, col, dir) {
+    var sorted = sortChannels(channels, col, dir);
+    var parts = [];
+    for (var i = 0; i < sorted.length; i++) parts.push(channelRowHtml(sorted[i]));
+    return parts.join('');
+  }
+
+  function channelSortArrow(col, activeCol, dir) {
+    if (col !== activeCol) return '<span class="sort-arrow">⇅</span>';
+    return '<span class="sort-arrow">' + (dir === 'asc' ? '↑' : '↓') + '</span>';
+  }
+
+  function channelTheadHtml(activeCol, dir) {
+    var cols = [
+      { key: 'name', label: 'Channel' },
+      { key: 'hash', label: 'Hash' },
+      { key: 'messages', label: 'Messages' },
+      { key: 'senders', label: 'Unique Senders' },
+      { key: 'lastActivity', label: 'Last Activity' },
+      { key: 'encrypted', label: 'Decrypted' },
+    ];
+    var ths = '';
+    for (var i = 0; i < cols.length; i++) {
+      var c = cols[i];
+      ths += '<th class="sortable' + (c.key === activeCol ? ' sort-active' : '') + '" data-sort-col="' + c.key + '">' +
+        c.label + channelSortArrow(c.key, activeCol, dir) + '</th>';
+    }
+    return '<thead><tr>' + ths + '</tr></thead>';
+  }
+
+  function updateChannelTable() {
+    var tbody = document.getElementById('channelsTbody');
+    var thead = document.querySelector('#channelsTable thead');
+    if (!tbody || !_channelData) return;
+    tbody.innerHTML = channelTbodyHtml(_channelData, _channelSortState.col, _channelSortState.dir);
+    if (thead) thead.outerHTML = channelTheadHtml(_channelSortState.col, _channelSortState.dir);
+  }
+
   function renderChannels(el, ch) {
-    el.innerHTML = `
-      <div class="analytics-card">
-        <h3>📻 Channel Activity</h3>
-        <p class="text-muted">${ch.activeChannels} active channels, ${ch.decryptable} decryptable</p>
-        <table class="analytics-table">
-          <thead><tr><th>Channel</th><th>Hash</th><th>Messages</th><th>Unique Senders</th><th>Last Activity</th><th>Decrypted</th></tr></thead>
-          <tbody>
-            ${ch.channels.map(c => `<tr class="clickable-row" data-action="navigate" data-value="#/channels?ch=${c.hash}" tabindex="0" role="row">
-              <td><strong>${esc(c.name || 'Unknown')}</strong></td>
-              <td class="mono">${typeof c.hash === 'number' ? '0x' + c.hash.toString(16).toUpperCase().padStart(2, '0') : c.hash}</td>
-              <td>${c.messages}</td>
-              <td>${c.senders}</td>
-              <td>${timeAgo(c.lastActivity)}</td>
-              <td>${c.encrypted ? '🔒' : '✅'}</td>
-            </tr>`).join('')}
-          </tbody>
-        </table>
-      </div>
+    _channelData = ch.channels;
+    if (!_channelSortState) _channelSortState = loadChannelSort();
 
-      <div class="analytics-row">
-        <div class="analytics-card flex-1">
-          <h3>💬 Messages / Hour by Channel</h3>
-          ${renderChannelTimeline(ch.channelTimeline)}
-        </div>
-        <div class="analytics-card flex-1">
-          <h3>🗣️ Top Senders</h3>
-          ${renderTopSenders(ch.topSenders)}
-        </div>
-      </div>
+    var timelineHtml = renderChannelTimeline(ch.channelTimeline);
+    var topSendersHtml = renderTopSenders(ch.topSenders);
+    var histoHtml = ch.msgLengths.length ? histogram(ch.msgLengths, 20, '#8b5cf6').svg : '<div class="text-muted">No decrypted messages</div>';
 
-      <div class="analytics-card">
-        <h3>📊 Message Length Distribution</h3>
-        ${ch.msgLengths.length ? histogram(ch.msgLengths, 20, '#8b5cf6').svg : '<div class="text-muted">No decrypted messages</div>'}
-      </div>
-    `;
+    el.innerHTML =
+      '<div class="analytics-card">' +
+        '<h3>📻 Channel Activity</h3>' +
+        '<p class="text-muted">' + ch.activeChannels + ' active channels, ' + ch.decryptable + ' decryptable</p>' +
+        '<table class="analytics-table" id="channelsTable">' +
+          channelTheadHtml(_channelSortState.col, _channelSortState.dir) +
+          '<tbody id="channelsTbody">' +
+            channelTbodyHtml(_channelData, _channelSortState.col, _channelSortState.dir) +
+          '</tbody>' +
+        '</table>' +
+      '</div>' +
+      '<div class="analytics-row">' +
+        '<div class="analytics-card flex-1">' +
+          '<h3>💬 Messages / Hour by Channel</h3>' +
+          timelineHtml +
+        '</div>' +
+        '<div class="analytics-card flex-1">' +
+          '<h3>🗣️ Top Senders</h3>' +
+          topSendersHtml +
+        '</div>' +
+      '</div>' +
+      '<div class="analytics-card">' +
+        '<h3>📊 Message Length Distribution</h3>' +
+        histoHtml +
+      '</div>';
+
+    // Attach sort handler via delegation on the table
+    var table = document.getElementById('channelsTable');
+    if (table) {
+      table.addEventListener('click', function (e) {
+        var th = e.target.closest('th[data-sort-col]');
+        if (!th) return;
+        var col = th.dataset.sortCol;
+        if (_channelSortState.col === col) {
+          _channelSortState.dir = _channelSortState.dir === 'asc' ? 'desc' : 'asc';
+        } else {
+          _channelSortState.col = col;
+          _channelSortState.dir = col === 'name' || col === 'hash' ? 'asc' : 'desc';
+        }
+        saveChannelSort(_channelSortState);
+        updateChannelTable();
+      });
+    }
   }
 
   function renderChannelTimeline(data) {
     if (!data.length) return '<div class="text-muted">No data</div>';
-    const hours = [...new Set(data.map(d => d.hour))].sort();
-    const channels = [...new Set(data.map(d => d.channel))];
-    const colors = ['#ef4444','#22c55e','#3b82f6','#f59e0b','#8b5cf6','#ec4899','#14b8a6','#64748b'];
-    const w = 600, h = 180, pad = 35;
-    let svg = `<svg viewBox="0 0 ${w} ${h}" style="width:100%;max-height:180px" role="img" aria-label="Channel message activity over time"><title>Channel message activity over time</title>`;
-    channels.forEach((ch, ci) => {
-      const pts = hours.map((hr, i) => {
-        const entry = data.find(d => d.hour === hr && d.channel === ch);
-        const count = entry ? entry.count : 0;
-        const max = Math.max(...data.map(d => d.count), 1);
-        const x = pad + i * ((w - pad * 2) / Math.max(hours.length - 1, 1));
-        const y = h - pad - (count / max) * (h - pad * 2);
-        return `${x},${y}`;
-      }).join(' ');
-      svg += `<polyline points="${pts}" fill="none" stroke="${colors[ci % colors.length]}" stroke-width="1.5" opacity="0.8"/>`;
-    });
-    const step = Math.max(1, Math.floor(hours.length / 6));
-    for (let i = 0; i < hours.length; i += step) {
-      const x = pad + i * ((w - pad * 2) / Math.max(hours.length - 1, 1));
-      svg += `<text x="${x}" y="${h-pad+14}" text-anchor="middle" font-size="9" fill="var(--text-muted)">${hours[i].slice(11)}h</text>`;
+    var hours = []; var hourSet = {};
+    var channelList = []; var channelSet = {};
+    var lookup = {};
+    var maxCount = 1;
+    for (var i = 0; i < data.length; i++) {
+      var d = data[i];
+      if (!hourSet[d.hour]) { hourSet[d.hour] = 1; hours.push(d.hour); }
+      if (!channelSet[d.channel]) { channelSet[d.channel] = 1; channelList.push(d.channel); }
+      lookup[d.hour + '|' + d.channel] = d.count;
+      if (d.count > maxCount) maxCount = d.count;
+    }
+    hours.sort();
+    var colors = ['#ef4444','#22c55e','#3b82f6','#f59e0b','#8b5cf6','#ec4899','#14b8a6','#64748b'];
+    var w = 600, h = 180, pad = 35;
+    var xScale = (w - pad * 2) / Math.max(hours.length - 1, 1);
+    var yScale = (h - pad * 2) / maxCount;
+    var svg = '<svg viewBox="0 0 ' + w + ' ' + h + '" style="width:100%;max-height:180px" role="img" aria-label="Channel message activity over time"><title>Channel message activity over time</title>';
+    for (var ci = 0; ci < channelList.length; ci++) {
+      var pts = [];
+      for (var hi = 0; hi < hours.length; hi++) {
+        var count = lookup[hours[hi] + '|' + channelList[ci]] || 0;
+        var x = pad + hi * xScale;
+        var y = h - pad - count * yScale;
+        pts.push(x + ',' + y);
+      }
+      svg += '<polyline points="' + pts.join(' ') + '" fill="none" stroke="' + colors[ci % colors.length] + '" stroke-width="1.5" opacity="0.8"/>';
+    }
+    var step = Math.max(1, Math.floor(hours.length / 6));
+    for (var li = 0; li < hours.length; li += step) {
+      var lx = pad + li * xScale;
+      svg += '<text x="' + lx + '" y="' + (h - pad + 14) + '" text-anchor="middle" font-size="9" fill="var(--text-muted)">' + hours[li].slice(11) + 'h</text>';
     }
     svg += '</svg>';
-    svg += `<div class="timeline-legend">${channels.map((ch, i) => `<span><span class="legend-dot" style="background:${colors[i % colors.length]}"></span>${esc(ch)}</span>`).join('')}</div>`;
+    var legendParts = [];
+    for (var lci = 0; lci < channelList.length; lci++) {
+      legendParts.push('<span><span class="legend-dot" style="background:' + colors[lci % colors.length] + '"></span>' + esc(channelList[lci]) + '</span>');
+    }
+    svg += '<div class="timeline-legend">' + legendParts.join('') + '</div>';
     return svg;
   }
 
@@ -1474,7 +1598,16 @@
     }
   }
 
-function destroy() { _analyticsData = {}; }
+function destroy() { _analyticsData = {}; _channelData = null; }
+
+  // Expose for testing
+  if (typeof window !== 'undefined') {
+    window._analyticsSortChannels = sortChannels;
+    window._analyticsLoadChannelSort = loadChannelSort;
+    window._analyticsSaveChannelSort = saveChannelSort;
+    window._analyticsChannelTbodyHtml = channelTbodyHtml;
+    window._analyticsChannelTheadHtml = channelTheadHtml;
+  }
 
   registerPage('analytics', { init, destroy });
 })();

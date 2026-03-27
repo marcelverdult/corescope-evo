@@ -1287,6 +1287,190 @@ console.log('\n=== style.css: version-badge link contrast ===');
   });
 }
 
+// ===== ANALYTICS.JS: Channel Sort =====
+console.log('\n=== analytics.js: sortChannels ===');
+{
+  function makeAnalyticsSandbox() {
+    const ctx = makeSandbox();
+    ctx.getComputedStyle = () => ({ getPropertyValue: () => '' });
+    ctx.registerPage = () => {};
+    ctx.api = () => Promise.resolve({});
+    ctx.timeAgo = (iso) => iso ? 'x ago' : '—';
+    ctx.RegionFilter = { init: () => {}, onChange: () => {}, regionQueryString: () => '' };
+    ctx.onWS = () => {};
+    ctx.offWS = () => {};
+    ctx.connectWS = () => {};
+    ctx.invalidateApiCache = () => {};
+    ctx.makeColumnsResizable = () => {};
+    ctx.initTabBar = () => {};
+    ctx.IATA_COORDS_GEO = {};
+    loadInCtx(ctx, 'public/roles.js');
+    loadInCtx(ctx, 'public/app.js');
+    try { loadInCtx(ctx, 'public/analytics.js'); } catch (e) {
+      for (const k of Object.keys(ctx.window)) ctx[k] = ctx.window[k];
+    }
+    return ctx;
+  }
+
+  const ctx = makeAnalyticsSandbox();
+  const sortChannels = ctx.window._analyticsSortChannels;
+  const loadSort = ctx.window._analyticsLoadChannelSort;
+  const saveSort = ctx.window._analyticsSaveChannelSort;
+  const tbodyHtml = ctx.window._analyticsChannelTbodyHtml;
+  const theadHtml = ctx.window._analyticsChannelTheadHtml;
+
+  const channels = [
+    { name: 'General', hash: 10, messages: 50, senders: 5, lastActivity: '2024-01-03T12:00:00Z', encrypted: false },
+    { name: 'Alerts', hash: 20, messages: 200, senders: 12, lastActivity: '2024-01-01T08:00:00Z', encrypted: true },
+    { name: 'Chat', hash: 5, messages: 100, senders: 8, lastActivity: '2024-01-05T18:00:00Z', encrypted: false },
+  ];
+
+  test('sortChannels exists', () => assert.ok(sortChannels, '_analyticsSortChannels must be exposed'));
+
+  test('sort by name asc', () => {
+    const r = sortChannels(channels, 'name', 'asc');
+    assert.deepStrictEqual(r.map(c => c.name), ['Alerts', 'Chat', 'General']);
+  });
+
+  test('sort by name desc', () => {
+    const r = sortChannels(channels, 'name', 'desc');
+    assert.deepStrictEqual(r.map(c => c.name), ['General', 'Chat', 'Alerts']);
+  });
+
+  test('sort by messages desc', () => {
+    const r = sortChannels(channels, 'messages', 'desc');
+    assert.deepStrictEqual(r.map(c => c.messages), [200, 100, 50]);
+  });
+
+  test('sort by messages asc', () => {
+    const r = sortChannels(channels, 'messages', 'asc');
+    assert.deepStrictEqual(r.map(c => c.messages), [50, 100, 200]);
+  });
+
+  test('sort by senders desc', () => {
+    const r = sortChannels(channels, 'senders', 'desc');
+    assert.deepStrictEqual(r.map(c => c.senders), [12, 8, 5]);
+  });
+
+  test('sort by lastActivity desc (latest first)', () => {
+    const r = sortChannels(channels, 'lastActivity', 'desc');
+    assert.strictEqual(r[0].name, 'Chat');
+    assert.strictEqual(r[2].name, 'Alerts');
+  });
+
+  test('sort by lastActivity asc (oldest first)', () => {
+    const r = sortChannels(channels, 'lastActivity', 'asc');
+    assert.strictEqual(r[0].name, 'Alerts');
+    assert.strictEqual(r[2].name, 'Chat');
+  });
+
+  test('sort by encrypted', () => {
+    const r = sortChannels(channels, 'encrypted', 'desc');
+    assert.strictEqual(r[0].encrypted, true);
+  });
+
+  test('sort by hash asc (numeric)', () => {
+    const r = sortChannels(channels, 'hash', 'asc');
+    assert.deepStrictEqual(r.map(c => c.hash), [5, 10, 20]);
+  });
+
+  test('sort does not mutate original', () => {
+    const orig = channels.map(c => c.name);
+    sortChannels(channels, 'name', 'asc');
+    assert.deepStrictEqual(channels.map(c => c.name), orig);
+  });
+
+  test('sort empty array', () => {
+    const r = sortChannels([], 'name', 'asc');
+    assert.deepStrictEqual(r, []);
+  });
+
+  test('sort handles missing name', () => {
+    const data = [
+      { name: 'B', hash: 1, messages: 1, senders: 1, lastActivity: '', encrypted: false },
+      { name: null, hash: 2, messages: 2, senders: 2, lastActivity: '', encrypted: false },
+    ];
+    const r = sortChannels(data, 'name', 'asc');
+    assert.strictEqual(r[0].name, null);
+    assert.strictEqual(r[1].name, 'B');
+  });
+
+  test('sort handles missing lastActivity', () => {
+    const data = [
+      { name: 'A', hash: 1, messages: 1, senders: 1, lastActivity: '2024-01-01', encrypted: false },
+      { name: 'B', hash: 2, messages: 2, senders: 2, lastActivity: null, encrypted: false },
+    ];
+    const r = sortChannels(data, 'lastActivity', 'desc');
+    assert.strictEqual(r[0].name, 'A');
+  });
+
+  test('default sort is lastActivity desc', () => {
+    const s = loadSort();
+    assert.strictEqual(s.col, 'lastActivity');
+    assert.strictEqual(s.dir, 'desc');
+  });
+
+  test('saveSort + loadSort round-trip', () => {
+    saveSort({ col: 'messages', dir: 'asc' });
+    const s = loadSort();
+    assert.strictEqual(s.col, 'messages');
+    assert.strictEqual(s.dir, 'asc');
+    // Reset
+    ctx.localStorage.removeItem('meshcore-channel-sort');
+  });
+
+  test('loadSort handles corrupt localStorage', () => {
+    ctx.localStorage.setItem('meshcore-channel-sort', '{bad json');
+    const s = loadSort();
+    assert.strictEqual(s.col, 'lastActivity');
+    ctx.localStorage.removeItem('meshcore-channel-sort');
+  });
+
+  test('theadHtml marks active column', () => {
+    const html = theadHtml('messages', 'desc');
+    assert.ok(html.includes('sort-active'), 'active column should have sort-active class');
+    assert.ok(html.includes('data-sort-col="messages"'), 'should have data-sort-col');
+    assert.ok(html.includes('↓'), 'desc direction should show ↓');
+  });
+
+  test('theadHtml shows ↑ for asc', () => {
+    const html = theadHtml('name', 'asc');
+    assert.ok(html.includes('↑'), 'asc direction should show ↑');
+  });
+
+  test('theadHtml shows ⇅ for inactive columns', () => {
+    const html = theadHtml('messages', 'desc');
+    // 'name' column should show ⇅
+    assert.ok(html.includes('⇅'), 'inactive columns should show ⇅');
+  });
+
+  test('tbodyHtml generates rows', () => {
+    const html = tbodyHtml(channels, 'messages', 'desc');
+    assert.ok(html.includes('Alerts'), 'should include channel name');
+    assert.ok(html.includes('clickable-row'), 'rows should be clickable');
+    assert.ok(html.includes('data-action="navigate"'), 'rows should have navigate action');
+  });
+
+  test('tbodyHtml returns sorted rows', () => {
+    const html = tbodyHtml(channels, 'messages', 'desc');
+    const alertsIdx = html.indexOf('Alerts');
+    const chatIdx = html.indexOf('Chat');
+    const generalIdx = html.indexOf('General');
+    assert.ok(alertsIdx < chatIdx, 'Alerts (200 msgs) should come before Chat (100)');
+    assert.ok(chatIdx < generalIdx, 'Chat (100 msgs) should come before General (50)');
+  });
+
+  test('sort by string hash values', () => {
+    const data = [
+      { name: 'A', hash: 'zz', messages: 1, senders: 1, lastActivity: '', encrypted: false },
+      { name: 'B', hash: 'aa', messages: 1, senders: 1, lastActivity: '', encrypted: false },
+    ];
+    const r = sortChannels(data, 'hash', 'asc');
+    assert.strictEqual(r[0].hash, 'aa');
+    assert.strictEqual(r[1].hash, 'zz');
+  });
+}
+
 // ===== SUMMARY =====
 console.log(`\n${'═'.repeat(40)}`);
 console.log(`  Frontend helpers: ${passed} passed, ${failed} failed`);

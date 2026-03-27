@@ -1084,6 +1084,10 @@ button.ch-item.ch-item-encrypted .ch-badge { filter: grayscale(0.6); }
 .analytics-card h3 { margin: 0 0 8px; font-size: 15px; }
 .analytics-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .analytics-table th { text-align: left; padding: 8px; border-bottom: 2px solid var(--border); font-size: 12px; text-transform: uppercase; color: var(--text-muted); }
+.analytics-table th.sortable { cursor: pointer; user-select: none; }
+.analytics-table th.sortable:hover { color: var(--accent); }
+.analytics-table th.sort-active { color: var(--accent); }
+.analytics-table th .sort-arrow { font-size: 10px; margin-left: 4px; opacity: 0.7; }
 .analytics-table td { padding: 8px; border-bottom: 1px solid var(--border); }
 .hash-bars { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
 .hash-bar-row { display: flex; align-items: center; gap: 12px; }
