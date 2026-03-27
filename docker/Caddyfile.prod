@@ -1,0 +1,11 @@
+# Default Caddyfile — reverse proxy to Node app
+# Override by mounting your own: -v ./Caddyfile:/etc/caddy/Caddyfile
+#
+# For automatic HTTPS, replace :80 with your domain:
+#   analyzer.example.com {
+#       reverse_proxy localhost:3000
+#   }
+
+:80 {
+    reverse_proxy localhost:3000
+}

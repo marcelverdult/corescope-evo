@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  prod:
+    image: meshcore-analyzer:latest
+    container_name: meshcore-prod
+    restart: unless-stopped
+    ports:
+      - "${PROD_HTTP_PORT:-80}:${PROD_HTTP_PORT:-80}"
+      - "${PROD_HTTPS_PORT:-443}:${PROD_HTTPS_PORT:-443}"
+      - "${PROD_MQTT_PORT:-1883}:1883"
+    volumes:
+      - ./config.prod.json:/app/config.json:ro
+      - ./docker/Caddyfile.prod:/etc/caddy/Caddyfile:ro
+      - ${PROD_DATA_DIR:-~/meshcore-data}:/app/data
+      - caddy-data-prod:/data/caddy
+    environment:
+      - NODE_ENV=production
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/stats"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  staging:
+    image: meshcore-analyzer:latest
+    container_name: meshcore-staging
+    restart: unless-stopped
+    ports:
+      - "${STAGING_HTTP_PORT:-81}:${STAGING_HTTP_PORT:-81}"
+      - "${STAGING_MQTT_PORT:-1884}:1883"
+    volumes:
+      - ./config.staging.json:/app/config.json:ro
+      - ./docker/Caddyfile.staging:/etc/caddy/Caddyfile:ro
+      - ${STAGING_DATA_DIR:-~/meshcore-staging-data}:/app/data
+      - caddy-data-staging:/data/caddy
+    environment:
+      - NODE_ENV=staging
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/stats"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    profiles:
+      - staging
+
+volumes:
+  caddy-data-prod:
+  caddy-data-staging:
