@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 )
 
 // MQTTSource represents a single MQTT broker connection.
@@ -79,5 +80,14 @@ func LoadConfig(path string) (*Config, error) {
 
 // ResolvedSources returns the final list of MQTT sources to connect to.
 func (c *Config) ResolvedSources() []MQTTSource {
+	for i := range c.MQTTSources {
+		// paho uses tcp:// and ssl:// not mqtt:// and mqtts://
+		b := c.MQTTSources[i].Broker
+		if strings.HasPrefix(b, "mqtt://") {
+			c.MQTTSources[i].Broker = "tcp://" + b[7:]
+		} else if strings.HasPrefix(b, "mqtts://") {
+			c.MQTTSources[i].Broker = "ssl://" + b[8:]
+		}
+	}
 	return c.MQTTSources
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -58,8 +59,9 @@ func main() {
 			opts.SetPassword(source.Password)
 		}
 		if source.RejectUnauthorized != nil && !*source.RejectUnauthorized {
-			// For TLS without cert verification, configure TLS
-			opts.SetTLSConfig(nil) // paho handles self-signed with default config
+			opts.SetTLSConfig(&tls.Config{InsecureSkipVerify: true})
+		} else if strings.HasPrefix(source.Broker, "ssl://") {
+			opts.SetTLSConfig(&tls.Config{})
 		}
 
 		opts.SetOnConnectHandler(func(c mqtt.Client) {
