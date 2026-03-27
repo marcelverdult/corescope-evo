@@ -364,6 +364,42 @@ jobs:
           curl -f http://localhost:81/api/nodes || exit 1
           echo "Node staging smoke tests passed ✅"
 
+      - name: Validate API contract (proto vs Node fixtures)
+        run: |
+          set -e
+          echo "Refreshing Node fixtures from staging container..."
+          mkdir -p proto/testdata/node-fixtures
+          
+          # Capture fresh API responses from staging container
+          # Only refresh endpoints that don't require parameters
+          ENDPOINTS=(
+            "stats" "health" "perf" "nodes" "packets" "observers" "channels"
+            "analytics/rf" "analytics/topology" "analytics/channels"
+            "analytics/hash-sizes" "analytics/distance" "analytics/subpaths"
+            "config/theme" "config/regions" "config/client" "config/cache" "config/map"
+            "iata-coords"
+          )
+          
+          for endpoint in "${ENDPOINTS[@]}"; do
+            # Convert /api/analytics/rf → analytics-rf.json
+            fixture_name=$(echo "$endpoint" | tr '/' '-')
+            echo "  Fetching $endpoint → ${fixture_name}.json"
+            docker exec meshcore-staging wget -qO- "http://localhost:3000/api/$endpoint" \
+              > "proto/testdata/node-fixtures/${fixture_name}.json" 2>/dev/null || {
+                echo "  ⚠ Failed to fetch $endpoint (container may not have data yet)"
+              }
+          done
+          
+          echo ""
+          echo "Running proto validator..."
+          python3 tools/validate-protos.py || {
+            echo "❌ Proto validation failed — API contract drift detected"
+            echo "This means a Node.js API response doesn't match the proto definition."
+            echo "Fix by updating the .proto files in proto/ to match the actual API responses."
+            exit 1
+          }
+          echo "✅ Proto validation passed — API contract is consistent"
+
   # ───────────────────────────────────────────────────────────────
   # 6. Deploy Go Staging — start on port 82, healthcheck, smoke test
   # ───────────────────────────────────────────────────────────────
