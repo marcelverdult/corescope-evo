@@ -247,7 +247,6 @@ jobs:
           echo "Staging smoke tests passed"
 
       - name: Deploy Go staging
-        continue-on-error: true
         run: |
           echo "Building Go staging image..."
           docker compose --profile staging-go build staging-go
