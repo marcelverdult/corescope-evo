@@ -6,8 +6,7 @@ process.env.NODE_ENV = 'test';
 process.env.SEED_DB = 'true';  // Seed test data
 
 const request = require('supertest');
-const { app, server, wss, pktStore, db, cache } = require('./server');
-const lastPathSeenMap = require('./server').lastPathSeenMap;
+const { app, server, wss, pktStore, db, cache, lastPathSeenMap, hopPrefixToKey, ambiguousHopPrefixes, resolveUniquePrefixMatch } = require('./server');
 
 let passed = 0, failed = 0;
 
@@ -1102,6 +1101,98 @@ seedTestData();
     // Simulate what happens on advert: cache.invalidate('bulk-health')
     cache.invalidate('bulk-health');
     assert(!cache.get('bulk-health:50:r='), 'bulk-health cache should be invalidated after advert');
+  });
+
+  // ── Issue #126: hash prefix collision — ambiguous hop attribution ──
+
+  await t('ambiguous hop prefix does NOT update lastPathSeenMap for either node (fixes #126)', async () => {
+    // Two nodes sharing prefix 'ab12': collision scenario like 1CC4 vs 1C82
+    const nodeA = 'ab12' + 'a'.repeat(60);
+    const nodeB = 'ab12' + 'b'.repeat(60);
+    db.upsertNode({ public_key: nodeA, name: 'CollidingNodeA', role: 'repeater', lat: 37.0, lon: -122.0, last_seen: '2020-01-01T00:00:00.000Z' });
+    db.upsertNode({ public_key: nodeB, name: 'CollidingNodeB', role: 'repeater', lat: 38.0, lon: -121.0, last_seen: '2020-01-01T00:00:00.000Z' });
+
+    // Clear caches to start fresh
+    hopPrefixToKey.delete('ab12');
+    ambiguousHopPrefixes.delete('ab12');
+    lastPathSeenMap.delete(nodeA);
+    lastPathSeenMap.delete(nodeB);
+
+    // Attempt to resolve the ambiguous prefix — should return null
+    const result = resolveUniquePrefixMatch('ab12');
+    assert(result === null, 'ambiguous prefix should resolve to null');
+    assert(ambiguousHopPrefixes.has('ab12'), 'ab12 should be in ambiguous prefix cache');
+    assert(!hopPrefixToKey.has('ab12'), 'ab12 should NOT be in hopPrefixToKey cache');
+
+    // Verify neither node gets last_heard updated
+    assert(!lastPathSeenMap.has(nodeA), 'lastPathSeenMap should NOT have nodeA (ambiguous prefix)');
+    assert(!lastPathSeenMap.has(nodeB), 'lastPathSeenMap should NOT have nodeB (ambiguous prefix)');
+
+    // Subsequent resolution calls should also return null (cached negative result)
+    const result2 = resolveUniquePrefixMatch('ab12');
+    assert(result2 === null, 'cached ambiguous prefix should still resolve to null');
+
+    // Cleanup
+    hopPrefixToKey.delete('ab12');
+    ambiguousHopPrefixes.delete('ab12');
+  });
+
+  await t('unique hop prefix still resolves and updates lastPathSeenMap', async () => {
+    // A node with a unique prefix that no other node shares
+    const uniqueNode = 'eeee' + 'f'.repeat(60);
+    db.upsertNode({ public_key: uniqueNode, name: 'UniqueHopNode', role: 'repeater', lat: 40.0, lon: -74.0, last_seen: '2020-01-01T00:00:00.000Z' });
+
+    // Clear caches
+    hopPrefixToKey.delete('eeee');
+    ambiguousHopPrefixes.delete('eeee');
+    lastPathSeenMap.delete(uniqueNode);
+
+    // Resolve the unique prefix — should return the full key
+    const result = resolveUniquePrefixMatch('eeee');
+    assert(result === uniqueNode, 'unique prefix should resolve to the full public_key');
+    assert(hopPrefixToKey.get('eeee') === uniqueNode, 'unique prefix should be cached in hopPrefixToKey');
+    assert(!ambiguousHopPrefixes.has('eeee'), 'unique prefix should NOT be in ambiguous cache');
+
+    // Cleanup
+    hopPrefixToKey.delete('eeee');
+    lastPathSeenMap.delete(uniqueNode);
+  });
+
+  await t('1-byte ambiguous prefix does NOT update dead node (issue #126 regression)', async () => {
+    // Simulate the exact scenario: two nodes with shared 1-byte prefix '1c'
+    const deadNode = '1c' + 'c4' + 'dd'.repeat(30);
+    const liveNode = '1c' + '82' + 'ee'.repeat(30);
+    const staleTime = new Date(Date.now() - 8 * 86400000).toISOString(); // 8 days ago
+    const recentTime = new Date().toISOString();
+
+    db.upsertNode({ public_key: deadNode, name: 'DeadNodeR5D4', role: 'repeater', lat: 35.0, lon: -120.0, last_seen: staleTime });
+    db.upsertNode({ public_key: liveNode, name: 'LiveNodeK2S0', role: 'repeater', lat: 35.1, lon: -120.1, last_seen: recentTime });
+
+    // Clear all caches
+    hopPrefixToKey.delete('1c');
+    ambiguousHopPrefixes.delete('1c');
+    lastPathSeenMap.delete(deadNode);
+    lastPathSeenMap.delete(liveNode);
+
+    // The 1-byte prefix '1c' matches both nodes — should be ambiguous
+    const result = resolveUniquePrefixMatch('1c');
+    assert(result === null, '1-byte prefix 1c should be ambiguous (matches 2 nodes)');
+
+    // Fetch DeadNodeR5D4 — should NOT have last_heard from pathSeenMap
+    const res = await request(app).get('/api/nodes?search=DeadNodeR5D4');
+    assert(res.status === 200);
+    const node = res.body.nodes.find(n => n.public_key === deadNode);
+    assert(node, 'dead node should exist in DB');
+    // last_heard should be null/undefined or equal to the stale last_seen — NOT recent
+    const lastHeard = node.last_heard ? new Date(node.last_heard).getTime() : 0;
+    const sevenDaysAgo = Date.now() - 7 * 86400000;
+    assert(lastHeard < sevenDaysAgo, 'dead node last_heard should NOT be recent (hash collision guard)');
+
+    // Cleanup
+    hopPrefixToKey.delete('1c');
+    ambiguousHopPrefixes.delete('1c');
+    lastPathSeenMap.delete(deadNode);
+    lastPathSeenMap.delete(liveNode);
   });
 
   // ── Summary ──

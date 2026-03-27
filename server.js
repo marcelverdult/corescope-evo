@@ -531,16 +531,30 @@ function disambiguateHops(hops, allNodes) {
 
 // Cache hop prefix → full pubkey for lastPathSeenMap resolution
 const hopPrefixToKey = new Map();
+// Negative cache: prefixes known to be ambiguous (match multiple nodes) — never resolve these
+const ambiguousHopPrefixes = new Set();
+
+// Check if a hop prefix uniquely resolves to a single node. Returns the public_key or null.
+function resolveUniquePrefixMatch(hopLower) {
+  if (ambiguousHopPrefixes.has(hopLower)) return null;
+  if (hopPrefixToKey.has(hopLower)) return hopPrefixToKey.get(hopLower);
+  // Count matches — only use if exactly one node matches
+  const matches = db.db.prepare("SELECT public_key FROM nodes WHERE LOWER(public_key) LIKE ? LIMIT 2").all(hopLower + '%');
+  if (matches.length === 1) {
+    hopPrefixToKey.set(hopLower, matches[0].public_key);
+    return matches[0].public_key;
+  }
+  if (matches.length > 1) {
+    ambiguousHopPrefixes.add(hopLower);
+  }
+  return null;
+}
 
 function autoLearnHopNodes(hops, now) {
   for (const hop of hops) {
     if (hop.length < 4) continue; // Skip 1-byte hops — too ambiguous
     if (hopNodeCache.has(hop)) continue;
-    const hopLower = hop.toLowerCase();
-    const existing = db.db.prepare("SELECT public_key FROM nodes WHERE LOWER(public_key) LIKE ?").get(hopLower + '%');
-    if (existing) {
-      hopPrefixToKey.set(hopLower, existing.public_key);
-    }
+    resolveUniquePrefixMatch(hop.toLowerCase());
     // Cache either way to avoid repeated DB lookups — but never create phantom nodes.
     // Unresolved hops are displayed as raw prefixes by the hop-resolver.
     hopNodeCache.add(hop);
@@ -551,16 +565,7 @@ function autoLearnHopNodes(hops, now) {
 function updatePathSeenTimestamps(hops, now) {
   for (const hop of hops) {
     const hopLower = hop.toLowerCase();
-    // Try cached resolution first
-    let fullKey = hopPrefixToKey.get(hopLower);
-    if (!fullKey) {
-      // For 1-byte hops or uncached: try DB prefix match (single query)
-      const existing = db.db.prepare("SELECT public_key FROM nodes WHERE LOWER(public_key) LIKE ?").get(hopLower + '%');
-      if (existing) {
-        fullKey = existing.public_key;
-        hopPrefixToKey.set(hopLower, fullKey);
-      }
-    }
+    const fullKey = resolveUniquePrefixMatch(hopLower);
     if (fullKey) {
       lastPathSeenMap.set(fullKey, now);
     }
@@ -3003,4 +3008,4 @@ function shutdown(signal) {
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT',  () => shutdown('SIGINT'));
 
-module.exports = { app, server, wss, pktStore, db, cache, lastPathSeenMap };
+module.exports = { app, server, wss, pktStore, db, cache, lastPathSeenMap, hopPrefixToKey, ambiguousHopPrefixes, resolveUniquePrefixMatch };
