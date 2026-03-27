@@ -2066,6 +2066,19 @@ func TestStoreGetAnalyticsTopology(t *testing.T) {
 		t.Error("expected non-nil result")
 	}
 
+	// #155: uniqueNodes must match DB 7-day active count, not hop resolution
+	stats, err := db.GetStats()
+	if err != nil {
+		t.Fatalf("GetStats failed: %v", err)
+	}
+	un, ok := result["uniqueNodes"].(int)
+	if !ok {
+		t.Fatalf("uniqueNodes is not int: %T", result["uniqueNodes"])
+	}
+	if un != stats.TotalNodes {
+		t.Errorf("uniqueNodes=%d should match stats totalNodes=%d", un, stats.TotalNodes)
+	}
+
 	t.Run("with region", func(t *testing.T) {
 		r := store.GetAnalyticsTopology("SJC")
 		_ = r
@@ -2093,6 +2106,64 @@ func TestStoreGetAnalyticsChannels(t *testing.T) {
 		r := store.GetAnalyticsChannels("SJC")
 		_ = r
 	})
+}
+
+// Regression test for #154: channelHash is a number in decoded JSON from decoder.js,
+// not a string. The Go struct must handle both types correctly.
+func TestStoreGetAnalyticsChannelsNumericHash(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	seedTestData(t, db)
+
+	recent := time.Now().Add(-1 * time.Hour).Format(time.RFC3339)
+	recentEpoch := time.Now().Add(-1 * time.Hour).Unix()
+
+	// Insert GRP_TXT packets with numeric channelHash (matches decoder.js output)
+	db.conn.Exec(`INSERT INTO transmissions (raw_hex, hash, first_seen, route_type, payload_type, decoded_json)
+		VALUES ('DD01', 'grp_num_hash_1', ?, 1, 5, '{"type":"GRP_TXT","channelHash":97,"channelHashHex":"61","decryptionStatus":"no_key"}')`, recent)
+	db.conn.Exec(`INSERT INTO observations (transmission_id, observer_idx, snr, rssi, path_json, timestamp)
+		VALUES (3, 1, 10.0, -90, '[]', ?)`, recentEpoch)
+
+	db.conn.Exec(`INSERT INTO transmissions (raw_hex, hash, first_seen, route_type, payload_type, decoded_json)
+		VALUES ('DD02', 'grp_num_hash_2', ?, 1, 5, '{"type":"GRP_TXT","channelHash":42,"channelHashHex":"2A","decryptionStatus":"no_key"}')`, recent)
+	db.conn.Exec(`INSERT INTO observations (transmission_id, observer_idx, snr, rssi, path_json, timestamp)
+		VALUES (4, 1, 10.0, -90, '[]', ?)`, recentEpoch)
+
+	// Also a decrypted CHAN with numeric channelHash
+	db.conn.Exec(`INSERT INTO transmissions (raw_hex, hash, first_seen, route_type, payload_type, decoded_json)
+		VALUES ('DD03', 'chan_num_hash_3', ?, 1, 5, '{"type":"CHAN","channel":"general","channelHash":97,"channelHashHex":"61","text":"hello","sender":"Alice"}')`, recent)
+	db.conn.Exec(`INSERT INTO observations (transmission_id, observer_idx, snr, rssi, path_json, timestamp)
+		VALUES (5, 1, 12.0, -88, '[]', ?)`, recentEpoch)
+
+	store := NewPacketStore(db)
+	store.Load()
+	result := store.GetAnalyticsChannels("")
+
+	channels := result["channels"].([]map[string]interface{})
+	if len(channels) < 2 {
+		t.Errorf("expected at least 2 channels (hash 97 + hash 42), got %d", len(channels))
+	}
+
+	// Verify no channel has hash "?" (would mean parsing failed)
+	for _, ch := range channels {
+		if ch["hash"] == "?" {
+			t.Errorf("channel has hash '?' — numeric channelHash was not parsed: %v", ch)
+		}
+	}
+
+	// Verify the decrypted CHAN channel has the correct name
+	foundGeneral := false
+	for _, ch := range channels {
+		if ch["name"] == "general" {
+			foundGeneral = true
+			if ch["hash"] != "97" {
+				t.Errorf("expected hash '97' for general channel, got %v", ch["hash"])
+			}
+		}
+	}
+	if !foundGeneral {
+		t.Error("expected to find channel named 'general'")
+	}
 }
 
 func TestStoreGetAnalyticsDistance(t *testing.T) {

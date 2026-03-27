@@ -514,6 +514,13 @@ seedTestData();
     assert(typeof r.body === 'object', 'should return topology');
   });
 
+  await t('GET /api/analytics/topology uniqueNodes matches stats totalNodes (#155)', async () => {
+    const topo = await request(app).get('/api/analytics/topology').expect(200);
+    const stats = await request(app).get('/api/stats').expect(200);
+    assert(topo.body.uniqueNodes === stats.body.totalNodes,
+      `uniqueNodes (${topo.body.uniqueNodes}) should match stats totalNodes (${stats.body.totalNodes})`);
+  });
+
   await t('GET /api/analytics/topology with region', async () => {
     await request(app).get('/api/analytics/topology?region=SFO').expect(200);
   });

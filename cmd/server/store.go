@@ -1340,12 +1340,27 @@ func (s *PacketStore) GetAnalyticsChannels(region string) map[string]interface{}
 	}
 
 	type decodedGrp struct {
-		Type         string `json:"type"`
-		Channel      string `json:"channel"`
-		ChannelHash  string `json:"channelHash"`
-		ChannelHash2 string `json:"channel_hash"`
-		Text         string `json:"text"`
-		Sender       string `json:"sender"`
+		Type         string      `json:"type"`
+		Channel      string      `json:"channel"`
+		ChannelHash  interface{} `json:"channelHash"`
+		ChannelHash2 string      `json:"channel_hash"`
+		Text         string      `json:"text"`
+		Sender       string      `json:"sender"`
+	}
+
+	// Convert channelHash (number or string in JSON) to string
+	chHashStr := func(v interface{}) string {
+		if v == nil {
+			return ""
+		}
+		switch val := v.(type) {
+		case string:
+			return val
+		case float64:
+			return strconv.FormatFloat(val, 'f', -1, 64)
+		default:
+			return fmt.Sprintf("%v", val)
+		}
 	}
 
 	type chanInfo struct {
@@ -1382,7 +1397,7 @@ func (s *PacketStore) GetAnalyticsChannels(region string) map[string]interface{}
 			continue
 		}
 
-		hash := decoded.ChannelHash
+		hash := chHashStr(decoded.ChannelHash)
 		if hash == "" {
 			hash = decoded.ChannelHash2
 		}
@@ -1391,14 +1406,11 @@ func (s *PacketStore) GetAnalyticsChannels(region string) map[string]interface{}
 		}
 		name := decoded.Channel
 		if name == "" {
-			if decoded.Type == "CHAN" {
-				name = "ch" + hash
-			} else {
-				name = "ch" + hash
-			}
+			name = "ch" + hash
 		}
 		encrypted := decoded.Text == "" && decoded.Sender == ""
-		chKey := name
+		// Use hash as key for grouping (matches Node.js String(hash))
+		chKey := hash
 		if decoded.Type == "CHAN" && decoded.Channel != "" {
 			chKey = hash + "_" + decoded.Channel
 		}
@@ -2427,14 +2439,13 @@ func (s *PacketStore) GetAnalyticsTopology(region string) map[string]interface{}
 		bestPathList = bestPathList[:50]
 	}
 
-	// Count only hops that resolve to real nodes (not unresolved 1-byte prefixes)
-	resolvedSet := map[string]bool{}
-	for hop := range hopFreq {
-		if r := resolveHop(hop); r != nil {
-			resolvedSet[r.PublicKey] = true
+	// Use DB 7-day active node count (matches /api/stats totalNodes)
+	uniqueNodes := 0
+	if s.db != nil {
+		if stats, err := s.db.GetStats(); err == nil {
+			uniqueNodes = stats.TotalNodes
 		}
 	}
-	uniqueNodes := len(resolvedSet)
 
 	return map[string]interface{}{
 		"uniqueNodes":      uniqueNodes,

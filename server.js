@@ -1605,7 +1605,7 @@ app.get('/api/analytics/topology', (req, res) => {
     .slice(0, 50);
 
   const _topoResult = {
-    uniqueNodes: new Set(Object.keys(hopFreq)).size,
+    uniqueNodes: db.getStats().totalNodes,
     avgHops, medianHops, maxHops,
     hopDistribution, topRepeaters, topPairs, hopsVsSnr,
     observers: observers.map(o => ({ id: o.observer_id, name: o.observer_name || o.observer_id })),
