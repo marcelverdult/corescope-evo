@@ -264,6 +264,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, map[string]interface{}{
 		"status":      "ok",
+		"engine":      "go",
 		"uptime":      int(uptime),
 		"uptimeHuman": fmt.Sprintf("%dh %dm", int(uptime)/3600, (int(uptime)%3600)/60),
 		"memory": map[string]interface{}{
@@ -314,6 +315,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		"totalNodesAllTime":  stats.TotalNodesAllTime,
 		"totalObservers":     stats.TotalObservers,
 		"packetsLastHour":    stats.PacketsLastHour,
+		"engine":             "go",
 		"counts":             counts,
 	}
 	writeJSON(w, result)

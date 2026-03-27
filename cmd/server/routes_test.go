@@ -35,6 +35,9 @@ func TestHealthEndpoint(t *testing.T) {
 	if body["status"] != "ok" {
 		t.Errorf("expected status ok, got %v", body["status"])
 	}
+	if body["engine"] != "go" {
+		t.Errorf("expected engine go, got %v", body["engine"])
+	}
 }
 
 func TestStatsEndpoint(t *testing.T) {
@@ -53,6 +56,9 @@ func TestStatsEndpoint(t *testing.T) {
 	}
 	if body["totalNodes"] != float64(3) {
 		t.Errorf("expected 3 nodes, got %v", body["totalNodes"])
+	}
+	if body["engine"] != "go" {
+		t.Errorf("expected engine go, got %v", body["engine"])
 	}
 }
 

@@ -471,6 +471,7 @@ app.get('/api/health', (req, res) => {
 
   res.json({
     status: 'ok',
+    engine: 'node',
     uptime: Math.round(uptime),
     uptimeHuman: `${Math.floor(uptime / 3600)}h ${Math.floor((uptime % 3600) / 60)}m`,
     memory: {
@@ -885,7 +886,7 @@ app.get('/api/stats', (req, res) => {
     const r = db.db.prepare(`SELECT COUNT(*) as count FROM nodes WHERE role = ? AND last_seen > ?`).get(role, sevenDaysAgo);
     counts[role + 's'] = r.count;
   }
-  res.json({ ...stats, counts });
+  res.json({ ...stats, engine: 'node', counts });
 });
 
 app.get('/api/packets', (req, res) => {

@@ -171,12 +171,14 @@ seedTestData();
   await t('GET /api/health', async () => {
     const r = await request(app).get('/api/health').expect(200);
     assert(r.body.status, 'should have status');
+    assert(r.body.engine === 'node', 'health should include engine=node');
   });
 
   // --- Stats ---
   await t('GET /api/stats', async () => {
     const r = await request(app).get('/api/stats').expect(200);
     assert(typeof r.body === 'object', 'should return stats');
+    assert(r.body.engine === 'node', 'stats should include engine=node');
   });
 
   // --- Perf ---
