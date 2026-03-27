@@ -12,6 +12,19 @@ DATA_VOLUME="meshcore-data"
 CADDY_VOLUME="caddy-data"
 STATE_FILE=".setup-state"
 
+# Source .env for port/path overrides (if present)
+[ -f .env ] && set -a && . ./.env && set +a
+
+# Docker Compose mode detection
+COMPOSE_MODE=false
+if [ -f docker-compose.yml ]; then
+  COMPOSE_MODE=true
+fi
+
+# Resolved paths for prod/staging data
+PROD_DATA="${PROD_DATA_DIR:-$HOME/meshcore-data}"
+STAGING_DATA="${STAGING_DATA_DIR:-$HOME/meshcore-staging-data}"
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -463,124 +476,316 @@ cmd_setup() {
   mark_done "verify"
 }
 
+# ─── Staging Helpers ──────────────────────────────────────────────────────
+
+# Copy production DB to staging data directory
+prepare_staging_db() {
+  mkdir -p "$STAGING_DATA"
+  if [ -f "$PROD_DATA/meshcore.db" ]; then
+    info "Copying production database to staging..."
+    cp "$PROD_DATA/meshcore.db" "$STAGING_DATA/meshcore.db" 2>/dev/null || true
+    log "Database snapshot copied to ${STAGING_DATA}/meshcore.db"
+  else
+    warn "No production database found at ${PROD_DATA}/meshcore.db — staging starts empty."
+  fi
+}
+
+# Copy config.prod.json → config.staging.json with siteName change
+prepare_staging_config() {
+  local prod_config="$PROD_DATA/config.json"
+  local staging_config="$STAGING_DATA/config.json"
+  if [ ! -f "$prod_config" ]; then
+    warn "No config.json found at ${prod_config} — staging may not start correctly."
+    return
+  fi
+  if [ ! -f "$staging_config" ] || [ "$prod_config" -nt "$staging_config" ]; then
+    info "Copying production config to staging..."
+    cp "$prod_config" "$staging_config"
+    sed -i 's/"siteName":\s*"[^"]*"/"siteName": "MeshCore Analyzer — STAGING"/' "$staging_config"
+    log "Staging config created at ${staging_config} with STAGING site name."
+  else
+    log "Staging config is up to date."
+  fi
+  # Copy Caddyfile for staging (HTTP-only on staging port)
+  local staging_caddy="$STAGING_DATA/Caddyfile"
+  if [ ! -f "$staging_caddy" ]; then
+    info "Creating staging Caddyfile (HTTP-only on port ${STAGING_HTTP_PORT:-81})..."
+    echo ":${STAGING_HTTP_PORT:-81} {" > "$staging_caddy"
+    echo "    reverse_proxy localhost:3000" >> "$staging_caddy"
+    echo "}" >> "$staging_caddy"
+    log "Staging Caddyfile created at ${staging_caddy}"
+  fi
+}
+
+# Check if a container is running by name
+container_running() {
+  docker ps --format '{{.Names}}' | grep -q "^${1}$"
+}
+
+# Get health status of a container
+container_health() {
+  docker inspect "$1" --format '{{.State.Health.Status}}' 2>/dev/null || echo "unknown"
+}
+
 # ─── Start / Stop / Restart ──────────────────────────────────────────────
 
 cmd_start() {
-  if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-    warn "Already running."
-  elif docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-    # Check if port mappings still match before starting
-    if ! check_port_match; then
-      warn "Container port mappings don't match Caddyfile configuration."
-      warn "Current ports: $(get_current_ports)"
-      warn "Required ports: $(get_required_ports)"
-      if confirm "Recreate container with correct ports?"; then
-        recreate_container
-        log "Container recreated and started with correct ports."
-        return
-      fi
+  local WITH_STAGING=false
+  if [ "$1" = "--with-staging" ]; then
+    WITH_STAGING=true
+  fi
+
+  if $COMPOSE_MODE; then
+    if $WITH_STAGING; then
+      # Prepare staging data and config
+      prepare_staging_db
+      prepare_staging_config
+
+      info "Starting production container (meshcore-prod) on ports ${PROD_HTTP_PORT:-80}/${PROD_HTTPS_PORT:-443}..."
+      info "Starting staging container (meshcore-staging) on port ${STAGING_HTTP_PORT:-81}..."
+      docker compose --profile staging up -d
+      log "Production started on ports ${PROD_HTTP_PORT:-80}/${PROD_HTTPS_PORT:-443}/${PROD_MQTT_PORT:-1883}"
+      log "Staging started on port ${STAGING_HTTP_PORT:-81} (MQTT: ${STAGING_MQTT_PORT:-1884})"
+    else
+      info "Starting production container (meshcore-prod) on ports ${PROD_HTTP_PORT:-80}/${PROD_HTTPS_PORT:-443}..."
+      docker compose up -d prod
+      log "Production started. Staging NOT running (use --with-staging to start both)."
     fi
-    docker start "$CONTAINER_NAME"
-    log "Started."
   else
-    err "Container doesn't exist. Run './manage.sh setup' first."
-    exit 1
+    # Legacy single-container mode
+    if $WITH_STAGING; then
+      err "--with-staging requires docker-compose.yml. Run setup or add docker-compose.yml first."
+      exit 1
+    fi
+    warn "No docker-compose.yml found — using legacy single-container mode."
+    if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+      warn "Already running."
+    elif docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+      if ! check_port_match; then
+        warn "Container port mappings don't match Caddyfile configuration."
+        warn "Current ports: $(get_current_ports)"
+        warn "Required ports: $(get_required_ports)"
+        if confirm "Recreate container with correct ports?"; then
+          recreate_container
+          log "Container recreated and started with correct ports."
+          return
+        fi
+      fi
+      docker start "$CONTAINER_NAME"
+      log "Started."
+    else
+      err "Container doesn't exist. Run './manage.sh setup' first."
+      exit 1
+    fi
   fi
 }
 
 cmd_stop() {
-  docker stop "$CONTAINER_NAME" 2>/dev/null && log "Stopped." || warn "Not running."
+  local TARGET="${1:-all}"
+
+  if $COMPOSE_MODE; then
+    case "$TARGET" in
+      prod)
+        info "Stopping production container (meshcore-prod)..."
+        docker compose stop prod
+        log "Production stopped."
+        ;;
+      staging)
+        info "Stopping staging container (meshcore-staging)..."
+        docker compose stop staging
+        log "Staging stopped."
+        ;;
+      all)
+        info "Stopping all containers..."
+        docker compose --profile staging down
+        log "All containers stopped."
+        ;;
+      *)
+        err "Usage: ./manage.sh stop [prod|staging|all]"
+        exit 1
+        ;;
+    esac
+  else
+    # Legacy mode
+    docker stop "$CONTAINER_NAME" 2>/dev/null && log "Stopped." || warn "Not running."
+  fi
 }
 
 cmd_restart() {
-  if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-    # Check if ports need updating — if so, recreate instead of just restarting
-    if ! check_port_match; then
-      warn "Port mappings have changed. Recreating container..."
-      recreate_container
-      log "Container recreated with correct ports."
-    else
-      docker restart "$CONTAINER_NAME"
-      log "Restarted."
-    fi
-  elif docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-    # Stopped container — check ports and recreate if needed
-    if ! check_port_match; then
-      warn "Port mappings have changed. Recreating container..."
-      recreate_container
-      log "Container recreated with correct ports."
-    else
-      docker start "$CONTAINER_NAME"
-      log "Started."
-    fi
+  if $COMPOSE_MODE; then
+    local TARGET="${1:-prod}"
+    case "$TARGET" in
+      prod)
+        info "Restarting production container (meshcore-prod)..."
+        docker compose up -d --force-recreate prod
+        log "Production restarted."
+        ;;
+      staging)
+        info "Restarting staging container (meshcore-staging)..."
+        docker compose --profile staging up -d --force-recreate staging
+        log "Staging restarted."
+        ;;
+      all)
+        info "Restarting all containers..."
+        docker compose --profile staging up -d --force-recreate
+        log "All containers restarted."
+        ;;
+      *)
+        err "Usage: ./manage.sh restart [prod|staging|all]"
+        exit 1
+        ;;
+    esac
   else
-    err "Not running. Use './manage.sh setup'."
-    exit 1
+    # Legacy mode
+    if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+      if ! check_port_match; then
+        warn "Port mappings have changed. Recreating container..."
+        recreate_container
+        log "Container recreated with correct ports."
+      else
+        docker restart "$CONTAINER_NAME"
+        log "Restarted."
+      fi
+    elif docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+      if ! check_port_match; then
+        warn "Port mappings have changed. Recreating container..."
+        recreate_container
+        log "Container recreated with correct ports."
+      else
+        docker start "$CONTAINER_NAME"
+        log "Started."
+      fi
+    else
+      err "Not running. Use './manage.sh setup'."
+      exit 1
+    fi
   fi
 }
 
 # ─── Status ───────────────────────────────────────────────────────────────
 
-cmd_status() {
-  echo ""
-  if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-    log "Container is running."
-    echo ""
-    docker ps --filter "name=${CONTAINER_NAME}" --format "   Status: {{.Status}}"
-    docker ps --filter "name=${CONTAINER_NAME}" --format "   Ports:  {{.Ports}}"
-    echo ""
+# Show status for a single container (used in compose mode)
+show_container_status() {
+  local NAME="$1"
+  local LABEL="$2"
 
-    info "Service health:"
-    # Node.js
-    if docker exec "$CONTAINER_NAME" wget -qO /dev/null http://localhost:3000/api/stats 2>/dev/null; then
-      STATS=$(docker exec "$CONTAINER_NAME" wget -qO- http://localhost:3000/api/stats 2>/dev/null)
-      PACKETS=$(echo "$STATS" | grep -oP '"totalPackets":\K[0-9]+' 2>/dev/null || echo "?")
-      NODES=$(echo "$STATS" | grep -oP '"totalNodes":\K[0-9]+' 2>/dev/null || echo "?")
-      log "  Node.js — ${PACKETS} packets, ${NODES} nodes"
-    else
-      err "  Node.js — not responding"
-    fi
+  if container_running "$NAME"; then
+    local health
+    health=$(container_health "$NAME")
+    log "${LABEL} (${NAME}): Running — Health: ${health}"
+    docker ps --filter "name=${NAME}" --format "   Ports:  {{.Ports}}"
 
-    # Mosquitto
-    if docker exec "$CONTAINER_NAME" pgrep mosquitto &>/dev/null; then
-      log "  Mosquitto — running"
-    else
-      err "  Mosquitto — not running"
-    fi
-
-    # Caddy
-    if docker exec "$CONTAINER_NAME" pgrep caddy &>/dev/null; then
-      log "  Caddy — running"
-    else
-      err "  Caddy — not running"
-    fi
-
-    # Check for MQTT errors in recent logs
-    MQTT_ERRORS=$(docker logs "$CONTAINER_NAME" --tail 50 2>&1 | grep -i 'mqtt.*error\|mqtt.*fail\|ECONNREFUSED.*1883' || true)
-    if [ -n "$MQTT_ERRORS" ]; then
-      echo ""
-      warn "MQTT errors in recent logs:"
-      echo "$MQTT_ERRORS" | head -3 | sed 's/^/   /'
-    fi
-
-    # Port mapping check
-    if ! check_port_match; then
-      echo ""
-      warn "Port mappings don't match Caddyfile. Run './manage.sh restart' to fix."
-    fi
-
-    # Disk usage
-    DB_SIZE=$(docker exec "$CONTAINER_NAME" du -h /app/data/meshcore.db 2>/dev/null | cut -f1)
-    if [ -n "$DB_SIZE" ]; then
-      echo ""
-      info "Database size: ${DB_SIZE}"
+    # Node.js stats
+    if docker exec "$NAME" wget -qO /dev/null http://localhost:3000/api/stats 2>/dev/null; then
+      local stats packets nodes
+      stats=$(docker exec "$NAME" wget -qO- http://localhost:3000/api/stats 2>/dev/null)
+      packets=$(echo "$stats" | grep -oP '"totalPackets":\K[0-9]+' 2>/dev/null || echo "?")
+      nodes=$(echo "$stats" | grep -oP '"totalNodes":\K[0-9]+' 2>/dev/null || echo "?")
+      info "  ${packets} packets, ${nodes} nodes"
     fi
   else
-    err "Container is not running."
-    if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-      echo "   Start with: ./manage.sh start"
+    if docker ps -a --format '{{.Names}}' | grep -q "^${NAME}$"; then
+      warn "${LABEL} (${NAME}): Stopped"
     else
-      echo "   Set up with: ./manage.sh setup"
+      info "${LABEL} (${NAME}): Not running"
+    fi
+  fi
+}
+
+cmd_status() {
+  echo ""
+
+  if $COMPOSE_MODE; then
+    echo "═══════════════════════════════════════"
+    echo "  MeshCore Analyzer Status (Compose)"
+    echo "═══════════════════════════════════════"
+    echo ""
+
+    # Production
+    show_container_status "meshcore-prod" "Production"
+    echo ""
+
+    # Staging
+    if container_running "meshcore-staging"; then
+      show_container_status "meshcore-staging" "Staging"
+    else
+      info "Staging (meshcore-staging): Not running (use --with-staging to start both)"
+    fi
+    echo ""
+
+    # Disk usage
+    if [ -d "$PROD_DATA" ] && [ -f "$PROD_DATA/meshcore.db" ]; then
+      local db_size
+      db_size=$(du -h "$PROD_DATA/meshcore.db" 2>/dev/null | cut -f1)
+      info "Production DB: ${db_size}"
+    fi
+    if [ -d "$STAGING_DATA" ] && [ -f "$STAGING_DATA/meshcore.db" ]; then
+      local staging_db_size
+      staging_db_size=$(du -h "$STAGING_DATA/meshcore.db" 2>/dev/null | cut -f1)
+      info "Staging DB: ${staging_db_size}"
+    fi
+
+  else
+    # Legacy single-container status
+    if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+      log "Container is running."
+      echo ""
+      docker ps --filter "name=${CONTAINER_NAME}" --format "   Status: {{.Status}}"
+      docker ps --filter "name=${CONTAINER_NAME}" --format "   Ports:  {{.Ports}}"
+      echo ""
+
+      info "Service health:"
+      # Node.js
+      if docker exec "$CONTAINER_NAME" wget -qO /dev/null http://localhost:3000/api/stats 2>/dev/null; then
+        STATS=$(docker exec "$CONTAINER_NAME" wget -qO- http://localhost:3000/api/stats 2>/dev/null)
+        PACKETS=$(echo "$STATS" | grep -oP '"totalPackets":\K[0-9]+' 2>/dev/null || echo "?")
+        NODES=$(echo "$STATS" | grep -oP '"totalNodes":\K[0-9]+' 2>/dev/null || echo "?")
+        log "  Node.js — ${PACKETS} packets, ${NODES} nodes"
+      else
+        err "  Node.js — not responding"
+      fi
+
+      # Mosquitto
+      if docker exec "$CONTAINER_NAME" pgrep mosquitto &>/dev/null; then
+        log "  Mosquitto — running"
+      else
+        err "  Mosquitto — not running"
+      fi
+
+      # Caddy
+      if docker exec "$CONTAINER_NAME" pgrep caddy &>/dev/null; then
+        log "  Caddy — running"
+      else
+        err "  Caddy — not running"
+      fi
+
+      # Check for MQTT errors in recent logs
+      MQTT_ERRORS=$(docker logs "$CONTAINER_NAME" --tail 50 2>&1 | grep -i 'mqtt.*error\|mqtt.*fail\|ECONNREFUSED.*1883' || true)
+      if [ -n "$MQTT_ERRORS" ]; then
+        echo ""
+        warn "MQTT errors in recent logs:"
+        echo "$MQTT_ERRORS" | head -3 | sed 's/^/   /'
+      fi
+
+      # Port mapping check
+      if ! check_port_match; then
+        echo ""
+        warn "Port mappings don't match Caddyfile. Run './manage.sh restart' to fix."
+      fi
+
+      # Disk usage
+      DB_SIZE=$(docker exec "$CONTAINER_NAME" du -h /app/data/meshcore.db 2>/dev/null | cut -f1)
+      if [ -n "$DB_SIZE" ]; then
+        echo ""
+        info "Database size: ${DB_SIZE}"
+      fi
+    else
+      err "Container is not running."
+      if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+        echo "   Start with: ./manage.sh start"
+      else
+        echo "   Set up with: ./manage.sh setup"
+      fi
     fi
   fi
   echo ""
@@ -589,7 +794,108 @@ cmd_status() {
 # ─── Logs ─────────────────────────────────────────────────────────────────
 
 cmd_logs() {
-  docker logs -f "$CONTAINER_NAME" --tail "${1:-100}"
+  if $COMPOSE_MODE; then
+    local TARGET="${1:-prod}"
+    local LINES="${2:-100}"
+    case "$TARGET" in
+      prod)
+        info "Tailing production logs..."
+        docker compose logs -f --tail="$LINES" prod
+        ;;
+      staging)
+        if container_running "meshcore-staging"; then
+          info "Tailing staging logs..."
+          docker compose logs -f --tail="$LINES" staging
+        else
+          err "Staging container is not running."
+          info "Start with: ./manage.sh start --with-staging"
+          exit 1
+        fi
+        ;;
+      *)
+        err "Usage: ./manage.sh logs [prod|staging] [lines]"
+        exit 1
+        ;;
+    esac
+  else
+    # Legacy mode
+    docker logs -f "$CONTAINER_NAME" --tail "${1:-100}"
+  fi
+}
+
+# ─── Promote ──────────────────────────────────────────────────────────────
+
+cmd_promote() {
+  if ! $COMPOSE_MODE; then
+    err "Promotion requires Docker Compose setup (docker-compose.yml)."
+    exit 1
+  fi
+
+  echo ""
+  info "Promotion Flow: Staging → Production"
+  echo ""
+  echo "This will:"
+  echo "  1. Backup current production database"
+  echo "  2. Restart production with latest image (same as staging)"
+  echo "  3. Wait for health check"
+  echo ""
+
+  # Show what's currently running
+  local staging_image staging_created prod_image prod_created
+  staging_image=$(docker inspect meshcore-staging --format '{{.Config.Image}}' 2>/dev/null || echo "not running")
+  staging_created=$(docker inspect meshcore-staging --format '{{.Created}}' 2>/dev/null || echo "N/A")
+  prod_image=$(docker inspect meshcore-prod --format '{{.Config.Image}}' 2>/dev/null || echo "not running")
+  prod_created=$(docker inspect meshcore-prod --format '{{.Created}}' 2>/dev/null || echo "N/A")
+
+  echo "  Staging: ${staging_image} (created ${staging_created})"
+  echo "  Prod:    ${prod_image} (created ${prod_created})"
+  echo ""
+
+  if ! confirm "Proceed with promotion?"; then
+    echo "   Aborted."
+    exit 0
+  fi
+
+  # Backup production DB
+  info "Backing up production database..."
+  local BACKUP_DIR="./backups/pre-promotion-$(date +%Y%m%d-%H%M%S)"
+  mkdir -p "$BACKUP_DIR"
+  if [ -f "$PROD_DATA/meshcore.db" ]; then
+    cp "$PROD_DATA/meshcore.db" "$BACKUP_DIR/"
+  elif container_running "meshcore-prod"; then
+    docker cp meshcore-prod:/app/data/meshcore.db "$BACKUP_DIR/"
+  else
+    warn "Could not backup production database."
+  fi
+  log "Backup saved to ${BACKUP_DIR}/"
+
+  # Restart prod with latest image
+  info "Restarting production with latest image..."
+  docker compose up -d --force-recreate prod
+
+  # Wait for health
+  info "Waiting for production health check..."
+  local i health
+  for i in $(seq 1 30); do
+    health=$(container_health "meshcore-prod")
+    if [ "$health" = "healthy" ]; then
+      log "Production healthy after ${i}s"
+      break
+    fi
+    if [ "$i" -eq 30 ]; then
+      err "Production failed health check after 30s"
+      warn "Check logs: ./manage.sh logs prod"
+      warn "Rollback: cp ${BACKUP_DIR}/meshcore.db ${PROD_DATA}/ && ./manage.sh restart prod"
+      exit 1
+    fi
+    sleep 1
+  done
+
+  log "Promotion complete ✓"
+  echo ""
+  echo "  Production is now running the same image as staging."
+  echo "  Backup: ${BACKUP_DIR}/"
+  echo ""
 }
 
 # ─── Update ───────────────────────────────────────────────────────────────
@@ -803,21 +1109,29 @@ cmd_help() {
   echo "Usage: ./manage.sh <command>"
   echo ""
   printf '%b\n' "  ${BOLD}Setup${NC}"
-  echo "    setup        First-time setup wizard (safe to re-run)"
-  echo "    reset        Remove container + image (keeps data + config)"
+  echo "    setup              First-time setup wizard (safe to re-run)"
+  echo "    reset              Remove container + image (keeps data + config)"
   echo ""
   printf '%b\n' "  ${BOLD}Run${NC}"
-  echo "    start        Start the container"
-  echo "    stop         Stop the container"
-  echo "    restart      Restart the container"
-  echo "    status       Show health, stats, and service status"
-  echo "    logs [N]     Follow logs (last N lines, default 100)"
+  echo "    start              Start production container"
+  echo "    start --with-staging  Start production + staging (copies prod DB + config)"
+  echo "    stop [prod|staging|all]  Stop specific or all containers (default: all)"
+  echo "    restart [prod|staging|all]  Restart specific or all containers"
+  echo "    status             Show health, stats, and service status"
+  echo "    logs [prod|staging] [N]  Follow logs (default: prod, last 100 lines)"
   echo ""
   printf '%b\n' "  ${BOLD}Maintain${NC}"
-  echo "    update       Pull latest code, rebuild, restart (keeps data)"
-  echo "    backup [dir] Full backup: database + config + theme (default: ./backups/timestamped/)"
-  echo "    restore <d>  Restore from backup dir or .db file (backs up current first)"
-  echo "    mqtt-test    Check if MQTT data is flowing"
+  echo "    update             Pull latest code, rebuild, restart (keeps data)"
+  echo "    promote            Promote staging → production (backup + restart)"
+  echo "    backup [dir]       Full backup: database + config + theme"
+  echo "    restore <d>        Restore from backup dir or .db file"
+  echo "    mqtt-test          Check if MQTT data is flowing"
+  echo ""
+  if $COMPOSE_MODE; then
+    info "Docker Compose mode detected (docker-compose.yml present)."
+  else
+    warn "Legacy mode (no docker-compose.yml). Some commands unavailable."
+  fi
   echo ""
 }
 
@@ -825,12 +1139,13 @@ cmd_help() {
 
 case "${1:-help}" in
   setup)     cmd_setup ;;
-  start)     cmd_start ;;
-  stop)      cmd_stop ;;
-  restart)   cmd_restart ;;
+  start)     cmd_start "$2" ;;
+  stop)      cmd_stop "$2" ;;
+  restart)   cmd_restart "$2" ;;
   status)    cmd_status ;;
-  logs)      cmd_logs "$2" ;;
+  logs)      cmd_logs "$2" "$3" ;;
   update)    cmd_update ;;
+  promote)   cmd_promote ;;
   backup)    cmd_backup "$2" ;;
   restore)   cmd_restore "$2" ;;
   mqtt-test) cmd_mqtt_test ;;

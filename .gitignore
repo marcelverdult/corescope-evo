@@ -4,8 +4,6 @@ data/
 *.db
 *.db-journal
 config.json
-config.prod.json
-config.staging.json
 .env
 data-lincomatic/
 config-lincomatic.json

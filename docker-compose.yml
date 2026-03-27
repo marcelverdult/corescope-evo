@@ -10,8 +10,8 @@ services:
       - "${PROD_HTTPS_PORT:-443}:${PROD_HTTPS_PORT:-443}"
       - "${PROD_MQTT_PORT:-1883}:1883"
     volumes:
-      - ./config.prod.json:/app/config.json:ro
-      - ./docker/Caddyfile.prod:/etc/caddy/Caddyfile:ro
+      - ${PROD_DATA_DIR:-~/meshcore-data}/config.json:/app/config.json:ro
+      - ${PROD_DATA_DIR:-~/meshcore-data}/Caddyfile:/etc/caddy/Caddyfile:ro
       - ${PROD_DATA_DIR:-~/meshcore-data}:/app/data
       - caddy-data-prod:/data/caddy
     environment:
@@ -30,8 +30,8 @@ services:
       - "${STAGING_HTTP_PORT:-81}:${STAGING_HTTP_PORT:-81}"
       - "${STAGING_MQTT_PORT:-1884}:1883"
     volumes:
-      - ./config.staging.json:/app/config.json:ro
-      - ./docker/Caddyfile.staging:/etc/caddy/Caddyfile:ro
+      - ${STAGING_DATA_DIR:-~/meshcore-staging-data}/config.json:/app/config.json:ro
+      - ${STAGING_DATA_DIR:-~/meshcore-staging-data}/Caddyfile:/etc/caddy/Caddyfile:ro
       - ${STAGING_DATA_DIR:-~/meshcore-staging-data}:/app/data
       - caddy-data-staging:/data/caddy
     environment:
