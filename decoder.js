@@ -135,7 +135,10 @@ function decodeAdvert(buf) {
       off += 8;
     }
     if (result.flags.hasName) {
-      result.name = appdata.subarray(off).toString('utf8');
+      let name = appdata.subarray(off).toString('utf8');
+      // Strip non-printable characters (< 0x20 except tab/newline) and DEL
+      name = name.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '');
+      result.name = name;
     }
   }
 

@@ -189,6 +189,7 @@ type Stats struct {
 	TotalNodesAllTime  int `json:"totalNodesAllTime"`
 	TotalObservers     int `json:"totalObservers"`
 	PacketsLastHour    int `json:"packetsLastHour"`
+	PacketsLast24h     int `json:"packetsLast24h"`
 }
 
 // GetStats returns aggregate counts (matches Node.js db.getStats shape).
@@ -209,6 +210,9 @@ func (db *DB) GetStats() (*Stats, error) {
 
 	oneHourAgo := time.Now().Add(-1 * time.Hour).Unix()
 	db.conn.QueryRow("SELECT COUNT(*) FROM observations WHERE timestamp > ?", oneHourAgo).Scan(&s.PacketsLastHour)
+
+	oneDayAgo := time.Now().Add(-24 * time.Hour).Unix()
+	db.conn.QueryRow("SELECT COUNT(*) FROM observations WHERE timestamp > ?", oneDayAgo).Scan(&s.PacketsLast24h)
 
 	return s, nil
 }

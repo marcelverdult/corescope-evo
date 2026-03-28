@@ -1506,6 +1506,9 @@
       "packetsLastHour": {
         "type": "number"
       },
+      "packetsLast24h": {
+        "type": "number"
+      },
       "counts": {
         "type": "object",
         "keys": {

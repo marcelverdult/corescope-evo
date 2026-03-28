@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -27,6 +28,11 @@ type Server struct {
 	version   string
 	commit    string
 	buildTime string
+
+	// Cached runtime.MemStats to avoid stop-the-world pauses on every health check
+	memStatsMu   sync.Mutex
+	memStatsCache runtime.MemStats
+	memStatsCachedAt time.Time
 }
 
 // PerfStats tracks request performance.
@@ -64,6 +70,20 @@ func NewServer(db *DB, cfg *Config, hub *Hub) *Server {
 		commit:    resolveCommit(),
 		buildTime: resolveBuildTime(),
 	}
+}
+
+const memStatsTTL = 5 * time.Second
+
+// getMemStats returns cached runtime.MemStats, refreshing at most every 5 seconds.
+// runtime.ReadMemStats() stops the world; caching prevents per-request GC pauses.
+func (s *Server) getMemStats() runtime.MemStats {
+	s.memStatsMu.Lock()
+	defer s.memStatsMu.Unlock()
+	if time.Since(s.memStatsCachedAt) > memStatsTTL {
+		runtime.ReadMemStats(&s.memStatsCache)
+		s.memStatsCachedAt = time.Now()
+	}
+	return s.memStatsCache
 }
 
 // RegisterRoutes sets up all HTTP routes on the given router.
@@ -274,8 +294,7 @@ func (s *Server) handleConfigMap(w http.ResponseWriter, r *http.Request) {
 // --- System Handlers ---
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
+	m := s.getMemStats()
 	uptime := time.Since(s.startedAt).Seconds()
 
 	wsClients := 0
@@ -381,6 +400,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		TotalNodesAllTime:  stats.TotalNodesAllTime,
 		TotalObservers:     stats.TotalObservers,
 		PacketsLastHour:    stats.PacketsLastHour,
+		PacketsLast24h:     stats.PacketsLast24h,
 		Engine:             "go",
 		Version:            s.version,
 		Commit:             s.commit,

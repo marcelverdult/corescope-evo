@@ -440,6 +440,9 @@ func (s *PacketStore) GetStoreStats() (*Stats, error) {
 	oneHourAgo := time.Now().Add(-1 * time.Hour).Unix()
 	s.db.conn.QueryRow("SELECT COUNT(*) FROM observations WHERE timestamp > ?", oneHourAgo).Scan(&st.PacketsLastHour)
 
+	oneDayAgo := time.Now().Add(-24 * time.Hour).Unix()
+	s.db.conn.QueryRow("SELECT COUNT(*) FROM observations WHERE timestamp > ?", oneDayAgo).Scan(&st.PacketsLast24h)
+
 	return st, nil
 }
 

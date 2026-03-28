@@ -595,6 +595,7 @@ function getStats() {
     totalNodesAllTime: stmts.countNodes.get().count,
     totalObservers: stmts.countObservers.get().count,
     packetsLastHour: stmts.countRecentPackets.get(oneHourAgo).count,
+    packetsLast24h: stmts.countRecentPackets.get(new Date(Date.now() - 24 * 3600000).toISOString()).count,
   };
 }
 

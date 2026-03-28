@@ -229,6 +229,7 @@ func decodeAdvert(buf []byte) Payload {
 		if p.Flags.HasName {
 			name := string(appdata[off:])
 			name = strings.TrimRight(name, "\x00")
+			name = sanitizeName(name)
 			p.Name = name
 		}
 	}
@@ -455,6 +456,18 @@ func ValidateAdvert(p *Payload) (bool, string) {
 	}
 
 	return true, ""
+}
+
+// sanitizeName strips non-printable characters (< 0x20 except tab/newline) and DEL.
+func sanitizeName(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, c := range s {
+		if c == '\t' || c == '\n' || (c >= 0x20 && c != 0x7f) {
+			b.WriteRune(c)
+		}
+	}
+	return b.String()
 }
 
 func advertRole(f *AdvertFlags) string {
