@@ -62,19 +62,22 @@ function decodeHeader(byte) {
 function decodePath(pathByte, buf, offset) {
   const hashSize = (pathByte >> 6) + 1;   // 1-4 bytes per hash
   const hashCount = pathByte & 0x3F;       // 0-63 hops
-  const totalBytes = hashSize * hashCount;
+  const available = buf.length - offset;
+  // Cap to what the buffer actually holds — corrupt packets may claim more hops than exist
+  const safeCount = Math.min(hashCount, Math.floor(available / hashSize));
+  const totalBytes = safeCount * hashSize;
   const hops = [];
 
-  for (let i = 0; i < hashCount; i++) {
-    const hopBuf = buf.subarray(offset + i * hashSize, offset + i * hashSize + hashSize);
-    hops.push(hopBuf.toString('hex').toUpperCase());
+  for (let i = 0; i < safeCount; i++) {
+    hops.push(buf.subarray(offset + i * hashSize, offset + i * hashSize + hashSize).toString('hex').toUpperCase());
   }
 
   return {
     hashSize,
-    hashCount,
+    hashCount: safeCount,
     hops,
     bytesConsumed: totalBytes,
+    truncated: safeCount < hashCount,
   };
 }
 
@@ -272,6 +275,7 @@ function decodePacket(hexString, channelKeys) {
       hashSize: path.hashSize,
       hashCount: path.hashCount,
       hops: path.hops,
+      truncated: path.truncated,
     },
     payload,
     raw: hex.toUpperCase(),

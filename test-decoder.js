@@ -460,6 +460,39 @@ test('Transport route too short throws', () => {
   assert.throws(() => decodePacket('0000'), /too short for transport/);
 });
 
+test('Corrupt packet #183 — path overflow capped to buffer', () => {
+  const hex = 'BBAD6797EC8751D500BF95A1A776EF580E665BCBF6A0BBE03B5E730707C53489B8C728FD3FB902397197E1263CEC21E52465362243685DBBAD6797EC8751C90A75D9FD8213155D';
+  const p = decodePacket(hex);
+  assert.strictEqual(p.header.routeType, 3, 'routeType should be TRANSPORT_DIRECT');
+  assert.strictEqual(p.header.payloadTypeName, 'UNKNOWN');
+  // pathByte 0xAD claims 45 hops × 3 bytes = 135, but only 65 bytes available
+  assert.strictEqual(p.path.hashSize, 3);
+  assert.strictEqual(p.path.hashCount, 21, 'hashCount capped to fit buffer');
+  assert.strictEqual(p.path.hops.length, 21);
+  assert.strictEqual(p.path.truncated, true);
+  // No empty strings in hops
+  assert(p.path.hops.every(h => h.length > 0), 'no empty hops');
+});
+
+test('path.truncated is false for normal packets', () => {
+  const hex = '1100' + '00'.repeat(101);
+  const p = decodePacket(hex);
+  assert.strictEqual(p.path.truncated, false);
+});
+
+test('path overflow with hashSize=2', () => {
+  // FLOOD + REQ, pathByte=0x45 → hashSize=2, hashCount=5, needs 10 bytes of path
+  // Only provide 7 bytes after pathByte → fits 3 full 2-byte hops
+  const hex = '0145' + 'AABBCCDDEEFF77';
+  const p = decodePacket(hex);
+  assert.strictEqual(p.path.hashCount, 3);
+  assert.strictEqual(p.path.truncated, true);
+  assert.strictEqual(p.path.hops.length, 3);
+  assert.strictEqual(p.path.hops[0], 'AABB');
+  assert.strictEqual(p.path.hops[1], 'CCDD');
+  assert.strictEqual(p.path.hops[2], 'EEFF');
+});
+
 // === Real packets from API ===
 console.log('\n=== Real packets ===');
 test('Real GRP_TXT packet', () => {
