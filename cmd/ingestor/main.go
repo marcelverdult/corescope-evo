@@ -8,6 +8,9 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -19,6 +22,18 @@ import (
 )
 
 func main() {
+	// pprof profiling — off by default, enable with ENABLE_PPROF=true
+	if os.Getenv("ENABLE_PPROF") == "true" {
+		pprofPort := os.Getenv("PPROF_PORT")
+		if pprofPort == "" {
+			pprofPort = "6061"
+		}
+		go func() {
+			log.Printf("[pprof] ingestor profiling at http://localhost:%s/debug/pprof/", pprofPort)
+			log.Fatal(http.ListenAndServe(":"+pprofPort, nil))
+		}()
+	}
+
 	configPath := flag.String("config", "config.json", "path to config file")
 	flag.Parse()
 
@@ -193,7 +208,8 @@ func handleMessage(store *Store, tag string, source MQTTSource, m mqtt.Message, 
 		observerID := parts[2]
 		name, _ := msg["origin"].(string)
 		iata := parts[1]
-		if err := store.UpsertObserver(observerID, name, iata); err != nil {
+		meta := extractObserverMeta(msg)
+		if err := store.UpsertObserver(observerID, name, iata, meta); err != nil {
 			log.Printf("MQTT [%s] observer status error: %v", tag, err)
 		}
 		log.Printf("MQTT [%s] status: %s (%s)", tag, firstNonEmpty(name, observerID), iata)
@@ -260,7 +276,7 @@ func handleMessage(store *Store, tag string, source MQTTSource, m mqtt.Message, 
 		// Upsert observer
 		if observerID != "" {
 			origin, _ := msg["origin"].(string)
-			if err := store.UpsertObserver(observerID, origin, region); err != nil {
+			if err := store.UpsertObserver(observerID, origin, region, nil); err != nil {
 				log.Printf("MQTT [%s] observer upsert error: %v", tag, err)
 			}
 		}
@@ -444,6 +460,39 @@ func toFloat64(v interface{}) (float64, bool) {
 	default:
 		return 0, false
 	}
+}
+
+// extractObserverMeta extracts hardware metadata from an MQTT status message.
+// Casts battery_mv and uptime_secs to integers (they're always whole numbers).
+func extractObserverMeta(msg map[string]interface{}) *ObserverMeta {
+	meta := &ObserverMeta{}
+	hasData := false
+
+	if v, ok := msg["battery_mv"]; ok {
+		if f, ok := toFloat64(v); ok {
+			iv := int(math.Round(f))
+			meta.BatteryMv = &iv
+			hasData = true
+		}
+	}
+	if v, ok := msg["uptime_secs"]; ok {
+		if f, ok := toFloat64(v); ok {
+			iv := int64(math.Round(f))
+			meta.UptimeSecs = &iv
+			hasData = true
+		}
+	}
+	if v, ok := msg["noise_floor"]; ok {
+		if f, ok := toFloat64(v); ok {
+			meta.NoiseFloor = &f
+			hasData = true
+		}
+	}
+
+	if !hasData {
+		return nil
+	}
+	return meta
 }
 
 func firstNonEmpty(vals ...string) string {
