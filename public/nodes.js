@@ -152,7 +152,8 @@
 
   function renderHashInconsistencyWarning(n) {
     if (!n.hash_size_inconsistent) return '';
-    return `<div style="font-size:11px;color:var(--text-muted);margin:-2px 0 6px;padding:6px 10px;background:var(--surface-2);border-radius:4px;border-left:3px solid var(--status-yellow)">Adverts show varying hash sizes (<strong>${(n.hash_sizes_seen||[]).join('-byte, ')}-byte</strong>). This is a <a href="https://github.com/meshcore-dev/MeshCore/commit/fcfdc5f" target="_blank" style="color:var(--accent)">known bug</a> where automatic adverts ignore the configured multibyte path setting. Fixed in <a href="https://github.com/meshcore-dev/MeshCore/releases/tag/repeater-v1.14.1" target="_blank" style="color:var(--accent)">repeater v1.14.1</a>.</div>`;
+    const sizes = Array.isArray(n.hash_sizes_seen) ? n.hash_sizes_seen : [];
+    return `<div style="font-size:11px;color:var(--text-muted);margin:-2px 0 6px;padding:6px 10px;background:var(--surface-2);border-radius:4px;border-left:3px solid var(--status-yellow)">Adverts show varying hash sizes (<strong>${sizes.join('-byte, ')}-byte</strong>). This is a <a href="https://github.com/meshcore-dev/MeshCore/commit/fcfdc5f" target="_blank" style="color:var(--accent)">known bug</a> where automatic adverts ignore the configured multibyte path setting. Fixed in <a href="https://github.com/meshcore-dev/MeshCore/releases/tag/repeater-v1.14.1" target="_blank" style="color:var(--accent)">repeater v1.14.1</a>.</div>`;
   }
 
   let directNode = null; // set when navigating directly to #/nodes/:pubkey
@@ -244,9 +245,15 @@
       const statusLabel = si.statusLabel;
       const statusExplanation = si.explanation;
 
+      const dupMap = buildDupNameMap(_allNodes);
+      const dupBadge = dupNameBadge(n.name, n.public_key, dupMap);
+      const dupKeys = n.name && dupMap[n.name.toLowerCase()] ? dupMap[n.name.toLowerCase()].filter(function(k) { return k !== n.public_key; }) : [];
+      const dupSection = dupKeys.length ? '<div class="dup-also-known" style="font-size:11px;color:var(--text-muted);margin-top:4px">Also known as: ' + dupKeys.map(function(k) { return '<a href="#/nodes/' + encodeURIComponent(k) + '" class="mono" style="font-size:11px">' + escapeHtml(k.slice(0, 12)) + '…</a>'; }).join(', ') + '</div>' : '';
+
       body.innerHTML = `
         <div class="node-full-card" style="padding:12px 16px;margin-bottom:8px">
-          <div class="node-detail-name" style="font-size:20px">${escapeHtml(n.name || '(unnamed)')}</div>
+          <div class="node-detail-name" style="font-size:20px">${escapeHtml(n.name || '(unnamed)')}${dupBadge}</div>
+          ${dupSection}
           <div style="margin:4px 0 6px">${renderNodeBadges(n, roleColor)}</div>
           ${renderHashInconsistencyWarning(n)}
           <div class="node-detail-key mono" style="font-size:11px;word-break:break-all;margin-bottom:6px">${n.public_key}</div>
@@ -270,10 +277,10 @@
           <tr><td>First Seen</td><td>${n.first_seen ? new Date(n.first_seen).toLocaleString() : '—'}</td></tr>
           <tr><td>Total Packets</td><td>${stats.totalTransmissions || stats.totalPackets || n.advert_count || 0}${stats.totalObservations && stats.totalObservations !== (stats.totalTransmissions || stats.totalPackets) ? ' <span class="text-muted" style="font-size:0.85em">(seen ' + stats.totalObservations + '×)</span>' : ''}</td></tr>
           <tr><td>Packets Today</td><td>${stats.packetsToday || 0}</td></tr>
-          ${stats.avgSnr != null ? `<tr><td>Avg SNR</td><td>${stats.avgSnr.toFixed(1)} dB</td></tr>` : ''}
+          ${stats.avgSnr != null ? `<tr><td>Avg SNR</td><td>${Number(stats.avgSnr).toFixed(1)} dB</td></tr>` : ''}
           ${stats.avgHops ? `<tr><td>Avg Hops</td><td>${stats.avgHops}</td></tr>` : ''}
-          ${hasLoc ? `<tr><td>Location</td><td>${n.lat.toFixed(5)}, ${n.lon.toFixed(5)}</td></tr>` : ''}
-          <tr><td>Hash Prefix</td><td>${n.hash_size ? '<code style="font-family:var(--mono);font-weight:700">' + n.public_key.slice(0, n.hash_size * 2).toUpperCase() + '</code> (' + n.hash_size + '-byte)' : 'Unknown'}${n.hash_size_inconsistent ? ' <span style="color:var(--status-yellow);cursor:help" title="Seen: ' + (n.hash_sizes_seen || []).join(', ') + '-byte">⚠️ varies</span>' : ''}</td></tr>
+          ${hasLoc ? `<tr><td>Location</td><td>${Number(n.lat).toFixed(5)}, ${Number(n.lon).toFixed(5)}</td></tr>` : ''}
+          <tr><td>Hash Prefix</td><td>${n.hash_size ? '<code style="font-family:var(--mono);font-weight:700">' + n.public_key.slice(0, n.hash_size * 2).toUpperCase() + '</code> (' + n.hash_size + '-byte)' : 'Unknown'}${n.hash_size_inconsistent ? ' <span style="color:var(--status-yellow);cursor:help" title="Seen: ' + (Array.isArray(n.hash_sizes_seen) ? n.hash_sizes_seen : []).join(', ') + '-byte">⚠️ varies</span>' : ''}</td></tr>
         </table>
 
         ${observers.length ? `<div class="node-full-card" id="node-observers">
@@ -286,8 +293,8 @@
                 <td style="font-weight:600">${escapeHtml(o.observer_name || o.observer_id)}</td>
                 <td>${o.iata ? escapeHtml(o.iata) : '—'}</td>
                 <td>${o.packetCount}</td>
-                <td>${o.avgSnr != null ? o.avgSnr.toFixed(1) + ' dB' : '—'}</td>
-                <td>${o.avgRssi != null ? o.avgRssi.toFixed(0) + ' dBm' : '—'}</td>
+                <td>${o.avgSnr != null ? Number(o.avgSnr).toFixed(1) + ' dB' : '—'}</td>
+                <td>${o.avgRssi != null ? Number(o.avgRssi).toFixed(0) + ' dBm' : '—'}</td>
               </tr>`).join('')}
             </tbody>
           </table>
@@ -432,6 +439,27 @@
   }
 
   let _allNodes = null; // cached full node list
+
+  // Build a map of lowercased name → count of distinct pubkeys sharing that name
+  function buildDupNameMap(allNodes) {
+    var map = {};
+    (allNodes || []).forEach(function(n) {
+      if (!n.name) return;
+      var key = n.name.toLowerCase();
+      if (!map[key]) map[key] = [];
+      if (map[key].indexOf(n.public_key) === -1) map[key].push(n.public_key);
+    });
+    return map;
+  }
+
+  function dupNameBadge(name, pubkey, dupMap) {
+    if (!name || !dupMap) return '';
+    var keys = dupMap[name.toLowerCase()];
+    if (!keys || keys.length <= 1) return '';
+    var others = keys.filter(function(k) { return k !== pubkey; });
+    var title = keys.length + ' nodes share this name (' + others.map(function(k) { return k.slice(0, 8) + '…'; }).join(', ') + ')';
+    return ' <span class="dup-name-badge" title="' + escapeHtml(title) + '">(' + keys.length + ')</span>';
+  }
 
   async function loadNodes(refreshOnly) {
     try {
@@ -637,6 +665,7 @@
       return aFav - bFav;
     });
 
+    const dupMap = buildDupNameMap(_allNodes);
     tbody.innerHTML = sorted.map(n => {
       const roleColor = ROLE_COLORS[n.role] || '#6b7280';
       const isClaimed = myKeys.has(n.public_key);
@@ -644,7 +673,7 @@
       const status = getNodeStatus(n.role || 'companion', lastSeenTime ? new Date(lastSeenTime).getTime() : 0);
       const lastSeenClass = status === 'active' ? 'last-seen-active' : 'last-seen-stale';
       return `<tr data-key="${n.public_key}" data-action="select" data-value="${n.public_key}" tabindex="0" role="row" class="${selectedKey === n.public_key ? 'selected' : ''}${isClaimed ? ' claimed-row' : ''}">
-        <td>${favStar(n.public_key, 'node-fav')}${isClaimed ? '<span class="claimed-badge" title="My Mesh">★</span> ' : ''}<strong>${n.name || '(unnamed)'}</strong></td>
+        <td>${favStar(n.public_key, 'node-fav')}${isClaimed ? '<span class="claimed-badge" title="My Mesh">★</span> ' : ''}<strong>${n.name || '(unnamed)'}</strong>${dupNameBadge(n.name, n.public_key, dupMap)}</td>
         <td class="mono">${truncate(n.public_key, 16)}</td>
         <td><span class="badge" style="background:${roleColor}20;color:${roleColor}">${n.role}</span></td>
         <td class="${lastSeenClass}">${timeAgo(n.last_heard || n.last_seen)}</td>
@@ -696,9 +725,12 @@
     const roleColor = si.roleColor;
     const totalPackets = stats.totalTransmissions || stats.totalPackets || n.advert_count || 0;
 
+    const dupMap = buildDupNameMap(_allNodes);
+    const dupBadge = dupNameBadge(n.name, n.public_key, dupMap);
+
     panel.innerHTML = `
       <div class="node-detail">
-        <div class="node-detail-name">${escapeHtml(n.name || '(unnamed)')}</div>
+        <div class="node-detail-name">${escapeHtml(n.name || '(unnamed)')}${dupBadge}</div>
         <div class="node-detail-role">${renderNodeBadges(n, roleColor)}
           <a href="#/nodes/${encodeURIComponent(n.public_key)}" class="btn-primary" style="display:inline-block;text-decoration:none;font-size:11px;padding:2px 8px;margin-left:8px">🔍 Details</a>
           <a href="#/nodes/${encodeURIComponent(n.public_key)}/analytics" class="btn-primary" style="display:inline-block;margin-left:4px;text-decoration:none;font-size:11px;padding:2px 8px">📊 Analytics</a>
@@ -721,9 +753,9 @@
             <dt>First Seen</dt><dd>${n.first_seen ? new Date(n.first_seen).toLocaleString() : '—'}</dd>
             <dt>Total Packets</dt><dd>${totalPackets}</dd>
             <dt>Packets Today</dt><dd>${stats.packetsToday || 0}</dd>
-            ${stats.avgSnr != null ? `<dt>Avg SNR</dt><dd>${stats.avgSnr.toFixed(1)} dB</dd>` : ''}
+            ${stats.avgSnr != null ? `<dt>Avg SNR</dt><dd>${Number(stats.avgSnr).toFixed(1)} dB</dd>` : ''}
             ${stats.avgHops ? `<dt>Avg Hops</dt><dd>${stats.avgHops}</dd>` : ''}
-            ${hasLoc ? `<dt>Location</dt><dd>${n.lat.toFixed(5)}, ${n.lon.toFixed(5)}</dd>` : ''}
+            ${hasLoc ? `<dt>Location</dt><dd>${Number(n.lat).toFixed(5)}, ${Number(n.lon).toFixed(5)}</dd>` : ''}
           </dl>
         </div>
 
@@ -733,7 +765,7 @@
           <div class="observer-list">
             ${observers.map(o => `<div class="observer-row" style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid var(--border);font-size:12px">
               <span style="font-weight:600">${escapeHtml(o.observer_name || o.observer_id)}${o.iata ? ' <span class="badge" style="font-size:10px">' + escapeHtml(o.iata) + '</span>' : ''}</span>
-              <span style="color:var(--text-muted)">${o.packetCount} pkts · ${o.avgSnr != null ? 'SNR ' + o.avgSnr.toFixed(1) + 'dB' : ''}${o.avgRssi != null ? ' · RSSI ' + o.avgRssi.toFixed(0) : ''}</span>
+              <span style="color:var(--text-muted)">${o.packetCount} pkts · ${o.avgSnr != null ? 'SNR ' + Number(o.avgSnr).toFixed(1) + 'dB' : ''}${o.avgRssi != null ? ' · RSSI ' + Number(o.avgRssi).toFixed(0) : ''}</span>
             </div>`).join('')}
           </div>
         </div>` : ''}

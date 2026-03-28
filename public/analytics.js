@@ -956,7 +956,7 @@
           <tbody>${inconsistent.map((n, i) => {
             const roleColor = window.ROLE_COLORS?.[n.role] || '#6b7280';
             const prefix = n.hash_size ? n.public_key.slice(0, n.hash_size * 2).toUpperCase() : '?';
-            const sizeBadges = (n.hash_sizes_seen || []).map(s => {
+            const sizeBadges = (Array.isArray(n.hash_sizes_seen) ? n.hash_sizes_seen : []).map(s => {
               const c = s >= 3 ? '#16a34a' : s === 2 ? '#86efac' : '#f97316';
               const fg = s === 2 ? '#064e3b' : '#fff';
               return '<span class="badge" style="background:' + c + ';color:' + fg + ';font-size:10px;font-family:var(--mono)">' + s + 'B</span>';

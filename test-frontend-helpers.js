@@ -206,6 +206,15 @@ console.log('\n=== nodes.js: getStatusTooltip / getStatusInfo (extracted) ===');
   ).replace(
     /function sortNodes/,
     'window.__nodesExport.sortNodes = sortNodes; function sortNodes'
+  ).replace(
+    /function buildDupNameMap/,
+    'window.__nodesExport.buildDupNameMap = buildDupNameMap; function buildDupNameMap'
+  ).replace(
+    /function renderHashInconsistencyWarning/,
+    'window.__nodesExport.renderHashInconsistencyWarning = renderHashInconsistencyWarning; function renderHashInconsistencyWarning'
+  ).replace(
+    /function dupNameBadge/,
+    'window.__nodesExport.dupNameBadge = dupNameBadge; function dupNameBadge'
   );
 
   // Provide required globals
@@ -289,6 +298,128 @@ console.log('\n=== nodes.js: getStatusTooltip / getStatusInfo (extracted) ===');
       ];
       const result = sortNodes(arr);
       assert.ok(Array.isArray(result));
+    });
+  }
+
+  if (ex.buildDupNameMap) {
+    const buildDupNameMap = ex.buildDupNameMap;
+    test('buildDupNameMap returns empty for no nodes', () => {
+      const m = buildDupNameMap([]);
+      assert.strictEqual(Object.keys(m).length, 0);
+    });
+    test('buildDupNameMap groups nodes by lowercase name', () => {
+      const m = buildDupNameMap([
+        { name: 'Alpha', public_key: 'key1' },
+        { name: 'alpha', public_key: 'key2' },
+        { name: 'Beta', public_key: 'key3' },
+      ]);
+      assert.strictEqual(m['alpha'].length, 2);
+      assert.ok(m['alpha'].includes('key1'));
+      assert.ok(m['alpha'].includes('key2'));
+      assert.strictEqual(m['beta'].length, 1);
+    });
+    test('buildDupNameMap ignores unnamed nodes', () => {
+      const m = buildDupNameMap([
+        { name: '', public_key: 'key1' },
+        { name: null, public_key: 'key2' },
+        { name: 'Alpha', public_key: 'key3' },
+      ]);
+      assert.strictEqual(Object.keys(m).length, 1);
+    });
+    test('buildDupNameMap deduplicates same pubkey', () => {
+      const m = buildDupNameMap([
+        { name: 'Alpha', public_key: 'key1' },
+        { name: 'Alpha', public_key: 'key1' },
+      ]);
+      assert.strictEqual(m['alpha'].length, 1);
+    });
+  }
+
+  if (ex.dupNameBadge) {
+    const dupNameBadge = ex.dupNameBadge;
+    test('dupNameBadge returns empty for unique name', () => {
+      const m = { 'alpha': ['key1'] };
+      assert.strictEqual(dupNameBadge('Alpha', 'key1', m), '');
+    });
+    test('dupNameBadge returns badge for duplicate names', () => {
+      const m = { 'alpha': ['key1', 'key2'] };
+      const html = dupNameBadge('Alpha', 'key1', m);
+      assert.ok(html.includes('(2)'));
+      assert.ok(html.includes('dup-name-badge'));
+    });
+    test('dupNameBadge returns empty for null name', () => {
+      assert.strictEqual(dupNameBadge(null, 'key1', {}), '');
+    });
+    test('dupNameBadge returns empty for null map', () => {
+      assert.strictEqual(dupNameBadge('Alpha', 'key1', null), '');
+    });
+    test('dupNameBadge shows count of 3 for three duplicates', () => {
+      const m = { 'alpha': ['key1', 'key2', 'key3'] };
+      const html = dupNameBadge('Alpha', 'key1', m);
+      assert.ok(html.includes('(3)'));
+    });
+  }
+
+  // --- renderHashInconsistencyWarning tests (fixes #190) ---
+  if (ex.renderHashInconsistencyWarning) {
+    const warn = ex.renderHashInconsistencyWarning;
+    test('renderHashInconsistencyWarning returns empty for consistent node', () => {
+      assert.strictEqual(warn({ hash_size_inconsistent: false }), '');
+    });
+    test('renderHashInconsistencyWarning returns empty for undefined flag', () => {
+      assert.strictEqual(warn({}), '');
+    });
+    test('renderHashInconsistencyWarning renders with valid array', () => {
+      const html = warn({ hash_size_inconsistent: true, hash_sizes_seen: [1, 2] });
+      assert.ok(html.includes('1-byte, 2-byte'));
+      assert.ok(html.includes('varying hash sizes'));
+    });
+    test('renderHashInconsistencyWarning handles missing hash_sizes_seen', () => {
+      const html = warn({ hash_size_inconsistent: true });
+      assert.ok(html.includes('varying hash sizes'));
+      // Should not crash — renders with empty sizes
+      assert.ok(html.includes('-byte'));
+    });
+    test('renderHashInconsistencyWarning handles non-array hash_sizes_seen', () => {
+      const html = warn({ hash_size_inconsistent: true, hash_sizes_seen: '[1, 2]' });
+      assert.ok(html.includes('varying hash sizes'));
+      // String should be treated as empty array (Array.isArray guard)
+      assert.ok(html.includes('-byte'));
+    });
+    test('renderHashInconsistencyWarning handles null hash_sizes_seen', () => {
+      const html = warn({ hash_size_inconsistent: true, hash_sizes_seen: null });
+      assert.ok(html.includes('varying hash sizes'));
+    });
+  }
+
+  // --- renderNodeBadges with hash_size_inconsistent (fixes #190) ---
+  if (ex.renderNodeBadges) {
+    test('renderNodeBadges handles hash_size_inconsistent node', () => {
+      const html = ex.renderNodeBadges({
+        role: 'room', public_key: '9dc3e069d1b336c4af33167d3838147ca6449e12c1e1bdaa92fdfc0ecfdd98bc',
+        hash_size: 2, hash_size_inconsistent: true, hash_sizes_seen: [1, 2],
+        last_heard: new Date().toISOString()
+      }, '#16a34a');
+      assert.ok(html.includes('room'));
+      assert.ok(html.includes('9DC3'));
+      assert.ok(html.includes('variable hash size'));
+    });
+    test('renderNodeBadges handles null hash_size', () => {
+      const html = ex.renderNodeBadges({
+        role: 'room', public_key: 'abcdef1234567890',
+        hash_size: null, hash_size_inconsistent: false,
+        last_heard: new Date().toISOString()
+      }, '#16a34a');
+      assert.ok(html.includes('room'));
+      assert.ok(!html.includes('variable hash size'));
+    });
+    test('renderNodeBadges handles string hash_sizes_seen gracefully', () => {
+      const html = ex.renderNodeBadges({
+        role: 'repeater', public_key: 'abcdef1234567890',
+        hash_size: 2, hash_size_inconsistent: true, hash_sizes_seen: '[1, 2]',
+        last_heard: new Date().toISOString()
+      }, '#dc2626');
+      assert.ok(html.includes('variable hash size'));
     });
   }
 }
