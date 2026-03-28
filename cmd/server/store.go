@@ -883,7 +883,9 @@ func (s *PacketStore) IngestNewFromDB(sinceID, limit int) ([]map[string]interfac
 			s.indexByNode(tx)
 			if tx.PayloadType != nil {
 				pt := *tx.PayloadType
-				s.byPayloadType[pt] = append(s.byPayloadType[pt], tx)
+				// Prepend to maintain newest-first order (matches Load ordering)
+				// so GetChannelMessages reverse iteration stays correct
+				s.byPayloadType[pt] = append([]*StoreTx{tx}, s.byPayloadType[pt]...)
 			}
 
 			if _, exists := broadcastTxs[r.txID]; !exists {

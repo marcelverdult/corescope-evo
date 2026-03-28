@@ -3632,3 +3632,50 @@ func TestGetDBSizeStatsMemory(t *testing.T) {
 	}
 }
 
+// Regression test for #198: channel messages must include newly ingested packets.
+// byPayloadType must maintain newest-first ordering after IngestNewFromDB so that
+// GetChannelMessages reverse iteration returns the latest messages.
+func TestGetChannelMessagesAfterIngest(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	seedTestData(t, db)
+	store := NewPacketStore(db)
+	store.Load()
+
+	initialMax := store.MaxTransmissionID()
+
+	// Get baseline message count
+	_, totalBefore := store.GetChannelMessages("#test", 100, 0)
+
+	// Insert a new channel message into the DB (newer than anything loaded)
+	now := time.Now().UTC()
+	nowStr := now.Format(time.RFC3339)
+	db.conn.Exec(`INSERT INTO transmissions (raw_hex, hash, first_seen, route_type, payload_type, decoded_json)
+		VALUES ('FF01', 'newchannelmsg19800', ?, 1, 5, '{"type":"CHAN","channel":"#test","text":"NewUser: brand new message","sender":"NewUser"}')`, nowStr)
+	newTxID := 0
+	db.conn.QueryRow("SELECT MAX(id) FROM transmissions").Scan(&newTxID)
+	db.conn.Exec(`INSERT INTO observations (transmission_id, observer_idx, snr, rssi, path_json, timestamp)
+		VALUES (?, 1, 12.0, -88, '[]', ?)`, newTxID, now.Unix())
+
+	// Ingest the new data
+	_, newMax := store.IngestNewFromDB(initialMax, 100)
+	if newMax <= initialMax {
+		t.Fatalf("ingest did not advance maxID: %d -> %d", initialMax, newMax)
+	}
+
+	// GetChannelMessages must now include the new message
+	msgs, totalAfter := store.GetChannelMessages("#test", 100, 0)
+	if totalAfter <= totalBefore {
+		t.Errorf("expected more messages after ingest: before=%d after=%d", totalBefore, totalAfter)
+	}
+
+	// The newest message (last in the returned slice) must be the one we just inserted
+	if len(msgs) == 0 {
+		t.Fatal("expected at least one message")
+	}
+	lastMsg := msgs[len(msgs)-1]
+	if lastMsg["text"] != "brand new message" {
+		t.Errorf("newest message should be 'brand new message', got %q", lastMsg["text"])
+	}
+}
+
