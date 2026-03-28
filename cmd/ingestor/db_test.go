@@ -1,10 +1,12 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func tempDBPath(t *testing.T) string {
@@ -625,4 +627,166 @@ func TestSchemaCompatibility(t *testing.T) {
 			t.Errorf("observations missing column %s, got %v", e, obsCols)
 		}
 	}
+}
+
+func TestConcurrentWrites(t *testing.T) {
+	s, err := OpenStore(tempDBPath(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	// Pre-create an observer for observer_idx resolution
+	if err := s.UpsertObserver("obs1", "Observer1", "SJC"); err != nil {
+		t.Fatal(err)
+	}
+
+	const goroutines = 20
+	const writesPerGoroutine = 50
+
+	errCh := make(chan error, goroutines*writesPerGoroutine)
+	done := make(chan struct{})
+
+	for g := 0; g < goroutines; g++ {
+		go func(gIdx int) {
+			defer func() { done <- struct{}{} }()
+			for i := 0; i < writesPerGoroutine; i++ {
+				hash := fmt.Sprintf("concurrent_%d_%d_____", gIdx, i) // pad to 16+ chars
+				snr := 5.0
+				rssi := -100.0
+				data := &PacketData{
+					RawHex:      "0A00D69F",
+					Timestamp:   time.Now().UTC().Format(time.RFC3339),
+					ObserverID:  "obs1",
+					Hash:        hash[:16],
+					RouteType:   2,
+					PayloadType: 4, // ADVERT
+					PathJSON:    "[]",
+					DecodedJSON: `{"type":"ADVERT"}`,
+					SNR:         &snr,
+					RSSI:        &rssi,
+				}
+				if _, err := s.InsertTransmission(data); err != nil {
+					errCh <- fmt.Errorf("goroutine %d write %d: %w", gIdx, i, err)
+					return
+				}
+				// Also do node + observer upserts to simulate full pipeline
+				lat := 37.0
+				lon := -122.0
+				pubKey := fmt.Sprintf("node_%d_%d________", gIdx, i)
+				if err := s.UpsertNode(pubKey[:16], "Node", "repeater", &lat, &lon, data.Timestamp); err != nil {
+					errCh <- fmt.Errorf("goroutine %d node upsert %d: %w", gIdx, i, err)
+					return
+				}
+				obsID := fmt.Sprintf("obs_%d_%d__________", gIdx, i)
+				if err := s.UpsertObserver(obsID[:16], "Obs", "SJC"); err != nil {
+					errCh <- fmt.Errorf("goroutine %d observer upsert %d: %w", gIdx, i, err)
+					return
+				}
+			}
+		}(g)
+	}
+
+	// Wait for all goroutines
+	for g := 0; g < goroutines; g++ {
+		<-done
+	}
+	close(errCh)
+
+	var errors []error
+	for err := range errCh {
+		errors = append(errors, err)
+	}
+
+	if len(errors) > 0 {
+		t.Errorf("got %d errors from %d concurrent writers (first: %v)", len(errors), goroutines, errors[0])
+	}
+
+	// Verify data integrity
+	var txCount, obsCount, nodeCount, observerCount int
+	s.db.QueryRow("SELECT COUNT(*) FROM transmissions").Scan(&txCount)
+	s.db.QueryRow("SELECT COUNT(*) FROM observations").Scan(&obsCount)
+	s.db.QueryRow("SELECT COUNT(*) FROM nodes").Scan(&nodeCount)
+	s.db.QueryRow("SELECT COUNT(*) FROM observers").Scan(&observerCount)
+
+	expectedTx := goroutines * writesPerGoroutine
+	if txCount != expectedTx {
+		t.Errorf("transmissions count=%d, want %d", txCount, expectedTx)
+	}
+	if obsCount != expectedTx {
+		t.Errorf("observations count=%d, want %d", obsCount, expectedTx)
+	}
+
+	t.Logf("Concurrent write test: %d goroutines × %d writes = %d total, 0 errors",
+		goroutines, writesPerGoroutine, goroutines*writesPerGoroutine)
+	t.Logf("Stats: tx_inserted=%d tx_dupes=%d obs_inserted=%d write_errors=%d",
+		s.Stats.TransmissionsInserted.Load(),
+		s.Stats.DuplicateTransmissions.Load(),
+		s.Stats.ObservationsInserted.Load(),
+		s.Stats.WriteErrors.Load(),
+	)
+}
+
+func TestDBStats(t *testing.T) {
+	s, err := OpenStore(tempDBPath(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	// Initial stats should be zero
+	if s.Stats.TransmissionsInserted.Load() != 0 {
+		t.Error("initial TransmissionsInserted should be 0")
+	}
+	if s.Stats.WriteErrors.Load() != 0 {
+		t.Error("initial WriteErrors should be 0")
+	}
+
+	// Insert a transmission
+	data := &PacketData{
+		RawHex:    "0A00D69F",
+		Timestamp: "2026-03-28T00:00:00Z",
+		Hash:      "stats_test_12345",
+		RouteType: 2,
+		PathJSON:  "[]",
+	}
+	if _, err := s.InsertTransmission(data); err != nil {
+		t.Fatal(err)
+	}
+
+	if s.Stats.TransmissionsInserted.Load() != 1 {
+		t.Errorf("TransmissionsInserted=%d, want 1", s.Stats.TransmissionsInserted.Load())
+	}
+	if s.Stats.ObservationsInserted.Load() != 1 {
+		t.Errorf("ObservationsInserted=%d, want 1", s.Stats.ObservationsInserted.Load())
+	}
+
+	// Insert duplicate
+	if _, err := s.InsertTransmission(data); err != nil {
+		t.Fatal(err)
+	}
+	if s.Stats.DuplicateTransmissions.Load() != 1 {
+		t.Errorf("DuplicateTransmissions=%d, want 1", s.Stats.DuplicateTransmissions.Load())
+	}
+
+	// Node upsert
+	lat := 37.0
+	lon := -122.0
+	if err := s.UpsertNode("pk1", "Node1", "repeater", &lat, &lon, "2026-03-28T00:00:00Z"); err != nil {
+		t.Fatal(err)
+	}
+	if s.Stats.NodeUpserts.Load() != 1 {
+		t.Errorf("NodeUpserts=%d, want 1", s.Stats.NodeUpserts.Load())
+	}
+
+	// Observer upsert
+	if err := s.UpsertObserver("obs1", "Obs1", "SJC"); err != nil {
+		t.Fatal(err)
+	}
+	if s.Stats.ObserverUpserts.Load() != 1 {
+		t.Errorf("ObserverUpserts=%d, want 1", s.Stats.ObserverUpserts.Load())
+	}
+
+	// LogStats should not panic
+	s.LogStats()
 }
