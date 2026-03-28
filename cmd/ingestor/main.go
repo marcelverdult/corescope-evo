@@ -332,7 +332,7 @@ func handleMessage(store *Store, tag string, source MQTTSource, m mqtt.Message, 
 			DecodedJSON:  string(decodedJSON),
 		}
 
-		if err := store.InsertTransmission(pktData); err != nil {
+		if _, err := store.InsertTransmission(pktData); err != nil {
 			log.Printf("MQTT [%s] channel insert error: %v", tag, err)
 		}
 
@@ -409,7 +409,7 @@ func handleMessage(store *Store, tag string, source MQTTSource, m mqtt.Message, 
 			DecodedJSON:  string(decodedJSON),
 		}
 
-		if err := store.InsertTransmission(pktData); err != nil {
+		if _, err := store.InsertTransmission(pktData); err != nil {
 			log.Printf("MQTT [%s] DM insert error: %v", tag, err)
 		}
 
