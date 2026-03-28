@@ -647,7 +647,7 @@ button.ch-item.selected { background: var(--selected-bg); }
 .advert-info { font-size: 12px; line-height: 1.5; }
 
 /* === Traces Page === */
-.traces-page { padding: 16px; max-width: 1000px; overflow-y: auto; height: 100%; }
+.traces-page { padding: 16px; max-width: var(--trace-max-width, 95vw); margin: 0 auto; overflow-y: auto; height: 100%; }
 .trace-search {
   display: flex; gap: 8px; margin-bottom: 20px;
 }

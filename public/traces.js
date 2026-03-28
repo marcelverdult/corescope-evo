@@ -183,7 +183,7 @@
     }
 
     const colCount = maxCol + 1;
-    const svgW = Math.max(600, colCount * 140);
+    const svgW = Math.max(600, colCount * 200);
     const maxRows = Math.max(...[...colGroups.values()].map(g => g.length));
     const svgH = Math.max(120, maxRows * 60 + 40);
     const colSpacing = svgW / (colCount + 1);
