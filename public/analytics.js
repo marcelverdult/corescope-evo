@@ -177,6 +177,15 @@
         tbl.id = tbl.id || `analytics-tbl-${tab}-${i}`;
         if (typeof makeColumnsResizable === 'function') makeColumnsResizable('#' + tbl.id, `meshcore-analytics-${tab}-${i}-col-widths`);
       });
+      // #206 — Wrap analytics tables in scroll containers on mobile
+      el.querySelectorAll('.analytics-table').forEach(tbl => {
+        if (!tbl.parentElement.classList.contains('analytics-table-scroll')) {
+          const wrapper = document.createElement('div');
+          wrapper.className = 'analytics-table-scroll';
+          tbl.parentElement.insertBefore(wrapper, tbl);
+          wrapper.appendChild(tbl);
+        }
+      });
     });
     // Deep-link scroll to section within tab
     const sectionId = new URLSearchParams((location.hash.split('?')[1] || '')).get('section');
@@ -395,7 +404,7 @@
 
   function renderSNRByType(snrByType) {
     if (!snrByType.length) return '<div class="text-muted">No data</div>';
-    let html = '<table class="analytics-table"><thead><tr><th>Type</th><th>Packets</th><th>Avg SNR</th><th>Min</th><th>Max</th><th>Distribution</th></tr></thead><tbody>';
+    let html = '<table class="analytics-table"><thead><tr><th scope="col">Type</th><th scope="col">Packets</th><th scope="col">Avg SNR</th><th scope="col">Min</th><th scope="col">Max</th><th scope="col">Distribution</th></tr></thead><tbody>';
     snrByType.forEach(t => {
       const barPct = Math.max(((t.avg - (-12)) / 27) * 100, 2);
       const color = t.avg > 6 ? statusGreen() : t.avg > 0 ? statusYellow() : statusRed();
@@ -535,7 +544,7 @@
 
   function renderPairTable(pairs) {
     if (!pairs.length) return '<div class="text-muted">Not enough multi-hop data</div>';
-    let html = '<table class="analytics-table"><thead><tr><th>Node A</th><th>Node B</th><th>Co-appearances</th></tr></thead><tbody>';
+    let html = '<table class="analytics-table"><thead><tr><th scope="col">Node A</th><th scope="col">Node B</th><th scope="col">Co-appearances</th></tr></thead><tbody>';
     pairs.slice(0, 12).forEach(p => {
       html += `<tr>
         <td>${p.nameA ? `<a href="#/nodes/${encodeURIComponent(p.pubkeyA)}" class="analytics-link">${esc(p.nameA)}</a>` : `<span class="mono">${p.hopA}</span>`}</td>
@@ -598,7 +607,7 @@
   function renderCrossObserver(nodes) {
     if (!nodes.length) return '<div class="text-muted">No nodes seen by multiple observers</div>';
     let html = `<table class="analytics-table">
-      <thead><tr><th>Node</th><th>Observers</th><th>Hop Distances</th></tr></thead><tbody>`;
+      <thead><tr><th scope="col">Node</th><th scope="col">Observers</th><th scope="col">Hop Distances</th></tr></thead><tbody>`;
     nodes.forEach(n => {
       const name = n.name
         ? `<a href="#/nodes/${encodeURIComponent(n.pubkey)}" class="analytics-link">${esc(n.name)}</a>`
@@ -719,7 +728,7 @@
     var ths = '';
     for (var i = 0; i < cols.length; i++) {
       var c = cols[i];
-      ths += '<th class="sortable' + (c.key === activeCol ? ' sort-active' : '') + '" data-sort-col="' + c.key + '">' +
+      ths += '<th scope="col" class="sortable' + (c.key === activeCol ? ' sort-active' : '') + '" data-sort-col="' + c.key + '">' +
         c.label + channelSortArrow(c.key, activeCol, dir) + '</th>';
     }
     return '<thead><tr>' + ths + '</tr></thead>';
@@ -880,7 +889,7 @@
           <p class="text-muted">Nodes advertising with 2+ byte hash paths</p>
         ${data.multiByteNodes.length ? `
           <table class="analytics-table">
-            <thead><tr><th>Node</th><th>Hash Size</th><th>Adverts</th><th>Last Seen</th></tr></thead>
+            <thead><tr><th scope="col">Node</th><th scope="col">Hash Size</th><th scope="col">Adverts</th><th scope="col">Last Seen</th></tr></thead>
             <tbody>
               ${data.multiByteNodes.map(n => `<tr class="clickable-row" data-action="navigate" data-value="#/nodes/${n.pubkey ? encodeURIComponent(n.pubkey) : ''}" tabindex="0" role="row">
                 <td><strong>${esc(n.name)}</strong></td>
@@ -896,7 +905,7 @@
         <div class="analytics-card flex-1">
           <h3>Top Path Hops</h3>
         <table class="analytics-table">
-          <thead><tr><th>Hop</th><th>Node</th><th>Bytes</th><th>Appearances</th></tr></thead>
+          <thead><tr><th scope="col">Hop</th><th scope="col">Node</th><th scope="col">Bytes</th><th scope="col">Appearances</th></tr></thead>
           <tbody>
             ${data.topHops.map(h => {
               const link = h.pubkey ? `#/nodes/${encodeURIComponent(h.pubkey)}` : `#/packets?search=${h.hex}`;
@@ -952,7 +961,7 @@
         ihEl.innerHTML = '<div class="text-muted" style="padding:4px">✅ No inconsistencies detected — all nodes are reporting consistent hash sizes.</div>';
       } else {
         ihEl.innerHTML = `<table class="analytics-table" style="background:var(--card-bg);border:1px solid var(--border);border-radius:8px;overflow:hidden">
-          <thead><tr><th>Node</th><th>Role</th><th>Current Hash</th><th>Sizes Seen</th></tr></thead>
+          <thead><tr><th scope="col">Node</th><th scope="col">Role</th><th scope="col">Current Hash</th><th scope="col">Sizes Seen</th></tr></thead>
           <tbody>${inconsistent.map((n, i) => {
             const roleColor = window.ROLE_COLORS?.[n.role] || '#6b7280';
             const prefix = n.hash_size ? n.public_key.slice(0, n.hash_size * 2).toUpperCase() : '?';
@@ -1123,7 +1132,7 @@
       collisions.sort((a, b) => classOrder[a.classification] - classOrder[b.classification] || b.count - a.count);
 
       el.innerHTML = `<table class="analytics-table">
-        <thead><tr><th>Hop</th><th>Appearances</th><th>Max Distance</th><th>Assessment</th><th>Colliding Nodes</th></tr></thead>
+        <thead><tr><th scope="col">Hop</th><th scope="col">Appearances</th><th scope="col">Max Distance</th><th scope="col">Assessment</th><th scope="col">Colliding Nodes</th></tr></thead>
         <tbody>${collisions.map(c => {
           let badge, tooltip;
           if (c.classification === 'local') {
@@ -1179,7 +1188,7 @@
         return `<h4>${title}</h4>
           <p class="text-muted" style="margin:4px 0 8px">From ${data.totalPaths.toLocaleString()} paths with 2+ hops</p>
           <table class="analytics-table"><thead><tr>
-            <th>#</th><th>Route</th><th>Occurrences</th><th>% of paths</th><th>Frequency</th>
+            <th scope="col">#</th><th scope="col">Route</th><th scope="col">Occurrences</th><th scope="col">% of paths</th><th scope="col">Frequency</th>
           </tr></thead><tbody>
           ${data.subpaths.map((s, i) => {
             const barW = Math.max(2, Math.round(s.count / maxCount * 100));
@@ -1434,7 +1443,7 @@
 
           ${myKeys.size ? `<h3>⭐ My Claimed Nodes</h3>
           <table class="analytics-table" style="margin-bottom:24px">
-            <thead><tr><th>Node</th><th>Role</th><th>Packets</th><th>Avg SNR</th><th>Observers</th><th>Last Heard</th></tr></thead>
+            <thead><tr><th scope="col">Node</th><th scope="col">Role</th><th scope="col">Packets</th><th scope="col">Avg SNR</th><th scope="col">Observers</th><th scope="col">Last Heard</th></tr></thead>
             <tbody>
               ${enriched.filter(n => myKeys.has(n.public_key)).map(n => {
                 const s = n.health.stats;
@@ -1452,7 +1461,7 @@
 
           <h3>🏆 Most Active Nodes</h3>
           <table class="analytics-table" style="margin-bottom:24px">
-            <thead><tr><th>#</th><th>Node</th><th>Role</th><th>Total Packets</th><th>Packets Today</th><th>Analytics</th></tr></thead>
+            <thead><tr><th scope="col">#</th><th scope="col">Node</th><th scope="col">Role</th><th scope="col">Total Packets</th><th scope="col">Packets Today</th><th scope="col">Analytics</th></tr></thead>
             <tbody>
               ${byPackets.slice(0, 15).map((n, i) => `<tr>
                 <td>${i + 1}</td>
@@ -1467,7 +1476,7 @@
 
           <h3>📶 Best Signal Quality</h3>
           <table class="analytics-table" style="margin-bottom:24px">
-            <thead><tr><th>#</th><th>Node</th><th>Role</th><th>Avg SNR</th><th>Observers</th><th>Analytics</th></tr></thead>
+            <thead><tr><th scope="col">#</th><th scope="col">Node</th><th scope="col">Role</th><th scope="col">Avg SNR</th><th scope="col">Observers</th><th scope="col">Analytics</th></tr></thead>
             <tbody>
               ${bySnr.slice(0, 15).map((n, i) => `<tr>
                 <td>${i + 1}</td>
@@ -1482,7 +1491,7 @@
 
           <h3>👀 Most Observed Nodes</h3>
           <table class="analytics-table" style="margin-bottom:24px">
-            <thead><tr><th>#</th><th>Node</th><th>Role</th><th>Observers</th><th>Avg SNR</th><th>Analytics</th></tr></thead>
+            <thead><tr><th scope="col">#</th><th scope="col">Node</th><th scope="col">Role</th><th scope="col">Observers</th><th scope="col">Avg SNR</th><th scope="col">Analytics</th></tr></thead>
             <tbody>
               ${byObservers.slice(0, 15).map((n, i) => `<tr>
                 <td>${i + 1}</td>
@@ -1497,7 +1506,7 @@
 
           <h3>⏰ Recently Active</h3>
           <table class="analytics-table" style="margin-bottom:24px">
-            <thead><tr><th>Node</th><th>Role</th><th>Last Heard</th><th>Packets Today</th><th>Analytics</th></tr></thead>
+            <thead><tr><th scope="col">Node</th><th scope="col">Role</th><th scope="col">Last Heard</th><th scope="col">Packets Today</th><th scope="col">Analytics</th></tr></thead>
             <tbody>
               ${byRecent.slice(0, 15).map(n => `<tr>
                 <td>${nodeLink(n)}${claimedBadge(n)}</td>
@@ -1529,7 +1538,7 @@
 
       // Category stats
       const cats = data.catStats;
-      html += `<div class="analytics-section"><h3>Distance by Link Type</h3><table class="data-table"><thead><tr><th>Type</th><th>Count</th><th>Avg (km)</th><th>Median (km)</th><th>Min (km)</th><th>Max (km)</th></tr></thead><tbody>`;
+      html += `<div class="analytics-section"><h3>Distance by Link Type</h3><table class="data-table"><thead><tr><th scope="col">Type</th><th scope="col">Count</th><th scope="col">Avg (km)</th><th scope="col">Median (km)</th><th scope="col">Min (km)</th><th scope="col">Max (km)</th></tr></thead><tbody>`;
       for (const [cat, st] of Object.entries(cats)) {
         if (!st.count) continue;
         html += `<tr><td><strong>${esc(cat)}</strong></td><td>${st.count.toLocaleString()}</td><td>${st.avg}</td><td>${st.median}</td><td>${st.min}</td><td>${st.max}</td></tr>`;
@@ -1549,7 +1558,7 @@
       }
 
       // Top hops leaderboard
-      html += `<div class="analytics-section"><h3>🏆 Top 20 Longest Hops</h3><table class="data-table"><thead><tr><th>#</th><th>From</th><th>To</th><th>Distance (km)</th><th>Type</th><th>SNR</th><th>Packet</th><th></th></tr></thead><tbody>`;
+      html += `<div class="analytics-section"><h3>🏆 Top 20 Longest Hops</h3><table class="data-table"><thead><tr><th scope="col">#</th><th scope="col">From</th><th scope="col">To</th><th scope="col">Distance (km)</th><th scope="col">Type</th><th scope="col">SNR</th><th scope="col">Packet</th><th scope="col"></th></tr></thead><tbody>`;
       const top20 = data.topHops.slice(0, 20);
       top20.forEach((h, i) => {
         const fromLink = h.fromPk ? `<a href="#/nodes/${encodeURIComponent(h.fromPk)}" class="analytics-link">${esc(h.fromName)}</a>` : esc(h.fromName || '?');
@@ -1563,7 +1572,7 @@
 
       // Top paths
       if (data.topPaths.length) {
-        html += `<div class="analytics-section"><h3>🛤️ Top 10 Longest Multi-Hop Paths</h3><table class="data-table"><thead><tr><th>#</th><th>Total Distance (km)</th><th>Hops</th><th>Route</th><th>Packet</th><th></th></tr></thead><tbody>`;
+        html += `<div class="analytics-section"><h3>🛤️ Top 10 Longest Multi-Hop Paths</h3><table class="data-table"><thead><tr><th scope="col">#</th><th scope="col">Total Distance (km)</th><th scope="col">Hops</th><th scope="col">Route</th><th scope="col">Packet</th><th scope="col"></th></tr></thead><tbody>`;
         data.topPaths.slice(0, 10).forEach((p, i) => {
           const route = p.hops.map(h => esc(h.fromName)).concat(esc(p.hops[p.hops.length-1].toName)).join(' → ');
           const pktLink = p.hash ? `<a href="#/packet/${encodeURIComponent(p.hash)}" class="analytics-link mono" style="font-size:0.85em">${esc(p.hash.slice(0, 12))}…</a>` : '—';

@@ -501,6 +501,7 @@
       <div class="filter-group" style="flex:1;margin-bottom:8px">
         <input type="text" id="packetFilterInput" class="packet-filter-input"
           placeholder='Filter: type == Advert && snr > 5 · payload.name contains "Gilroy"'
+          aria-label="Packet filter expression"
           style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-family:var(--mono);font-size:13px;background:var(--input-bg);color:var(--text)">
         <div id="packetFilterError" style="color:var(--status-red);font-size:11px;margin-top:2px;display:none"></div>
         <div id="packetFilterCount" style="color:var(--text-muted);font-size:11px;margin-top:2px;display:none"></div>
@@ -528,7 +529,7 @@
           <button class="btn" id="fMyNodes" title="Show only packets from your favorited/claimed nodes">★ My Nodes</button>
         </div>
         <div class="filter-group">
-          <select id="fTimeWindow" class="filter-select">
+          <select id="fTimeWindow" class="filter-select" aria-label="Time window filter">
             <option value="15">Last 15 min</option>
             <option value="30">Last 30 min</option>
             <option value="60">Last 1 hour</option>
@@ -559,8 +560,8 @@
       </div>
       <table class="data-table" id="pktTable">
         <thead><tr>
-          <th></th><th class="col-region">Region</th><th class="col-time">Time</th><th class="col-hash">Hash</th><th class="col-size">Size</th>
-          <th class="col-type">Type</th><th class="col-observer">Observer</th><th class="col-path">Path</th><th class="col-rpt">Rpt</th><th class="col-details">Details</th>
+          <th scope="col"></th><th scope="col" class="col-region">Region</th><th scope="col" class="col-time">Time</th><th scope="col" class="col-hash">Hash</th><th scope="col" class="col-size">Size</th>
+          <th scope="col" class="col-type">Type</th><th scope="col" class="col-observer">Observer</th><th scope="col" class="col-path">Path</th><th scope="col" class="col-rpt">Rpt</th><th scope="col" class="col-details">Details</th>
         </tr></thead>
         <tbody id="pktBody"></tbody>
       </table>
@@ -1524,7 +1525,7 @@
     }
 
     return `<table class="field-table">
-      <thead><tr><th>Offset</th><th>Field</th><th>Value</th><th>Description</th></tr></thead>
+      <thead><tr><th scope="col">Offset</th><th scope="col">Field</th><th scope="col">Value</th><th scope="col">Description</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>`;
   }

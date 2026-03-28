@@ -157,19 +157,19 @@
       <div class="obs-charts" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(400px,1fr));gap:16px">
         <div class="chart-card" style="padding:12px">
           <h3 style="margin:0 0 8px;font-size:0.95em">Packets Over Time</h3>
-          <canvas id="obsTimeChart"></canvas>
+          <canvas id="obsTimeChart" role="img" aria-label="Packets over time chart"></canvas>
         </div>
         <div class="chart-card" style="padding:12px">
           <h3 style="margin:0 0 8px;font-size:0.95em">Packet Types</h3>
-          <div style="max-width:280px;margin:0 auto"><canvas id="obsTypeChart"></canvas></div>
+          <div style="max-width:280px;margin:0 auto"><canvas id="obsTypeChart" role="img" aria-label="Packet types chart"></canvas></div>
         </div>
         <div class="chart-card" style="padding:12px">
           <h3 style="margin:0 0 8px;font-size:0.95em">Unique Nodes Heard</h3>
-          <canvas id="obsNodesChart"></canvas>
+          <canvas id="obsNodesChart" role="img" aria-label="Unique nodes heard chart"></canvas>
         </div>
         <div class="chart-card" style="padding:12px">
           <h3 style="margin:0 0 8px;font-size:0.95em">SNR Distribution</h3>
-          <canvas id="obsSnrChart"></canvas>
+          <canvas id="obsSnrChart" role="img" aria-label="SNR distribution chart"></canvas>
         </div>
       </div>
       <div style="margin-top:20px">
@@ -299,12 +299,12 @@
     const el = document.getElementById('obsRecentPackets');
     if (!el || !packets.length) { if (el) el.innerHTML = '<div class="text-muted">No recent packets.</div>'; return; }
     el.innerHTML = `<table class="data-table" style="font-size:0.85em">
-      <thead><tr><th>Time</th><th>Type</th><th>Hash</th><th>SNR</th><th>RSSI</th><th>Hops</th></tr></thead>
+      <thead><tr><th scope="col">Time</th><th scope="col">Type</th><th scope="col">Hash</th><th scope="col">SNR</th><th scope="col">RSSI</th><th scope="col">Hops</th></tr></thead>
       <tbody>${packets.map(p => {
         const decoded = typeof p.decoded_json === 'string' ? JSON.parse(p.decoded_json) : (p.decoded_json || {});
         const hops = typeof p.path_json === 'string' ? JSON.parse(p.path_json) : (p.path_json || []);
         const typeName = PAYLOAD_LABELS[p.payload_type] || 'Type ' + p.payload_type;
-        return `<tr style="cursor:pointer" onclick="location.hash='#/packets/${p.hash || p.id}'">
+        return `<tr style="cursor:pointer" tabindex="0" role="row" data-action="navigate" data-value="#/packets/${p.hash || p.id}" onclick="location.hash='#/packets/${p.hash || p.id}'">
           <td>${timeAgo(p.timestamp)}</td>
           <td>${typeName}</td>
           <td class="mono" style="font-size:0.85em">${(p.hash || '').substring(0, 10)}</td>
@@ -314,6 +314,15 @@
         </tr>`;
       }).join('')}</tbody>
     </table>`;
+
+    // #209 — Keyboard accessibility for recent packet rows
+    el.addEventListener('keydown', function (e) {
+      var row = e.target.closest('tr[data-action="navigate"]');
+      if (!row) return;
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      e.preventDefault();
+      location.hash = row.dataset.value;
+    });
   }
 
   registerPage('observer-detail', { init, destroy });

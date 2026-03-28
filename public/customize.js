@@ -642,21 +642,21 @@
     var b = state.branding;
     var logoPreview = b.logoUrl ? '<img class="cust-preview-img" src="' + escAttr(b.logoUrl) + '" alt="Logo preview" onerror="this.style.display=\'none\'">' : '';
     return '<div class="cust-panel' + (activeTab === 'branding' ? ' active' : '') + '" data-panel="branding">' +
-      '<div class="cust-field"><label>Site Name</label><input type="text" data-key="branding.siteName" value="' + escAttr(b.siteName) + '"></div>' +
-      '<div class="cust-field"><label>Tagline</label><input type="text" data-key="branding.tagline" value="' + escAttr(b.tagline) + '"></div>' +
-      '<div class="cust-field"><label>Logo URL</label><input type="text" data-key="branding.logoUrl" value="' + escAttr(b.logoUrl) + '" placeholder="https://...">' + logoPreview + '</div>' +
-      '<div class="cust-field"><label>Favicon URL</label><input type="text" data-key="branding.faviconUrl" value="' + escAttr(b.faviconUrl) + '" placeholder="https://..."></div>' +
+      '<div class="cust-field"><label for="cust-siteName">Site Name</label><input type="text" id="cust-siteName" data-key="branding.siteName" value="' + escAttr(b.siteName) + '"></div>' +
+      '<div class="cust-field"><label for="cust-tagline">Tagline</label><input type="text" id="cust-tagline" data-key="branding.tagline" value="' + escAttr(b.tagline) + '"></div>' +
+      '<div class="cust-field"><label for="cust-logoUrl">Logo URL</label><input type="text" id="cust-logoUrl" data-key="branding.logoUrl" value="' + escAttr(b.logoUrl) + '" placeholder="https://...">' + logoPreview + '</div>' +
+      '<div class="cust-field"><label for="cust-faviconUrl">Favicon URL</label><input type="text" id="cust-faviconUrl" data-key="branding.faviconUrl" value="' + escAttr(b.faviconUrl) + '" placeholder="https://..."></div>' +
     '</div>';
   }
 
   function renderColorRow(key, val, def, dataAttr) {
     var isFont = key === 'font' || key === 'mono';
     var inputHtml = isFont
-      ? '<input type="text" data-' + dataAttr + '="' + key + '" value="' + escAttr(val) + '" style="width:160px;font-size:11px;font-family:var(--mono);padding:4px 6px;border:1px solid var(--border);border-radius:4px;background:var(--input-bg);color:var(--text)">'
-      : '<input type="color" data-' + dataAttr + '="' + key + '" value="' + val + '">' +
+      ? '<input type="text" id="cust-' + dataAttr + '-' + key + '" data-' + dataAttr + '="' + key + '" value="' + escAttr(val) + '" style="width:160px;font-size:11px;font-family:var(--mono);padding:4px 6px;border:1px solid var(--border);border-radius:4px;background:var(--input-bg);color:var(--text)">'
+      : '<input type="color" id="cust-' + dataAttr + '-' + key + '" data-' + dataAttr + '="' + key + '" value="' + val + '">' +
         '<span class="cust-hex" data-hex="' + key + '">' + val + '</span>';
     return '<div class="cust-color-row">' +
-      '<div><label>' + THEME_LABELS[key] + '</label>' +
+      '<div><label for="cust-' + dataAttr + '-' + key + '">' + THEME_LABELS[key] + '</label>' +
       '<div class="cust-hint">' + (THEME_HINTS[key] || '') + '</div></div>' +
       inputHtml +
       (val !== def ? '<button class="cust-reset-btn" data-reset-theme="' + key + '">Reset</button>' : '') +
@@ -708,9 +708,9 @@
       var val = state.nodeColors[key];
       var def = DEFAULTS.nodeColors[key];
       rows += '<div class="cust-color-row">' +
-        '<div><label>' + NODE_EMOJI[key] + ' ' + NODE_LABELS[key] + '</label>' +
+        '<div><label for="cust-node-' + key + '">' + NODE_EMOJI[key] + ' ' + NODE_LABELS[key] + '</label>' +
         '<div class="cust-hint">' + (NODE_HINTS[key] || '') + '</div></div>' +
-        '<input type="color" data-node="' + key + '" value="' + val + '">' +
+        '<input type="color" id="cust-node-' + key + '" data-node="' + key + '" value="' + val + '">' +
         '<span class="cust-node-dot" style="background:' + val + '" data-dot="' + key + '"></span>' +
         '<span class="cust-hex" data-nhex="' + key + '">' + val + '</span>' +
         (val !== def ? '<button class="cust-reset-btn" data-reset-node="' + key + '">Reset</button>' : '') +
@@ -721,9 +721,9 @@
       var tval = state.typeColors[tkey];
       var tdef = DEFAULTS.typeColors[tkey];
       typeRows += '<div class="cust-color-row">' +
-        '<div><label>' + (TYPE_EMOJI[tkey] || '') + ' ' + TYPE_LABELS[tkey] + '</label>' +
+        '<div><label for="cust-type-' + tkey + '">' + (TYPE_EMOJI[tkey] || '') + ' ' + TYPE_LABELS[tkey] + '</label>' +
         '<div class="cust-hint">' + (TYPE_HINTS[tkey] || '') + '</div></div>' +
-        '<input type="color" data-type-color="' + tkey + '" value="' + tval + '">' +
+        '<input type="color" id="cust-type-' + tkey + '" data-type-color="' + tkey + '" value="' + tval + '">' +
         '<span class="cust-node-dot" style="background:' + tval + '" data-tdot="' + tkey + '"></span>' +
         '<span class="cust-hex" data-thex="' + tkey + '">' + tval + '</span>' +
         (tval !== tdef ? '<button class="cust-reset-btn" data-reset-type="' + tkey + '">Reset</button>' : '') +
@@ -742,13 +742,13 @@
       '<hr style="border:none;border-top:1px solid var(--border);margin:16px 0">' +
       '<p class="cust-section-title">Heatmap Opacity</p>' +
       '<div class="cust-color-row">' +
-        '<div><label>🗺️ Nodes Map</label>' +
+        '<div><label for="custHeatOpacity">🗺️ Nodes Map</label>' +
         '<div class="cust-hint">Heatmap overlay on the Nodes → Map page (0–100%)</div></div>' +
         '<input type="range" id="custHeatOpacity" min="0" max="100" value="' + heatPct + '" style="width:120px;cursor:pointer">' +
         '<span id="custHeatOpacityVal" style="font-family:var(--mono);font-size:12px;color:var(--text-muted);min-width:36px">' + heatPct + '%</span>' +
       '</div>' +
       '<div class="cust-color-row">' +
-        '<div><label>📡 Live Map</label>' +
+        '<div><label for="custLiveHeatOpacity">📡 Live Map</label>' +
         '<div class="cust-hint">Heatmap overlay on the Live page (0–100%)</div></div>' +
         '<input type="range" id="custLiveHeatOpacity" min="0" max="100" value="' + liveHeatPct + '" style="width:120px;cursor:pointer">' +
         '<span id="custLiveHeatOpacityVal" style="font-family:var(--mono);font-size:12px;color:var(--text-muted);min-width:36px">' + liveHeatPct + '%</span>' +
@@ -761,13 +761,13 @@
     var stepsHtml = h.steps.map(function (s, i) {
       return '<div class="cust-list-item" data-step="' + i + '">' +
         '<div class="cust-list-row">' +
-          '<input class="cust-emoji-input" data-step-field="emoji" data-idx="' + i + '" value="' + escAttr(s.emoji) + '" placeholder="📡">' +
-          '<input data-step-field="title" data-idx="' + i + '" value="' + escAttr(s.title) + '" placeholder="Title">' +
+          '<input class="cust-emoji-input" data-step-field="emoji" data-idx="' + i + '" value="' + escAttr(s.emoji) + '" placeholder="📡" aria-label="Step ' + (i + 1) + ' emoji">' +
+          '<input data-step-field="title" data-idx="' + i + '" value="' + escAttr(s.title) + '" placeholder="Title" aria-label="Step ' + (i + 1) + ' title">' +
           '<button class="cust-list-btn" data-move-step="' + i + '" data-dir="up" title="Move up">↑</button>' +
           '<button class="cust-list-btn" data-move-step="' + i + '" data-dir="down" title="Move down">↓</button>' +
           '<button class="cust-list-btn danger" data-rm-step="' + i + '" title="Remove">✕</button>' +
         '</div>' +
-        '<textarea data-step-field="description" data-idx="' + i + '" placeholder="Description" rows="2">' + esc(s.description) + '</textarea>' +
+        '<textarea data-step-field="description" data-idx="' + i + '" placeholder="Description" rows="2" aria-label="Step ' + (i + 1) + ' description">' + esc(s.description) + '</textarea>' +
         '<div class="cust-md-hint">Markdown: <code>**bold**</code> <code>*italic*</code> <code>`code`</code> <code>[text](url)</code> <code>- list</code></div>' +
       '</div>';
     }).join('');
@@ -775,10 +775,10 @@
     var checkHtml = h.checklist.map(function (c, i) {
       return '<div class="cust-list-item" data-check="' + i + '">' +
         '<div class="cust-list-row">' +
-          '<input data-check-field="question" data-idx="' + i + '" value="' + escAttr(c.question) + '" placeholder="Question">' +
+          '<input data-check-field="question" data-idx="' + i + '" value="' + escAttr(c.question) + '" placeholder="Question" aria-label="Checklist item ' + (i + 1) + ' question">' +
           '<button class="cust-list-btn danger" data-rm-check="' + i + '" title="Remove">✕</button>' +
         '</div>' +
-        '<textarea data-check-field="answer" data-idx="' + i + '" placeholder="Answer" rows="2">' + esc(c.answer) + '</textarea>' +
+        '<textarea data-check-field="answer" data-idx="' + i + '" placeholder="Answer" rows="2" aria-label="Checklist item ' + (i + 1) + ' answer">' + esc(c.answer) + '</textarea>' +
         '<div class="cust-md-hint">Markdown: <code>**bold**</code> <code>*italic*</code> <code>`code`</code> <code>[text](url)</code> <code>- list</code></div>' +
       '</div>';
     }).join('');
@@ -786,16 +786,16 @@
     var linksHtml = h.footerLinks.map(function (l, i) {
       return '<div class="cust-list-item" data-link="' + i + '">' +
         '<div class="cust-list-row">' +
-          '<input data-link-field="label" data-idx="' + i + '" value="' + escAttr(l.label) + '" placeholder="Label">' +
+          '<input data-link-field="label" data-idx="' + i + '" value="' + escAttr(l.label) + '" placeholder="Label" aria-label="Footer link ' + (i + 1) + ' label">' +
           '<button class="cust-list-btn danger" data-rm-link="' + i + '" title="Remove">✕</button>' +
         '</div>' +
-        '<input data-link-field="url" data-idx="' + i + '" value="' + escAttr(l.url) + '" placeholder="URL">' +
+        '<input data-link-field="url" data-idx="' + i + '" value="' + escAttr(l.url) + '" placeholder="URL" aria-label="Footer link ' + (i + 1) + ' URL">' +
       '</div>';
     }).join('');
 
     return '<div class="cust-panel' + (activeTab === 'home' ? ' active' : '') + '" data-panel="home">' +
-      '<div class="cust-field"><label>Hero Title</label><input type="text" data-key="home.heroTitle" value="' + escAttr(h.heroTitle) + '"></div>' +
-      '<div class="cust-field"><label>Hero Subtitle</label><input type="text" data-key="home.heroSubtitle" value="' + escAttr(h.heroSubtitle) + '"></div>' +
+      '<div class="cust-field"><label for="cust-heroTitle">Hero Title</label><input type="text" id="cust-heroTitle" data-key="home.heroTitle" value="' + escAttr(h.heroTitle) + '"></div>' +
+      '<div class="cust-field"><label for="cust-heroSubtitle">Hero Subtitle</label><input type="text" id="cust-heroSubtitle" data-key="home.heroSubtitle" value="' + escAttr(h.heroSubtitle) + '"></div>' +
       '<p class="cust-section-title" style="margin-top:20px">Steps</p>' + stepsHtml +
       '<button class="cust-add-btn" id="addStep">+ Add Step</button>' +
       '<p class="cust-section-title" style="margin-top:24px">FAQ / Checklist</p>' + checkHtml +
@@ -870,11 +870,11 @@
       '<div class="cust-export-btns" style="margin-bottom:12px">' +
         '<button class="cust-dl-btn" id="custDownload">💾 Download theme.json</button>' +
         '<button class="cust-dl-btn" id="custImportFile">📂 Import File</button>' +
-        '<input type="file" id="custImportInput" accept=".json,application/json" style="display:none">' +
+        '<input type="file" id="custImportInput" accept=".json,application/json" style="display:none" aria-label="Import theme file">' +
         '<button class="cust-copy-btn" id="custCopy">📋 Copy</button>' +
       '</div>' +
       '<details style="margin-top:8px"><summary style="font-size:12px;font-weight:600;cursor:pointer;color:var(--text-muted)">Raw JSON</summary>' +
-      '<textarea class="cust-export-area" id="custExportJson" style="margin-top:8px">' + esc(json) + '</textarea>' +
+      '<textarea class="cust-export-area" id="custExportJson" style="margin-top:8px" aria-label="Theme JSON data">' + esc(json) + '</textarea>' +
       '</details>' +
     '</div>';
   }

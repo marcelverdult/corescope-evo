@@ -102,27 +102,27 @@
           <div class="analytics-chart-card full">
             <h4>Activity Timeline</h4>
             <div class="analytics-chart-desc">Packet count per time bucket — shows when this node is most active</div>
-            <canvas id="activityChart"></canvas>
+            <canvas id="activityChart" role="img" aria-label="Activity timeline chart"></canvas>
           </div>
           <div class="analytics-chart-card">
             <h4>SNR Trend</h4>
             <div class="analytics-chart-desc">Signal-to-noise ratio over time — higher is better reception</div>
-            <canvas id="snrChart"></canvas>
+            <canvas id="snrChart" role="img" aria-label="SNR trend chart"></canvas>
           </div>
           <div class="analytics-chart-card">
             <h4>Packet Types</h4>
             <div class="analytics-chart-desc">Breakdown of advert, position, text, and other packet types</div>
-            <canvas id="packetTypeChart"></canvas>
+            <canvas id="packetTypeChart" role="img" aria-label="Packet types chart"></canvas>
           </div>
           <div class="analytics-chart-card">
             <h4>Observer Coverage</h4>
             <div class="analytics-chart-desc">Which stations hear this node and how often</div>
-            <canvas id="observerChart"></canvas>
+            <canvas id="observerChart" role="img" aria-label="Observer coverage chart"></canvas>
           </div>
           <div class="analytics-chart-card">
             <h4>Hop Distribution</h4>
             <div class="analytics-chart-desc">How many repeater hops packets take — 0 means direct</div>
-            <canvas id="hopChart"></canvas>
+            <canvas id="hopChart" role="img" aria-label="Hop distribution chart"></canvas>
           </div>
           <div class="analytics-chart-card full">
             <h4>Uptime Heatmap</h4>
@@ -132,14 +132,14 @@
           ${data.peerInteractions.length ? `<div class="analytics-chart-card full">
             <h4>Peer Interactions</h4>
             <div class="analytics-chart-desc">Nodes this device has exchanged messages with</div>
-            <table class="analytics-peer-table">
-              <thead><tr><th>Peer</th><th>Messages</th><th>Last Contact</th></tr></thead>
+            <div class="analytics-table-scroll"><table class="analytics-peer-table">
+              <thead><tr><th scope="col">Peer</th><th scope="col">Messages</th><th scope="col">Last Contact</th></tr></thead>
               <tbody>${data.peerInteractions.map(p => `<tr>
                 <td><a href="#/nodes/${encodeURIComponent(p.peer_key)}" style="color:var(--accent)">${escapeHtml(p.peer_name)}</a></td>
                 <td>${p.messageCount}</td>
                 <td>${timeAgo(p.lastContact)}</td>
               </tr>`).join('')}</tbody>
-            </table>
+            </table></div>
           </div>` : ''}
         </div>
       </div>`;

@@ -263,7 +263,7 @@
       <div class="alab-section">
         <h3>🎹 Note Sequence</h3>
         <table class="alab-note-table">
-          <tr><th></th><th>#</th><th>Payload Index</th><th>Byte</th><th>→ MIDI</th><th>→ Freq</th><th>Duration (why)</th><th>Gap (why)</th></tr>
+          <tr><th scope="col"></th><th scope="col">#</th><th scope="col">Payload Index</th><th scope="col">Byte</th><th scope="col">→ MIDI</th><th scope="col">→ Freq</th><th scope="col">Duration (why)</th><th scope="col">Gap (why)</th></tr>
           ${m.notes.map((n, i) => {
             const durWhy = `byte ${n.byte} → map(0...255 → 50...400ms) × tempo`;
             const gapWhy = i < m.notes.length - 1

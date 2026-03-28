@@ -287,7 +287,7 @@
           ${(() => { const regions = [...new Set(observers.map(o => o.iata).filter(Boolean))]; return regions.length ? `<div style="margin-bottom:8px"><strong>Regions:</strong> ${regions.map(r => '<span class="badge" style="margin:0 2px">' + escapeHtml(r) + '</span>').join(' ')}</div>` : ''; })()}
           <h4>Heard By (${observers.length} observer${observers.length > 1 ? 's' : ''})</h4>
           <table class="data-table" style="font-size:12px">
-            <thead><tr><th>Observer</th><th>Region</th><th>Packets</th><th>Avg SNR</th><th>Avg RSSI</th></tr></thead>
+            <thead><tr><th scope="col">Observer</th><th scope="col">Region</th><th scope="col">Packets</th><th scope="col">Avg SNR</th><th scope="col">Avg RSSI</th></tr></thead>
             <tbody>
               ${observers.map(o => `<tr>
                 <td style="font-weight:600">${escapeHtml(o.observer_name || o.observer_id)}</td>
@@ -577,11 +577,11 @@
       </div>
       <table class="data-table" id="nodesTable">
         <thead><tr>
-          <th class="sortable${sortState.column==='name'?' sort-active':''}" data-sort="name">Name${sortArrow('name')}</th>
-          <th class="col-pubkey sortable${sortState.column==='public_key'?' sort-active':''}" data-sort="public_key">Public Key${sortArrow('public_key')}</th>
-          <th class="sortable${sortState.column==='role'?' sort-active':''}" data-sort="role">Role${sortArrow('role')}</th>
-          <th class="sortable${sortState.column==='last_seen'?' sort-active':''}" data-sort="last_seen">Last Seen${sortArrow('last_seen')}</th>
-          <th class="sortable${sortState.column==='advert_count'?' sort-active':''}" data-sort="advert_count">Adverts${sortArrow('advert_count')}</th>
+          <th scope="col" class="sortable${sortState.column==='name'?' sort-active':''}" data-sort="name">Name${sortArrow('name')}</th>
+          <th scope="col" class="col-pubkey sortable${sortState.column==='public_key'?' sort-active':''}" data-sort="public_key">Public Key${sortArrow('public_key')}</th>
+          <th scope="col" class="sortable${sortState.column==='role'?' sort-active':''}" data-sort="role">Role${sortArrow('role')}</th>
+          <th scope="col" class="sortable${sortState.column==='last_seen'?' sort-active':''}" data-sort="last_seen">Last Seen${sortArrow('last_seen')}</th>
+          <th scope="col" class="sortable${sortState.column==='advert_count'?' sort-active':''}" data-sort="advert_count">Adverts${sortArrow('advert_count')}</th>
         </tr></thead>
         <tbody id="nodesBody"></tbody>
       </table>`;

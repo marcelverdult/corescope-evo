@@ -57,6 +57,15 @@ if (typeof window !== 'undefined') window.comparePacketSets = comparePacketSets;
       '<div id="compareContent"></div>' +
     '</div>';
 
+    // #209 — Keyboard accessibility for compare table rows
+    app.addEventListener('keydown', function (e) {
+      var row = e.target.closest('tr[data-action="navigate"]');
+      if (!row) return;
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      e.preventDefault();
+      location.hash = row.dataset.value;
+    });
+
     loadObservers();
   }
 
@@ -316,9 +325,9 @@ if (typeof window !== 'undefined') window.comparePacketSets = comparePacketSets;
 
     el.innerHTML =
       (hashes.length > displayLimit ? '<div class="text-muted" style="margin-bottom:8px">Showing first ' + displayLimit + ' of ' + hashes.length.toLocaleString() + ' packets.</div>' : '') +
-      '<table class="data-table compare-table">' +
+      '<div class="analytics-table-scroll"><table class="data-table compare-table">' +
         '<thead><tr>' +
-          '<th>Hash</th><th>Time</th><th>Type</th><th>Observer</th>' +
+          '<th scope="col">Hash</th><th scope="col">Time</th><th scope="col">Type</th><th scope="col">Observer</th>' +
         '</tr></thead>' +
         '<tbody>' + displayed.map(function (h) {
           var p = mapA.get(h) || mapB.get(h);
@@ -332,7 +341,7 @@ if (typeof window !== 'undefined') window.comparePacketSets = comparePacketSets;
           } else {
             obsLabel = nameB;
           }
-          return '<tr style="cursor:pointer" onclick="location.hash=\'#/packets/' + escapeHtml(h) + '\'">' +
+          return '<tr style="cursor:pointer" tabindex="0" role="row" data-action="navigate" data-value="#/packets/' + escapeHtml(h) + '" onclick="location.hash=\'#/packets/' + escapeHtml(h) + '\'">' +
             '<td class="mono" style="font-size:0.85em">' + escapeHtml(h.substring(0, 12)) + '</td>' +
             '<td>' + timeAgo(p.timestamp || p.first_seen) + '</td>' +
             '<td><span class="payload-badge badge-' + payloadTypeColor(p.payload_type) + '">' + escapeHtml(typeName) + '</span></td>' +
@@ -340,7 +349,7 @@ if (typeof window !== 'undefined') window.comparePacketSets = comparePacketSets;
           '</tr>';
         }).join('') +
         '</tbody>' +
-      '</table>';
+      '</table></div>';
   }
 
   registerPage('compare', { init: init, destroy: destroy });

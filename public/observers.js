@@ -25,6 +25,16 @@
     app.addEventListener('click', function (e) {
       var btn = e.target.closest('[data-action]');
       if (btn && btn.dataset.action === 'obs-refresh') loadObservers();
+      var row = e.target.closest('tr[data-action="navigate"]');
+      if (row) location.hash = row.dataset.value;
+    });
+    // #209 — Keyboard accessibility for observer rows
+    app.addEventListener('keydown', function (e) {
+      var row = e.target.closest('tr[data-action="navigate"]');
+      if (!row) return;
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      e.preventDefault();
+      location.hash = row.dataset.value;
     });
     // Auto-refresh every 30s
     refreshTimer = setInterval(loadObservers, 30000);
@@ -113,13 +123,13 @@
       <div class="obs-table-scroll"><table class="data-table obs-table" id="obsTable">
         <caption class="sr-only">Observer status and statistics</caption>
         <thead><tr>
-          <th>Status</th><th>Name</th><th>Region</th><th>Last Seen</th>
-          <th>Packets</th><th>Packets/Hour</th><th>Uptime</th>
+          <th scope="col">Status</th><th scope="col">Name</th><th scope="col">Region</th><th scope="col">Last Seen</th>
+          <th scope="col">Packets</th><th scope="col">Packets/Hour</th><th scope="col">Uptime</th>
         </tr></thead>
         <tbody>${filtered.map(o => {
           const h = healthStatus(o.last_seen);
           const shape = h.cls === 'health-green' ? '●' : h.cls === 'health-yellow' ? '▲' : '✕';
-          return `<tr style="cursor:pointer" onclick="location.hash='#/observers/${encodeURIComponent(o.id)}'">
+          return `<tr style="cursor:pointer" tabindex="0" role="row" data-action="navigate" data-value="#/observers/${encodeURIComponent(o.id)}" onclick="location.hash='#/observers/${encodeURIComponent(o.id)}'">
             <td><span class="health-dot ${h.cls}" title="${h.label}">${shape}</span> ${h.label}</td>
             <td class="mono">${o.name || o.id}</td>
             <td>${o.iata ? `<span class="badge-region">${o.iata}</span>` : '—'}</td>
