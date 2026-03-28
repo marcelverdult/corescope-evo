@@ -47,7 +47,7 @@ func main() {
 	store.MoveStaleNodes(nodeDays)
 
 	// Daily ticker for node retention
-	retentionTicker := time.NewTicker(24 * time.Hour)
+	retentionTicker := time.NewTicker(1 * time.Hour)
 	go func() {
 		for range retentionTicker.C {
 			store.MoveStaleNodes(nodeDays)

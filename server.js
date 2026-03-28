@@ -18,6 +18,7 @@ const { loadConfigFile, loadThemeFile, buildHealthConfig, getHealthMs: _getHealt
 const config = loadConfigFile();
 const decoder = require('./decoder');
 const PAYLOAD_TYPES = decoder.PAYLOAD_TYPES;
+const hasNonPrintableChars = decoder.hasNonPrintableChars;
 const { nodeNearRegion, IATA_COORDS } = require('./iata-coords');
 const { execSync } = require('child_process');
 
@@ -481,7 +482,7 @@ const RETENTION_NODE_DAYS = (config.retention && config.retention.nodeDays) || 7
 db.moveStaleNodes(RETENTION_NODE_DAYS);
 setInterval(() => {
   db.moveStaleNodes(RETENTION_NODE_DAYS);
-}, 24 * 3600000).unref();
+}, 3600000).unref(); // hourly
 
 // --- Health / Telemetry Endpoint ---
 app.get('/api/health', (req, res) => {
@@ -2198,6 +2199,9 @@ app.get('/api/channels', (req, res) => {
     if (decoded.type !== 'CHAN') continue;
 
     const channelName = decoded.channel || 'unknown';
+    // Filter out garbage-decrypted channel names (pre-#197 data still in DB)
+    if (hasNonPrintableChars(channelName)) continue;
+    if (hasNonPrintableChars(decoded.text)) continue;
     const key = channelName;
     
     if (!channelMap[key]) {
