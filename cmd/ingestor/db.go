@@ -34,7 +34,7 @@ func OpenStore(dbPath string) (*Store, error) {
 		return nil, fmt.Errorf("creating data dir: %w", err)
 	}
 
-	db, err := sql.Open("sqlite", dbPath+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(ON)")
+	db, err := sql.Open("sqlite", dbPath+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(ON)&_pragma=busy_timeout(5000)")
 	if err != nil {
 		return nil, fmt.Errorf("opening db: %w", err)
 	}
@@ -42,6 +42,8 @@ func OpenStore(dbPath string) (*Store, error) {
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("pinging db: %w", err)
 	}
+
+	db.SetMaxOpenConns(1)
 
 	if err := applySchema(db); err != nil {
 		return nil, fmt.Errorf("applying schema: %w", err)

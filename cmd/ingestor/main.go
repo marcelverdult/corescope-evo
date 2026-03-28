@@ -73,7 +73,7 @@ func main() {
 			AddBroker(source.Broker).
 			SetAutoReconnect(true).
 			SetConnectRetry(true).
-			SetOrderMatters(false)
+			SetOrderMatters(true)
 
 		if source.Username != "" {
 			opts.SetUsername(source.Username)
