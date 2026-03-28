@@ -56,7 +56,8 @@ func OpenStore(dbPath string) (*Store, error) {
 	}
 
 	db.SetMaxOpenConns(1)
-	log.Printf("SQLite config: busy_timeout=5000ms, max_open_conns=1, journal=WAL")
+	db.SetMaxIdleConns(1)
+	log.Printf("SQLite config: busy_timeout=5000ms, max_open_conns=1, max_idle_conns=1, journal=WAL")
 
 	if err := applySchema(db); err != nil {
 		return nil, fmt.Errorf("applying schema: %w", err)
