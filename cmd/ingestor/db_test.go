@@ -160,7 +160,7 @@ func TestUpsertObserver(t *testing.T) {
 	}
 	defer s.Close()
 
-	if err := s.UpsertObserver("obs1", "Observer1", "SJC"); err != nil {
+	if err := s.UpsertObserver("obs1", "Observer1", "SJC", nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -174,6 +174,165 @@ func TestUpsertObserver(t *testing.T) {
 	}
 }
 
+func TestUpsertObserverWithMeta(t *testing.T) {
+	s, err := OpenStore(tempDBPath(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	battery := 3500
+	uptime := int64(86400)
+	noise := -115.5
+	meta := &ObserverMeta{
+		BatteryMv:  &battery,
+		UptimeSecs: &uptime,
+		NoiseFloor: &noise,
+	}
+
+	if err := s.UpsertObserver("obs1", "Observer1", "SJC", meta); err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify correct types in DB
+	var batteryMv int
+	var uptimeSecs int64
+	var noiseFloor float64
+	err = s.db.QueryRow("SELECT battery_mv, uptime_secs, noise_floor FROM observers WHERE id = 'obs1'").
+		Scan(&batteryMv, &uptimeSecs, &noiseFloor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if batteryMv != 3500 {
+		t.Errorf("battery_mv=%d, want 3500", batteryMv)
+	}
+	if uptimeSecs != 86400 {
+		t.Errorf("uptime_secs=%d, want 86400", uptimeSecs)
+	}
+	if noiseFloor != -115.5 {
+		t.Errorf("noise_floor=%f, want -115.5", noiseFloor)
+	}
+
+	// Verify typeof returns correct SQLite types
+	var typBattery, typUptime, typNoise string
+	s.db.QueryRow("SELECT typeof(battery_mv), typeof(uptime_secs), typeof(noise_floor) FROM observers WHERE id = 'obs1'").
+		Scan(&typBattery, &typUptime, &typNoise)
+	if typBattery != "integer" {
+		t.Errorf("typeof(battery_mv)=%s, want integer", typBattery)
+	}
+	if typUptime != "integer" {
+		t.Errorf("typeof(uptime_secs)=%s, want integer", typUptime)
+	}
+	if typNoise != "real" {
+		t.Errorf("typeof(noise_floor)=%s, want real", typNoise)
+	}
+}
+
+func TestUpsertObserverMetaPreservesExisting(t *testing.T) {
+	s, err := OpenStore(tempDBPath(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	// First upsert with metadata
+	battery := 3500
+	noise := -115.5
+	meta := &ObserverMeta{
+		BatteryMv:  &battery,
+		NoiseFloor: &noise,
+	}
+	if err := s.UpsertObserver("obs1", "Observer1", "SJC", meta); err != nil {
+		t.Fatal(err)
+	}
+
+	// Second upsert without metadata — should preserve existing values
+	if err := s.UpsertObserver("obs1", "Observer1", "SJC", nil); err != nil {
+		t.Fatal(err)
+	}
+
+	var batteryMv int
+	var noiseFloor float64
+	s.db.QueryRow("SELECT battery_mv, noise_floor FROM observers WHERE id = 'obs1'").
+		Scan(&batteryMv, &noiseFloor)
+	if batteryMv != 3500 {
+		t.Errorf("battery_mv=%d after nil-meta upsert, want 3500 (preserved)", batteryMv)
+	}
+	if noiseFloor != -115.5 {
+		t.Errorf("noise_floor=%f after nil-meta upsert, want -115.5 (preserved)", noiseFloor)
+	}
+}
+
+func TestExtractObserverMeta(t *testing.T) {
+	// Float values from JSON (typical MQTT payload)
+	msg := map[string]interface{}{
+		"battery_mv":  3500.0,
+		"uptime_secs": 86400.0,
+		"noise_floor": -115.5,
+	}
+	meta := extractObserverMeta(msg)
+	if meta == nil {
+		t.Fatal("expected non-nil meta")
+	}
+	if meta.BatteryMv == nil || *meta.BatteryMv != 3500 {
+		t.Errorf("BatteryMv=%v, want 3500", meta.BatteryMv)
+	}
+	if meta.UptimeSecs == nil || *meta.UptimeSecs != 86400 {
+		t.Errorf("UptimeSecs=%v, want 86400", meta.UptimeSecs)
+	}
+	if meta.NoiseFloor == nil || *meta.NoiseFloor != -115.5 {
+		t.Errorf("NoiseFloor=%v, want -115.5", meta.NoiseFloor)
+	}
+
+	// Battery with fractional part should round
+	msg2 := map[string]interface{}{
+		"battery_mv": 3500.7,
+	}
+	meta2 := extractObserverMeta(msg2)
+	if meta2 == nil || meta2.BatteryMv == nil || *meta2.BatteryMv != 3501 {
+		t.Errorf("battery_mv rounding: got %v, want 3501", meta2)
+	}
+
+	// Empty message → nil
+	meta3 := extractObserverMeta(map[string]interface{}{})
+	if meta3 != nil {
+		t.Errorf("expected nil for empty message, got %v", meta3)
+	}
+}
+
+func TestSchemaNoiseFloorIsReal(t *testing.T) {
+	s, err := OpenStore(tempDBPath(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	// Check column type affinity via PRAGMA
+	rows, err := s.db.Query("PRAGMA table_info(observers)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var colName, colType string
+		var notNull, pk int
+		var dflt interface{}
+		if rows.Scan(&cid, &colName, &colType, &notNull, &dflt, &pk) == nil {
+			if colName == "noise_floor" && colType != "REAL" {
+				t.Errorf("noise_floor column type=%s, want REAL", colType)
+			}
+			if colName == "battery_mv" && colType != "INTEGER" {
+				t.Errorf("battery_mv column type=%s, want INTEGER", colType)
+			}
+			if colName == "uptime_secs" && colType != "INTEGER" {
+				t.Errorf("uptime_secs column type=%s, want INTEGER", colType)
+			}
+		}
+	}
+}
+
 func TestInsertTransmissionWithObserver(t *testing.T) {
 	s, err := OpenStore(tempDBPath(t))
 	if err != nil {
@@ -182,7 +341,7 @@ func TestInsertTransmissionWithObserver(t *testing.T) {
 	defer s.Close()
 
 	// Insert observer first
-	if err := s.UpsertObserver("obs1", "Observer1", "SJC"); err != nil {
+	if err := s.UpsertObserver("obs1", "Observer1", "SJC", nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -639,7 +798,7 @@ func TestConcurrentWrites(t *testing.T) {
 	defer s.Close()
 
 	// Pre-create an observer for observer_idx resolution
-	if err := s.UpsertObserver("obs1", "Observer1", "SJC"); err != nil {
+	if err := s.UpsertObserver("obs1", "Observer1", "SJC", nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -681,7 +840,7 @@ func TestConcurrentWrites(t *testing.T) {
 					return
 				}
 				obsID := fmt.Sprintf("obs_%d_%d__________", gIdx, i)
-				if err := s.UpsertObserver(obsID[:16], "Obs", "SJC"); err != nil {
+				if err := s.UpsertObserver(obsID[:16], "Obs", "SJC", nil); err != nil {
 					errCh <- fmt.Errorf("goroutine %d observer upsert %d: %w", gIdx, i, err)
 					return
 				}
@@ -782,7 +941,7 @@ func TestDBStats(t *testing.T) {
 	}
 
 	// Observer upsert
-	if err := s.UpsertObserver("obs1", "Obs1", "SJC"); err != nil {
+	if err := s.UpsertObserver("obs1", "Obs1", "SJC", nil); err != nil {
 		t.Fatal(err)
 	}
 	if s.Stats.ObserverUpserts.Load() != 1 {
@@ -801,7 +960,7 @@ func TestLoadTestThroughput(t *testing.T) {
 	defer s.Close()
 
 	// Pre-create observer
-	if err := s.UpsertObserver("obs1", "Observer1", "SJC"); err != nil {
+	if err := s.UpsertObserver("obs1", "Observer1", "SJC", nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -867,7 +1026,7 @@ func TestLoadTestThroughput(t *testing.T) {
 				}
 
 				obsID := fmt.Sprintf("obs_%04d_%04d_____", gIdx, i)
-				if err := s.UpsertObserver(obsID[:16], "Obs", "SJC"); err != nil {
+				if err := s.UpsertObserver(obsID[:16], "Obs", "SJC", nil); err != nil {
 					totalErrors.Add(1)
 					if strings.Contains(err.Error(), "locked") || strings.Contains(err.Error(), "BUSY") {
 						busyErrors.Add(1)

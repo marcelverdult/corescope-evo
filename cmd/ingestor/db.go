@@ -97,7 +97,7 @@ func applySchema(db *sql.DB) error {
 			radio TEXT,
 			battery_mv INTEGER,
 			uptime_secs INTEGER,
-			noise_floor INTEGER
+			noise_floor REAL
 		);
 
 		CREATE INDEX IF NOT EXISTS idx_nodes_last_seen ON nodes(last_seen);
@@ -184,6 +184,18 @@ func applySchema(db *sql.DB) error {
 		log.Println("[migration] advert_count recalculated")
 	}
 
+	// One-time migration: change noise_floor from INTEGER to REAL affinity.
+	// SQLite doesn't support ALTER COLUMN, but existing float values are stored
+	// as REAL regardless of column affinity. New table definition already uses REAL.
+	// This migration casts any integer-stored noise_floor values to real.
+	row = db.QueryRow("SELECT 1 FROM _migrations WHERE name = 'noise_floor_real_v1'")
+	if row.Scan(&migDone) != nil {
+		log.Println("[migration] Ensuring noise_floor values are stored as REAL...")
+		db.Exec(`UPDATE observers SET noise_floor = CAST(noise_floor AS REAL) WHERE noise_floor IS NOT NULL AND typeof(noise_floor) = 'integer'`)
+		db.Exec(`INSERT INTO _migrations (name) VALUES ('noise_floor_real_v1')`)
+		log.Println("[migration] noise_floor migration complete")
+	}
+
 	return nil
 }
 
@@ -238,13 +250,16 @@ func (s *Store) prepareStatements() error {
 	}
 
 	s.stmtUpsertObserver, err = s.db.Prepare(`
-		INSERT INTO observers (id, name, iata, last_seen, first_seen, packet_count)
-		VALUES (?, ?, ?, ?, ?, 1)
+		INSERT INTO observers (id, name, iata, last_seen, first_seen, packet_count, battery_mv, uptime_secs, noise_floor)
+		VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			name = COALESCE(?, name),
 			iata = COALESCE(?, iata),
 			last_seen = ?,
-			packet_count = packet_count + 1
+			packet_count = packet_count + 1,
+			battery_mv = COALESCE(?, battery_mv),
+			uptime_secs = COALESCE(?, uptime_secs),
+			noise_floor = COALESCE(?, noise_floor)
 	`)
 	if err != nil {
 		return err
@@ -359,12 +374,33 @@ func (s *Store) IncrementAdvertCount(pubKey string) error {
 	return err
 }
 
-// UpsertObserver inserts or updates an observer.
-func (s *Store) UpsertObserver(id, name, iata string) error {
+// ObserverMeta holds optional observer hardware metadata.
+type ObserverMeta struct {
+	BatteryMv  *int     // millivolts, always integer
+	UptimeSecs *int64   // seconds, always integer
+	NoiseFloor *float64 // dBm, may have decimals
+}
+
+// UpsertObserver inserts or updates an observer with optional hardware metadata.
+func (s *Store) UpsertObserver(id, name, iata string, meta *ObserverMeta) error {
 	now := time.Now().UTC().Format(time.RFC3339)
+
+	var batteryMv, uptimeSecs, noiseFloor interface{}
+	if meta != nil {
+		if meta.BatteryMv != nil {
+			batteryMv = *meta.BatteryMv
+		}
+		if meta.UptimeSecs != nil {
+			uptimeSecs = *meta.UptimeSecs
+		}
+		if meta.NoiseFloor != nil {
+			noiseFloor = *meta.NoiseFloor
+		}
+	}
+
 	_, err := s.stmtUpsertObserver.Exec(
-		id, name, iata, now, now,
-		name, iata, now,
+		id, name, iata, now, now, batteryMv, uptimeSecs, noiseFloor,
+		name, iata, now, batteryMv, uptimeSecs, noiseFloor,
 	)
 	if err != nil {
 		s.Stats.WriteErrors.Add(1)

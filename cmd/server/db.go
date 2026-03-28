@@ -132,18 +132,18 @@ type Node struct {
 
 // Observer represents a row from the observers table.
 type Observer struct {
-	ID            string  `json:"id"`
-	Name          *string `json:"name"`
-	IATA          *string `json:"iata"`
-	LastSeen      *string `json:"last_seen"`
-	FirstSeen     *string `json:"first_seen"`
-	PacketCount   int     `json:"packet_count"`
-	Model         *string `json:"model"`
-	Firmware      *string `json:"firmware"`
-	ClientVersion *string `json:"client_version"`
-	Radio         *string `json:"radio"`
-	BatteryMv     *float64 `json:"battery_mv"`
-	UptimeSecs    *float64 `json:"uptime_secs"`
+	ID            string   `json:"id"`
+	Name          *string  `json:"name"`
+	IATA          *string  `json:"iata"`
+	LastSeen      *string  `json:"last_seen"`
+	FirstSeen     *string  `json:"first_seen"`
+	PacketCount   int      `json:"packet_count"`
+	Model         *string  `json:"model"`
+	Firmware      *string  `json:"firmware"`
+	ClientVersion *string  `json:"client_version"`
+	Radio         *string  `json:"radio"`
+	BatteryMv     *int     `json:"battery_mv"`
+	UptimeSecs    *int64   `json:"uptime_secs"`
 	NoiseFloor    *float64 `json:"noise_floor"`
 }
 
@@ -958,8 +958,20 @@ func (db *DB) GetObservers() ([]Observer, error) {
 	var observers []Observer
 	for rows.Next() {
 		var o Observer
-		if err := rows.Scan(&o.ID, &o.Name, &o.IATA, &o.LastSeen, &o.FirstSeen, &o.PacketCount, &o.Model, &o.Firmware, &o.ClientVersion, &o.Radio, &o.BatteryMv, &o.UptimeSecs, &o.NoiseFloor); err != nil {
+		var batteryMv, uptimeSecs sql.NullInt64
+		var noiseFloor sql.NullFloat64
+		if err := rows.Scan(&o.ID, &o.Name, &o.IATA, &o.LastSeen, &o.FirstSeen, &o.PacketCount, &o.Model, &o.Firmware, &o.ClientVersion, &o.Radio, &batteryMv, &uptimeSecs, &noiseFloor); err != nil {
 			continue
+		}
+		if batteryMv.Valid {
+			v := int(batteryMv.Int64)
+			o.BatteryMv = &v
+		}
+		if uptimeSecs.Valid {
+			o.UptimeSecs = &uptimeSecs.Int64
+		}
+		if noiseFloor.Valid {
+			o.NoiseFloor = &noiseFloor.Float64
 		}
 		observers = append(observers, o)
 	}
@@ -969,10 +981,22 @@ func (db *DB) GetObservers() ([]Observer, error) {
 // GetObserverByID returns a single observer.
 func (db *DB) GetObserverByID(id string) (*Observer, error) {
 	var o Observer
+	var batteryMv, uptimeSecs sql.NullInt64
+	var noiseFloor sql.NullFloat64
 	err := db.conn.QueryRow("SELECT id, name, iata, last_seen, first_seen, packet_count, model, firmware, client_version, radio, battery_mv, uptime_secs, noise_floor FROM observers WHERE id = ?", id).
-		Scan(&o.ID, &o.Name, &o.IATA, &o.LastSeen, &o.FirstSeen, &o.PacketCount, &o.Model, &o.Firmware, &o.ClientVersion, &o.Radio, &o.BatteryMv, &o.UptimeSecs, &o.NoiseFloor)
+		Scan(&o.ID, &o.Name, &o.IATA, &o.LastSeen, &o.FirstSeen, &o.PacketCount, &o.Model, &o.Firmware, &o.ClientVersion, &o.Radio, &batteryMv, &uptimeSecs, &noiseFloor)
 	if err != nil {
 		return nil, err
+	}
+	if batteryMv.Valid {
+		v := int(batteryMv.Int64)
+		o.BatteryMv = &v
+	}
+	if uptimeSecs.Valid {
+		o.UptimeSecs = &uptimeSecs.Int64
+	}
+	if noiseFloor.Valid {
+		o.NoiseFloor = &noiseFloor.Float64
 	}
 	return &o, nil
 }

@@ -31,7 +31,7 @@ func setupTestDBv2(t *testing.T) *DB {
 		CREATE TABLE observers (
 			id TEXT PRIMARY KEY, name TEXT, iata TEXT, last_seen TEXT, first_seen TEXT,
 			packet_count INTEGER DEFAULT 0, model TEXT, firmware TEXT,
-			client_version TEXT, radio TEXT, battery_mv INTEGER, uptime_secs INTEGER, noise_floor INTEGER
+			client_version TEXT, radio TEXT, battery_mv INTEGER, uptime_secs INTEGER, noise_floor REAL
 		);
 		CREATE TABLE transmissions (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, raw_hex TEXT NOT NULL,
