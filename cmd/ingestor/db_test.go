@@ -83,7 +83,7 @@ func TestInsertTransmission(t *testing.T) {
 		RSSI:           &rssi,
 	}
 
-	if err := s.InsertTransmission(data); err != nil {
+	if _, err := s.InsertTransmission(data); err != nil {
 		t.Fatal(err)
 	}
 
@@ -101,7 +101,7 @@ func TestInsertTransmission(t *testing.T) {
 	}
 
 	// Verify hash dedup: same hash should not create new transmission
-	if err := s.InsertTransmission(data); err != nil {
+	if _, err := s.InsertTransmission(data); err != nil {
 		t.Fatal(err)
 	}
 	s.db.QueryRow("SELECT COUNT(*) FROM transmissions").Scan(&count)
@@ -192,7 +192,7 @@ func TestInsertTransmissionWithObserver(t *testing.T) {
 		PathJSON:    "[]",
 		DecodedJSON: `{"type":"TXT_MSG"}`,
 	}
-	if err := s.InsertTransmission(data); err != nil {
+	if _, err := s.InsertTransmission(data); err != nil {
 		t.Fatal(err)
 	}
 
@@ -223,7 +223,7 @@ func TestEndToEndIngest(t *testing.T) {
 		Raw: rawHex,
 	}
 	pktData := BuildPacketData(msg, decoded, "obs1", "SJC")
-	if err := s.InsertTransmission(pktData); err != nil {
+	if _, err := s.InsertTransmission(pktData); err != nil {
 		t.Fatal(err)
 	}
 
@@ -262,7 +262,7 @@ func TestInsertTransmissionEmptyHash(t *testing.T) {
 		Timestamp: "2026-03-25T00:00:00Z",
 		Hash:      "", // empty hash → should return nil
 	}
-	err = s.InsertTransmission(data)
+	_, err = s.InsertTransmission(data)
 	if err != nil {
 		t.Errorf("empty hash should return nil, got %v", err)
 	}
@@ -287,7 +287,7 @@ func TestInsertTransmissionEmptyTimestamp(t *testing.T) {
 		Hash:      "emptyts123456789",
 		RouteType: 2,
 	}
-	err = s.InsertTransmission(data)
+	_, err = s.InsertTransmission(data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -313,7 +313,7 @@ func TestInsertTransmissionEarlierFirstSeen(t *testing.T) {
 		Hash:      "firstseen12345678",
 		RouteType: 2,
 	}
-	if err := s.InsertTransmission(data); err != nil {
+	if _, err := s.InsertTransmission(data); err != nil {
 		t.Fatal(err)
 	}
 
@@ -324,7 +324,7 @@ func TestInsertTransmissionEarlierFirstSeen(t *testing.T) {
 		Hash:      "firstseen12345678",     // same hash
 		RouteType: 2,
 	}
-	if err := s.InsertTransmission(data2); err != nil {
+	if _, err := s.InsertTransmission(data2); err != nil {
 		t.Fatal(err)
 	}
 
@@ -348,7 +348,7 @@ func TestInsertTransmissionLaterFirstSeenNotUpdated(t *testing.T) {
 		Hash:      "notupdated1234567",
 		RouteType: 2,
 	}
-	if err := s.InsertTransmission(data); err != nil {
+	if _, err := s.InsertTransmission(data); err != nil {
 		t.Fatal(err)
 	}
 
@@ -359,7 +359,7 @@ func TestInsertTransmissionLaterFirstSeenNotUpdated(t *testing.T) {
 		Hash:      "notupdated1234567",
 		RouteType: 2,
 	}
-	if err := s.InsertTransmission(data2); err != nil {
+	if _, err := s.InsertTransmission(data2); err != nil {
 		t.Fatal(err)
 	}
 
@@ -385,7 +385,7 @@ func TestInsertTransmissionNilSNRRSSI(t *testing.T) {
 		SNR:       nil,
 		RSSI:      nil,
 	}
-	err = s.InsertTransmission(data)
+	_, err = s.InsertTransmission(data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -544,13 +544,13 @@ func TestInsertTransmissionDedupObservation(t *testing.T) {
 		RouteType: 2,
 		PathJSON:  "[]",
 	}
-	if err := s.InsertTransmission(data); err != nil {
+	if _, err := s.InsertTransmission(data); err != nil {
 		t.Fatal(err)
 	}
 
 	// Insert same hash again with same observer (no observerID) — 
 	// the UNIQUE constraint on observations dedup should handle it
-	if err := s.InsertTransmission(data); err != nil {
+	if _, err := s.InsertTransmission(data); err != nil {
 		t.Fatal(err)
 	}
 
