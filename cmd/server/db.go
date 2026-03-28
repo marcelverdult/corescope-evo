@@ -443,7 +443,7 @@ func (db *DB) QueryGroupedPackets(q PacketQuery) (*PacketResult, error) {
 		querySQL = fmt.Sprintf(`SELECT t.hash, t.first_seen, t.raw_hex, t.decoded_json, t.payload_type, t.route_type,
 			COALESCE((SELECT COUNT(*) FROM observations oi WHERE oi.transmission_id = t.id), 0) AS count,
 			COALESCE((SELECT COUNT(DISTINCT oi.observer_idx) FROM observations oi WHERE oi.transmission_id = t.id), 0) AS observer_count,
-			COALESCE((SELECT MAX(datetime(oi.timestamp, 'unixepoch')) FROM observations oi WHERE oi.transmission_id = t.id), t.first_seen) AS latest,
+			COALESCE((SELECT MAX(strftime('%%Y-%%m-%%dT%%H:%%M:%%fZ', oi.timestamp, 'unixepoch')) FROM observations oi WHERE oi.transmission_id = t.id), t.first_seen) AS latest,
 			obs.id AS observer_id, obs.name AS observer_name,
 			o.snr, o.rssi, o.path_json
 		FROM transmissions t
@@ -850,34 +850,6 @@ func (db *DB) GetRecentTransmissionsForNode(pubkey string, name string, limit in
 	for rows.Next() {
 		p := db.scanTransmissionRow(rows)
 		if p != nil {
-			// Parse _parsedPath from path_json
-			if pj, ok := p["path_json"].(string); ok && pj != "" {
-				var pathArr []interface{}
-				if json.Unmarshal([]byte(pj), &pathArr) == nil {
-					strs := make([]string, 0, len(pathArr))
-					for _, v := range pathArr {
-						if s, ok := v.(string); ok {
-							strs = append(strs, s)
-						}
-					}
-					p["_parsedPath"] = strs
-				} else {
-					p["_parsedPath"] = []string{}
-				}
-			} else {
-				p["_parsedPath"] = []string{}
-			}
-			// Parse _parsedDecoded from decoded_json
-			if dj, ok := p["decoded_json"].(string); ok && dj != "" {
-				var decoded map[string]interface{}
-				if json.Unmarshal([]byte(dj), &decoded) == nil {
-					p["_parsedDecoded"] = decoded
-				} else {
-					p["_parsedDecoded"] = map[string]interface{}{}
-				}
-			} else {
-				p["_parsedDecoded"] = map[string]interface{}{}
-			}
 			// Placeholder for observations — filled below
 			p["observations"] = []map[string]interface{}{}
 			if id, ok := p["id"].(int); ok {
@@ -921,7 +893,7 @@ func (db *DB) getObservationsForTransmissions(txIDs []int) map[int][]map[string]
 	var querySQL string
 	if db.isV3 {
 		querySQL = fmt.Sprintf(`SELECT o.transmission_id, o.id, obs.id AS observer_id, obs.name AS observer_name,
-			o.direction, o.snr, o.rssi, o.path_json, datetime(o.timestamp, 'unixepoch') AS obs_timestamp
+			o.direction, o.snr, o.rssi, o.path_json, strftime('%%Y-%%m-%%dT%%H:%%M:%%fZ', o.timestamp, 'unixepoch') AS obs_timestamp
 			FROM observations o
 			LEFT JOIN observers obs ON obs.rowid = o.observer_idx
 			WHERE o.transmission_id IN (%s)
@@ -950,16 +922,20 @@ func (db *DB) getObservationsForTransmissions(txIDs []int) map[int][]map[string]
 			continue
 		}
 
+		ts := nullStr(obsTimestamp)
+		if s, ok := ts.(string); ok {
+			ts = normalizeTimestamp(s)
+		}
+
 		obs := map[string]interface{}{
 			"id":              obsID,
 			"transmission_id": txID,
 			"observer_id":     nullStr(observerID),
 			"observer_name":   nullStr(observerName),
-			"direction":       nullStr(direction),
 			"snr":             nullFloat(snr),
 			"rssi":            nullFloat(rssi),
 			"path_json":       nullStr(pathJSON),
-			"timestamp":       nullStr(obsTimestamp),
+			"timestamp":       ts,
 		}
 		result[txID] = append(result[txID], obs)
 	}

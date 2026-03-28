@@ -236,17 +236,10 @@ type ObservationResp struct {
 	Hash           interface{} `json:"hash,omitempty"`
 	ObserverID     interface{} `json:"observer_id"`
 	ObserverName   interface{} `json:"observer_name"`
-	Direction      interface{} `json:"direction"`
 	SNR            interface{} `json:"snr"`
 	RSSI           interface{} `json:"rssi"`
-	Score          interface{} `json:"score"`
 	PathJSON       interface{} `json:"path_json"`
 	Timestamp      interface{} `json:"timestamp"`
-	RawHex         interface{} `json:"raw_hex,omitempty"`
-	PayloadType    interface{} `json:"payload_type,omitempty"`
-	DecodedJSON    interface{} `json:"decoded_json,omitempty"`
-	RouteType      interface{} `json:"route_type,omitempty"`
-	CreatedAt      interface{} `json:"created_at,omitempty"`
 }
 
 type GroupedPacketResp struct {

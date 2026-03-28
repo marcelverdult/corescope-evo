@@ -129,7 +129,7 @@ func (s *PacketStore) Load() error {
 		loadSQL = `SELECT t.id, t.raw_hex, t.hash, t.first_seen, t.route_type,
 				t.payload_type, t.payload_version, t.decoded_json,
 				o.id, obs.id, obs.name, o.direction,
-				o.snr, o.rssi, o.score, o.path_json, datetime(o.timestamp, 'unixepoch')
+				o.snr, o.rssi, o.score, o.path_json, strftime('%Y-%m-%dT%H:%M:%fZ', o.timestamp, 'unixepoch')
 			FROM transmissions t
 			LEFT JOIN observations o ON o.transmission_id = t.id
 			LEFT JOIN observers obs ON obs.rowid = o.observer_idx
@@ -216,7 +216,7 @@ func (s *PacketStore) Load() error {
 				RSSI:           nullFloatPtr(rssi),
 				Score:          nullIntPtr(score),
 				PathJSON:       obsPJ,
-				Timestamp:      nullStrVal(obsTimestamp),
+				Timestamp:      normalizeTimestamp(nullStrVal(obsTimestamp)),
 			}
 
 			tx.Observations = append(tx.Observations, obs)
@@ -758,7 +758,7 @@ func (s *PacketStore) IngestNewFromDB(sinceID, limit int) ([]map[string]interfac
 		querySQL = `SELECT t.id, t.raw_hex, t.hash, t.first_seen, t.route_type,
 				t.payload_type, t.payload_version, t.decoded_json,
 				o.id, obs.id, obs.name, o.direction,
-				o.snr, o.rssi, o.score, o.path_json, datetime(o.timestamp, 'unixepoch')
+				o.snr, o.rssi, o.score, o.path_json, strftime('%Y-%m-%dT%H:%M:%fZ', o.timestamp, 'unixepoch')
 			FROM transmissions t
 			LEFT JOIN observations o ON o.transmission_id = t.id
 			LEFT JOIN observers obs ON obs.rowid = o.observer_idx
@@ -913,7 +913,7 @@ func (s *PacketStore) IngestNewFromDB(sinceID, limit int) ([]map[string]interfac
 				RSSI:           r.rssi,
 				Score:          r.score,
 				PathJSON:       r.pathJSON,
-				Timestamp:      r.obsTS,
+				Timestamp:      normalizeTimestamp(r.obsTS),
 			}
 			tx.Observations = append(tx.Observations, obs)
 			tx.ObservationCount++
@@ -1002,7 +1002,7 @@ func (s *PacketStore) IngestNewObservations(sinceObsID, limit int) int {
 	var querySQL string
 	if s.db.isV3 {
 		querySQL = `SELECT o.id, o.transmission_id, obs.id, obs.name, o.direction,
-				o.snr, o.rssi, o.score, o.path_json, datetime(o.timestamp, 'unixepoch')
+				o.snr, o.rssi, o.score, o.path_json, strftime('%Y-%m-%dT%H:%M:%fZ', o.timestamp, 'unixepoch')
 			FROM observations o
 			LEFT JOIN observers obs ON obs.rowid = o.observer_idx
 			WHERE o.id > ?
@@ -1109,7 +1109,7 @@ func (s *PacketStore) IngestNewObservations(sinceObsID, limit int) int {
 			RSSI:           r.rssi,
 			Score:          r.score,
 			PathJSON:       r.pathJSON,
-			Timestamp:      r.timestamp,
+			Timestamp:      normalizeTimestamp(r.timestamp),
 		}
 		tx.Observations = append(tx.Observations, obs)
 		tx.ObservationCount++
@@ -1341,6 +1341,18 @@ func txToMap(tx *StoreTx) map[string]interface{} {
 func strOrNil(s string) interface{} {
 	if s == "" {
 		return nil
+	}
+	return s
+}
+
+// normalizeTimestamp converts SQLite datetime format ("YYYY-MM-DD HH:MM:SS")
+// to ISO 8601 ("YYYY-MM-DDTHH:MM:SSZ"). Already-ISO strings pass through.
+func normalizeTimestamp(s string) string {
+	if s == "" {
+		return s
+	}
+	if t, err := time.Parse("2006-01-02 15:04:05", s); err == nil {
+		return t.UTC().Format("2006-01-02T15:04:05.000Z")
 	}
 	return s
 }

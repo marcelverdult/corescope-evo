@@ -47,7 +47,7 @@ func setupTestDBv2(t *testing.T) *DB {
 		);
 		CREATE VIEW packets_v AS
 			SELECT o.id, t.raw_hex,
-				datetime(o.timestamp, 'unixepoch') AS timestamp,
+				strftime('%Y-%m-%dT%H:%M:%fZ', o.timestamp, 'unixepoch') AS timestamp,
 				o.observer_id, o.observer_name,
 				o.direction, o.snr, o.rssi, o.score, t.hash, t.route_type,
 				t.payload_type, t.payload_version, o.path_json, t.decoded_json, t.created_at

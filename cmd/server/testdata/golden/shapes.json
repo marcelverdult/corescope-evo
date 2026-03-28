@@ -1046,44 +1046,6 @@
             },
             "path_json": {
               "type": "string"
-            },
-            "_parsedPath": {
-              "type": "array",
-              "elementShape": {
-                "type": "string"
-              }
-            },
-            "_parsedDecoded": {
-              "type": "object",
-              "keys": {
-                "type": {
-                  "type": "string"
-                },
-                "pubKey": {
-                  "type": "string"
-                },
-                "timestamp": {
-                  "type": "number"
-                },
-                "timestampISO": {
-                  "type": "string"
-                },
-                "signature": {
-                  "type": "string"
-                },
-                "flags": {
-                  "type": "object"
-                },
-                "lat": {
-                  "type": "number"
-                },
-                "lon": {
-                  "type": "number"
-                },
-                "name": {
-                  "type": "string"
-                }
-              }
             }
           }
         }

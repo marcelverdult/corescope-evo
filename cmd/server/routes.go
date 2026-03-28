@@ -137,9 +137,16 @@ func (s *Server) perfMiddleware(next http.Handler) http.Handler {
 		s.perfStats.Requests++
 		s.perfStats.TotalMs += ms
 
-		// Normalize key
-		re := regexp.MustCompile(`[0-9a-f]{8,}`)
-		key := re.ReplaceAllString(r.URL.Path, ":id")
+		// Normalize key: prefer mux route template (like Node.js req.route.path)
+		key := r.URL.Path
+		if route := mux.CurrentRoute(r); route != nil {
+			if tmpl, err := route.GetPathTemplate(); err == nil {
+				key = muxBraceParam.ReplaceAllString(tmpl, ":$1")
+			}
+		}
+		if key == r.URL.Path {
+			key = perfHexFallback.ReplaceAllString(key, ":id")
+		}
 		if _, ok := s.perfStats.Endpoints[key]; !ok {
 			s.perfStats.Endpoints[key] = &EndpointPerf{Recent: make([]float64, 0, 100)}
 		}
@@ -594,6 +601,12 @@ func (s *Server) handlePacketTimestamps(w http.ResponseWriter, r *http.Request) 
 }
 
 var hashPattern = regexp.MustCompile(`^[0-9a-f]{16}$`)
+
+// muxBraceParam matches {param} in gorilla/mux route templates for normalization.
+var muxBraceParam = regexp.MustCompile(`\{([^}]+)\}`)
+
+// perfHexFallback matches hex IDs for perf path normalization fallback.
+var perfHexFallback = regexp.MustCompile(`[0-9a-f]{8,}`)
 
 func (s *Server) handlePacketDetail(w http.ResponseWriter, r *http.Request) {
 	param := mux.Vars(r)["id"]
@@ -2215,17 +2228,10 @@ func mapSliceToObservations(maps []map[string]interface{}) []ObservationResp {
 		obs.Hash = m["hash"]
 		obs.ObserverID = m["observer_id"]
 		obs.ObserverName = m["observer_name"]
-		obs.Direction = m["direction"]
 		obs.SNR = m["snr"]
 		obs.RSSI = m["rssi"]
-		obs.Score = m["score"]
 		obs.PathJSON = m["path_json"]
 		obs.Timestamp = m["timestamp"]
-		obs.RawHex = m["raw_hex"]
-		obs.PayloadType = m["payload_type"]
-		obs.DecodedJSON = m["decoded_json"]
-		obs.RouteType = m["route_type"]
-		obs.CreatedAt = m["created_at"]
 		result = append(result, obs)
 	}
 	return result
