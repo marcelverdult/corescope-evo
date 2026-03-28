@@ -224,11 +224,58 @@ func applySchema(db *sql.DB) error {
 	row = db.QueryRow("SELECT 1 FROM _migrations WHERE name = 'node_telemetry_v1'")
 	if row.Scan(&migDone) != nil {
 		log.Println("[migration] Adding telemetry columns to nodes/inactive_nodes...")
-		db.Exec(`ALTER TABLE nodes ADD COLUMN battery_mv INTEGER`)
-		db.Exec(`ALTER TABLE nodes ADD COLUMN temperature_c REAL`)
-		db.Exec(`ALTER TABLE inactive_nodes ADD COLUMN battery_mv INTEGER`)
-		db.Exec(`ALTER TABLE inactive_nodes ADD COLUMN temperature_c REAL`)
-		db.Exec(`INSERT INTO _migrations (name) VALUES ('node_telemetry_v1')`)
+
+		// checkAndAddColumn checks whether `column` already exists in `table`
+		// using PRAGMA table_info, and adds it if missing. All call sites pass
+		// hardcoded table/column/type literals so there is no SQL injection risk.
+		checkAndAddColumn := func(table, column, colType string) error {
+			rows, err := db.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+			if err != nil {
+				return fmt.Errorf("querying table info for %s: %w", table, err)
+			}
+			defer rows.Close()
+
+			exists := false
+			for rows.Next() {
+				var cid int
+				var name, ctype string
+				var notnull, pk int
+				var dfltValue sql.NullString
+				if err := rows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk); err != nil {
+					return fmt.Errorf("scanning table info for %s: %w", table, err)
+				}
+				if name == column {
+					exists = true
+					break
+				}
+			}
+			if err := rows.Err(); err != nil {
+				return fmt.Errorf("iterating table info for %s: %w", table, err)
+			}
+			if exists {
+				return nil
+			}
+			if _, err := db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, colType)); err != nil {
+				return fmt.Errorf("adding column %s to %s: %w", column, table, err)
+			}
+			return nil
+		}
+
+		if err := checkAndAddColumn("nodes", "battery_mv", "INTEGER"); err != nil {
+			return err
+		}
+		if err := checkAndAddColumn("nodes", "temperature_c", "REAL"); err != nil {
+			return err
+		}
+		if err := checkAndAddColumn("inactive_nodes", "battery_mv", "INTEGER"); err != nil {
+			return err
+		}
+		if err := checkAndAddColumn("inactive_nodes", "temperature_c", "REAL"); err != nil {
+			return err
+		}
+		if _, err := db.Exec(`INSERT INTO _migrations (name) VALUES ('node_telemetry_v1')`); err != nil {
+			return fmt.Errorf("recording node_telemetry_v1 migration: %w", err)
+		}
 		log.Println("[migration] node telemetry columns added")
 	}
 

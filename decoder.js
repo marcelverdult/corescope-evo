@@ -149,14 +149,16 @@ function decodeAdvert(buf) {
     }
 
     // Telemetry bytes after name: battery_mv(2 LE) + temperature_c(2 LE, signed, /100)
-    if (off + 4 <= appdata.length) {
+    // Only sensor nodes (advType=4) carry telemetry bytes.
+    if (result.flags.sensor && off + 4 <= appdata.length) {
       const batteryMv = appdata.readUInt16LE(off);
       const tempRaw = appdata.readInt16LE(off + 2);
       const tempC = tempRaw / 100.0;
       if (batteryMv > 0 && batteryMv <= 10000) {
         result.battery_mv = batteryMv;
       }
-      if (tempRaw !== 0 || (off + 4 < appdata.length)) {
+      // Raw int16 / 100 → °C; accept -50°C to 100°C (raw: -5000 to 10000)
+      if (tempRaw >= -5000 && tempRaw <= 10000) {
         result.temperature_c = tempC;
       }
     }

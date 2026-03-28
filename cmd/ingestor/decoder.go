@@ -272,14 +272,16 @@ func decodeAdvert(buf []byte) Payload {
 		}
 
 		// Telemetry bytes after name: battery_mv(2 LE) + temperature_c(2 LE, signed, /100)
-		if off+4 <= len(appdata) {
+		// Only sensor nodes (advType=4) carry telemetry bytes.
+		if p.Flags.Sensor && off+4 <= len(appdata) {
 			batteryMv := int(binary.LittleEndian.Uint16(appdata[off : off+2]))
 			tempRaw := int16(binary.LittleEndian.Uint16(appdata[off+2 : off+4]))
 			tempC := float64(tempRaw) / 100.0
 			if batteryMv > 0 && batteryMv <= 10000 {
 				p.BatteryMv = &batteryMv
 			}
-			if tempRaw != 0 || (off+4 < len(appdata)) {
+			// Raw int16 / 100 → °C; accept -50°C to 100°C (raw: -5000 to 10000)
+			if tempRaw >= -5000 && tempRaw <= 10000 {
 				p.TemperatureC = &tempC
 			}
 		}

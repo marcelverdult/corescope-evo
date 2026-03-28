@@ -1406,7 +1406,8 @@ func TestDecodeAdvertWithTelemetryNegativeTemp(t *testing.T) {
 	batteryLE := make([]byte, 2)
 	binary.LittleEndian.PutUint16(batteryLE, 4200)
 	tempLE := make([]byte, 2)
-	binary.LittleEndian.PutUint16(tempLE, uint16(int16(-550)))
+	var negTemp int16 = -550
+	binary.LittleEndian.PutUint16(tempLE, uint16(negTemp))
 
 	hexStr := "1200" + pubkey + timestamp + signature + flags +
 		name + nullTerm +
@@ -1452,5 +1453,56 @@ func TestDecodeAdvertWithoutTelemetry(t *testing.T) {
 	}
 	if pkt.Payload.TemperatureC != nil {
 		t.Errorf("temperature_c should be nil for advert without telemetry, got %f", *pkt.Payload.TemperatureC)
+	}
+}
+
+func TestDecodeAdvertNonSensorIgnoresTelemetryBytes(t *testing.T) {
+	// A repeater node with 4 trailing bytes after the name should NOT decode telemetry.
+	pubkey := strings.Repeat("AB", 32)
+	timestamp := "00000000"
+	signature := strings.Repeat("CD", 64)
+	flags := "82" // repeater(2) | hasName(0x80)
+	name := hex.EncodeToString([]byte("Rptr"))
+	nullTerm := "00"
+	extraBytes := "B40ED403" // battery-like and temp-like bytes
+
+	hexStr := "1200" + pubkey + timestamp + signature + flags + name + nullTerm + extraBytes
+	pkt, err := DecodePacket(hexStr, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pkt.Payload.BatteryMv != nil {
+		t.Errorf("battery_mv should be nil for non-sensor node, got %d", *pkt.Payload.BatteryMv)
+	}
+	if pkt.Payload.TemperatureC != nil {
+		t.Errorf("temperature_c should be nil for non-sensor node, got %f", *pkt.Payload.TemperatureC)
+	}
+}
+
+func TestDecodeAdvertTelemetryZeroTemp(t *testing.T) {
+	// 0°C is a valid temperature and must be emitted.
+	pubkey := strings.Repeat("12", 32)
+	timestamp := "00000000"
+	signature := strings.Repeat("34", 64)
+	flags := "84" // sensor(4) | hasName(0x80)
+	name := hex.EncodeToString([]byte("FreezeSensor"))
+	nullTerm := "00"
+	batteryLE := make([]byte, 2)
+	binary.LittleEndian.PutUint16(batteryLE, 3600)
+	tempLE := make([]byte, 2) // tempRaw=0 → 0°C
+
+	hexStr := "1200" + pubkey + timestamp + signature + flags +
+		name + nullTerm +
+		hex.EncodeToString(batteryLE) + hex.EncodeToString(tempLE)
+
+	pkt, err := DecodePacket(hexStr, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pkt.Payload.TemperatureC == nil {
+		t.Fatal("temperature_c should not be nil for 0°C")
+	}
+	if *pkt.Payload.TemperatureC != 0.0 {
+		t.Errorf("temperature_c=%f, want 0.0", *pkt.Payload.TemperatureC)
 	}
 }
