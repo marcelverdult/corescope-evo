@@ -35,7 +35,8 @@ type Store struct {
 	stmtUpsertNode           *sql.Stmt
 	stmtIncrementAdvertCount *sql.Stmt
 	stmtUpsertObserver       *sql.Stmt
-	stmtGetObserverRowid     *sql.Stmt
+	stmtGetObserverRowid        *sql.Stmt
+	stmtUpdateNodeTelemetry *sql.Stmt
 }
 
 // OpenStore opens or creates a SQLite DB at the given path, applying the
@@ -81,7 +82,9 @@ func applySchema(db *sql.DB) error {
 			lon REAL,
 			last_seen TEXT,
 			first_seen TEXT,
-			advert_count INTEGER DEFAULT 0
+			advert_count INTEGER DEFAULT 0,
+			battery_mv INTEGER,
+			temperature_c REAL
 		);
 
 		CREATE TABLE IF NOT EXISTS observers (
@@ -111,7 +114,9 @@ func applySchema(db *sql.DB) error {
 			lon REAL,
 			last_seen TEXT,
 			first_seen TEXT,
-			advert_count INTEGER DEFAULT 0
+			advert_count INTEGER DEFAULT 0,
+			battery_mv INTEGER,
+			temperature_c REAL
 		);
 
 		CREATE INDEX IF NOT EXISTS idx_inactive_nodes_last_seen ON inactive_nodes(last_seen);
@@ -215,6 +220,65 @@ func applySchema(db *sql.DB) error {
 		log.Println("[migration] noise_floor migration complete")
 	}
 
+	// One-time migration: add telemetry columns to nodes and inactive_nodes tables.
+	row = db.QueryRow("SELECT 1 FROM _migrations WHERE name = 'node_telemetry_v1'")
+	if row.Scan(&migDone) != nil {
+		log.Println("[migration] Adding telemetry columns to nodes/inactive_nodes...")
+
+		// checkAndAddColumn checks whether `column` already exists in `table`
+		// using PRAGMA table_info, and adds it if missing. All call sites pass
+		// hardcoded table/column/type literals so there is no SQL injection risk.
+		checkAndAddColumn := func(table, column, colType string) error {
+			rows, err := db.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+			if err != nil {
+				return fmt.Errorf("querying table info for %s: %w", table, err)
+			}
+			defer rows.Close()
+
+			exists := false
+			for rows.Next() {
+				var cid int
+				var name, ctype string
+				var notnull, pk int
+				var dfltValue sql.NullString
+				if err := rows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk); err != nil {
+					return fmt.Errorf("scanning table info for %s: %w", table, err)
+				}
+				if name == column {
+					exists = true
+					break
+				}
+			}
+			if err := rows.Err(); err != nil {
+				return fmt.Errorf("iterating table info for %s: %w", table, err)
+			}
+			if exists {
+				return nil
+			}
+			if _, err := db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, colType)); err != nil {
+				return fmt.Errorf("adding column %s to %s: %w", column, table, err)
+			}
+			return nil
+		}
+
+		if err := checkAndAddColumn("nodes", "battery_mv", "INTEGER"); err != nil {
+			return err
+		}
+		if err := checkAndAddColumn("nodes", "temperature_c", "REAL"); err != nil {
+			return err
+		}
+		if err := checkAndAddColumn("inactive_nodes", "battery_mv", "INTEGER"); err != nil {
+			return err
+		}
+		if err := checkAndAddColumn("inactive_nodes", "temperature_c", "REAL"); err != nil {
+			return err
+		}
+		if _, err := db.Exec(`INSERT INTO _migrations (name) VALUES ('node_telemetry_v1')`); err != nil {
+			return fmt.Errorf("recording node_telemetry_v1 migration: %w", err)
+		}
+		log.Println("[migration] node telemetry columns added")
+	}
+
 	return nil
 }
 
@@ -285,6 +349,16 @@ func (s *Store) prepareStatements() error {
 	}
 
 	s.stmtGetObserverRowid, err = s.db.Prepare("SELECT rowid FROM observers WHERE id = ?")
+	if err != nil {
+		return err
+	}
+
+	s.stmtUpdateNodeTelemetry, err = s.db.Prepare(`
+		UPDATE nodes SET
+			battery_mv = COALESCE(?, battery_mv),
+			temperature_c = COALESCE(?, temperature_c)
+		WHERE public_key = ?
+	`)
 	if err != nil {
 		return err
 	}
@@ -390,6 +464,22 @@ func (s *Store) UpsertNode(pubKey, name, role string, lat, lon *float64, lastSee
 // IncrementAdvertCount increments advert_count for a node by public key.
 func (s *Store) IncrementAdvertCount(pubKey string) error {
 	_, err := s.stmtIncrementAdvertCount.Exec(pubKey)
+	return err
+}
+
+// UpdateNodeTelemetry updates battery and temperature for a node.
+func (s *Store) UpdateNodeTelemetry(pubKey string, batteryMv *int, temperatureC *float64) error {
+	var bv, tc interface{}
+	if batteryMv != nil {
+		bv = *batteryMv
+	}
+	if temperatureC != nil {
+		tc = *temperatureC
+	}
+	_, err := s.stmtUpdateNodeTelemetry.Exec(bv, tc, pubKey)
+	if err != nil {
+		s.Stats.WriteErrors.Add(1)
+	}
 	return err
 }
 
