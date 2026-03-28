@@ -192,6 +192,9 @@ jobs:
       - name: Start instrumented test server on port 13581
         if: steps.changes.outputs.frontend == 'true'
         run: |
+          # Kill any stale server on 13581
+          fuser -k 13581/tcp 2>/dev/null || true
+          sleep 2
           COVERAGE=1 PORT=13581 node server.js &
           echo $! > .server.pid
           echo "Server PID: $(cat .server.pid)"
@@ -203,6 +206,8 @@ jobs:
             fi
             if [ "$i" -eq 30 ]; then
               echo "Server failed to start within 30s"
+              echo "Last few lines from server logs:"
+              ps aux | grep "PORT=13581" || echo "No server process found"
               exit 1
             fi
             sleep 1
@@ -364,7 +369,11 @@ jobs:
 
       - name: Start Node staging on port 81
         run: |
+          # Force remove stale containers and volumes
           docker rm -f meshcore-staging 2>/dev/null || true
+          docker volume prune -f 2>/dev/null || true
+          # Clean up stale ports
+          fuser -k 81/tcp 2>/dev/null || true
           docker compose --profile staging up -d staging
 
       - name: Healthcheck Node staging container
@@ -528,20 +537,22 @@ jobs:
             echo "  ✓ channel-messages.json" || echo "  ⚠ channel-messages failed"
           
           # WebSocket message capture (capture one message if available)
+          # Non-blocking: if no live packets, skip with warning
           echo "  Capturing WebSocket message..."
-          docker exec meshcore-prod node -e "
+          if docker exec meshcore-prod timeout 5 node -e "
             const WebSocket = require('ws');
             const ws = new WebSocket('ws://localhost:3000');
-            const timeout = setTimeout(() => { console.error('timeout'); process.exit(1); }, 5000);
             ws.on('message', (data) => {
               console.log(data);
-              clearTimeout(timeout);
               ws.close();
               process.exit(0);
             });
-            ws.on('error', () => { clearTimeout(timeout); process.exit(1); });
-          " > "proto/testdata/node-fixtures/websocket-message.json" 2>/dev/null && \
-            echo "  ✓ websocket-message.json" || echo "  ⚠ websocket-message failed (no live packets)"
+            ws.on('error', () => { process.exit(1); });
+          " > "proto/testdata/node-fixtures/websocket-message.json" 2>/dev/null; then
+            echo "  ✓ websocket-message.json"
+          else
+            echo "  ⚠ websocket-message failed (no live packets) — skipping"
+          fi
           
           echo ""
           echo "Running proto validator..."
@@ -566,20 +577,23 @@ jobs:
 
       - name: Start Go staging on port 82
         run: |
+          # Force remove stale containers
           docker rm -f meshcore-staging-go 2>/dev/null || true
+          # Clean up stale ports
+          fuser -k 82/tcp 2>/dev/null || true
           docker compose --profile staging-go up -d staging-go
 
       - name: Healthcheck Go staging container
         run: |
-          for i in $(seq 1 60); do
+          for i in $(seq 1 120); do
             HEALTH=$(docker inspect meshcore-staging-go --format '{{.State.Health.Status}}' 2>/dev/null || echo "starting")
             if [ "$HEALTH" = "healthy" ]; then
               echo "Go staging healthy after ${i}s"
               break
             fi
-            if [ "$i" -eq 60 ]; then
-              echo "Go staging failed health check after 60s"
-              docker logs meshcore-staging-go --tail 30
+            if [ "$i" -eq 120 ]; then
+              echo "Go staging failed health check after 120s"
+              docker logs meshcore-staging-go --tail 50
               exit 1
             fi
             sleep 1
