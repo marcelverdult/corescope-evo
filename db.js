@@ -293,18 +293,39 @@ for (const col of ['model', 'firmware', 'client_version', 'radio', 'battery_mv',
   if (cleaned.changes > 0) console.log(`[cleanup] Removed ${cleaned.changes} corrupted node(s) from DB`);
 }
 
+// --- One-time migration: recalculate advert_count to count unique transmissions only ---
+{
+  db.exec(`CREATE TABLE IF NOT EXISTS _migrations (name TEXT PRIMARY KEY)`);
+  const done = db.prepare(`SELECT 1 FROM _migrations WHERE name = 'advert_count_unique_v1'`).get();
+  if (!done) {
+    const start = Date.now();
+    console.log('[migration] Recalculating advert_count (unique transmissions only)...');
+    db.prepare(`
+      UPDATE nodes SET advert_count = (
+        SELECT COUNT(*) FROM transmissions t
+        WHERE t.payload_type = 4
+          AND t.decoded_json LIKE '%' || nodes.public_key || '%'
+      )
+    `).run();
+    db.prepare(`INSERT INTO _migrations (name) VALUES ('advert_count_unique_v1')`).run();
+    console.log(`[migration] advert_count recalculated in ${Date.now() - start}ms`);
+  }
+}
+
 // --- Prepared statements ---
 const stmts = {
   upsertNode: db.prepare(`
-    INSERT INTO nodes (public_key, name, role, lat, lon, last_seen, first_seen, advert_count)
-    VALUES (@public_key, @name, @role, @lat, @lon, @last_seen, @first_seen, 1)
+    INSERT INTO nodes (public_key, name, role, lat, lon, last_seen, first_seen)
+    VALUES (@public_key, @name, @role, @lat, @lon, @last_seen, @first_seen)
     ON CONFLICT(public_key) DO UPDATE SET
       name = COALESCE(@name, name),
       role = COALESCE(@role, role),
       lat = COALESCE(@lat, lat),
       lon = COALESCE(@lon, lon),
-      last_seen = @last_seen,
-      advert_count = advert_count + 1
+      last_seen = @last_seen
+  `),
+  incrementAdvertCount: db.prepare(`
+    UPDATE nodes SET advert_count = advert_count + 1 WHERE public_key = @public_key
   `),
   upsertObserver: db.prepare(`
     INSERT INTO observers (id, name, iata, last_seen, first_seen, packet_count, model, firmware, client_version, radio, battery_mv, uptime_secs, noise_floor)
@@ -413,6 +434,7 @@ function insertTransmission(data) {
   const timestamp = data.timestamp || new Date().toISOString();
   let transmissionId;
 
+  let isNew = false;
   const existing = stmts.getTransmissionByHash.get(hash);
   if (existing) {
     transmissionId = existing.id;
@@ -420,6 +442,7 @@ function insertTransmission(data) {
       stmts.updateTransmissionFirstSeen.run({ id: transmissionId, first_seen: timestamp });
     }
   } else {
+    isNew = true;
     const result = stmts.insertTransmission.run({
       raw_hex: data.raw_hex || '',
       hash,
@@ -440,7 +463,7 @@ function insertTransmission(data) {
     // In-memory dedup check
     const dedupKey = `${transmissionId}|${observerIdx}|${data.path_json || ''}`;
     if (dedupSet.has(dedupKey)) {
-      return { transmissionId, observationId: 0 };
+      return { transmissionId, observationId: 0, isNew };
     }
 
     obsResult = stmts.insertObservation.run({
@@ -469,7 +492,11 @@ function insertTransmission(data) {
     });
   }
 
-  return { transmissionId, observationId: obsResult.lastInsertRowid };
+  return { transmissionId, observationId: obsResult.lastInsertRowid, isNew };
+}
+
+function incrementAdvertCount(publicKey) {
+  stmts.incrementAdvertCount.run({ public_key: publicKey });
 }
 
 function upsertNode(data) {
@@ -843,4 +870,4 @@ function getNodeAnalytics(pubkey, days) {
   };
 }
 
-module.exports = { db, schemaVersion, observerIdToRowid, resolveObserverIdx, insertTransmission, upsertNode, upsertObserver, updateObserverStatus, getPackets, getPacket, getTransmission, getNodes, getNode, getObservers, getStats, searchNodes, getNodeHealth, getNodeAnalytics, removePhantomNodes };
+module.exports = { db, schemaVersion, observerIdToRowid, resolveObserverIdx, insertTransmission, upsertNode, incrementAdvertCount, upsertObserver, updateObserverStatus, getPackets, getPacket, getTransmission, getNodes, getNode, getObservers, getStats, searchNodes, getNodeHealth, getNodeAnalytics, removePhantomNodes };

@@ -211,7 +211,8 @@ func handleMessage(store *Store, tag string, source MQTTSource, m mqtt.Message, 
 		}
 
 		pktData := BuildPacketData(mqttMsg, decoded, observerID, region)
-		if err := store.InsertTransmission(pktData); err != nil {
+		isNew, err := store.InsertTransmission(pktData)
+		if err != nil {
 			log.Printf("MQTT [%s] db insert error: %v", tag, err)
 		}
 
@@ -222,6 +223,11 @@ func handleMessage(store *Store, tag string, source MQTTSource, m mqtt.Message, 
 				role := advertRole(decoded.Payload.Flags)
 				if err := store.UpsertNode(decoded.Payload.PubKey, decoded.Payload.Name, role, decoded.Payload.Lat, decoded.Payload.Lon, pktData.Timestamp); err != nil {
 					log.Printf("MQTT [%s] node upsert error: %v", tag, err)
+				}
+				if isNew {
+					if err := store.IncrementAdvertCount(decoded.Payload.PubKey); err != nil {
+						log.Printf("MQTT [%s] advert count error: %v", tag, err)
+					}
 				}
 			} else {
 				log.Printf("MQTT [%s] skipping corrupted ADVERT: %s", tag, reason)

@@ -49,7 +49,13 @@ console.log('\nupsertNode:');
   db.upsertNode({ public_key: 'aabbccdd11223344aabbccdd11223344', name: 'UpdatedNode', role: 'room' });
   const node2 = db.getNode('aabbccdd11223344aabbccdd11223344');
   assert(node2.name === 'UpdatedNode', 'name updated');
-  assert(node2.advert_count === 2, 'advert_count incremented');
+  assert(node2.name === 'UpdatedNode', 'name updated');
+  assert(node2.advert_count === 0, 'advert_count unchanged by upsertNode');
+
+  // advert_count only increments via incrementAdvertCount
+  db.incrementAdvertCount('aabbccdd11223344aabbccdd11223344');
+  const node3 = db.getNode('aabbccdd11223344aabbccdd11223344');
+  assert(node3.advert_count === 1, 'advert_count incremented via incrementAdvertCount');
 }
 
 // --- upsertObserver ---

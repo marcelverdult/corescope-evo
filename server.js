@@ -691,7 +691,8 @@ for (const source of mqttSources) {
           decoded_json: JSON.stringify(decoded.payload),
         };
         const packetId = pktStore.insert(pktData); _updateHashSizeForPacketLocal(pktData);
-        try { db.insertTransmission(pktData); } catch (e) { console.error('[dual-write] transmission insert error:', e.message); }
+        let txResult;
+        try { txResult = db.insertTransmission(pktData); } catch (e) { console.error('[dual-write] transmission insert error:', e.message); }
 
         if (decoded.path.hops.length > 0) {
           // Auto-create stub nodes from 2+ byte path hops
@@ -706,6 +707,7 @@ for (const source of mqttSources) {
           if (validation.valid) {
             const role = p.flags ? (p.flags.repeater ? 'repeater' : p.flags.room ? 'room' : p.flags.sensor ? 'sensor' : 'companion') : 'companion';
             db.upsertNode({ public_key: p.pubKey, name: p.name || null, role, lat: p.lat, lon: p.lon, last_seen: now });
+            if (txResult && txResult.isNew) db.incrementAdvertCount(p.pubKey);
             // Invalidate this node's caches on advert
             cache.invalidate('node:' + p.pubKey);
             cache.invalidate('health:' + p.pubKey);
@@ -794,7 +796,9 @@ for (const source of mqttSources) {
             decoded_json: JSON.stringify(advert),
           };
           const packetId = pktStore.insert(advertPktData); _updateHashSizeForPacketLocal(advertPktData);
-          try { db.insertTransmission(advertPktData); } catch (e) { console.error('[dual-write] transmission insert error:', e.message); }
+          let txResult;
+          try { txResult = db.insertTransmission(advertPktData); } catch (e) { console.error('[dual-write] transmission insert error:', e.message); }
+          if (txResult && txResult.isNew) db.incrementAdvertCount(pubKey);
           broadcast({ type: 'packet', data: { id: packetId, hash: advertPktData.hash, raw: advertPktData.raw_hex, decoded: { header: { payloadTypeName: 'ADVERT' }, payload: advert } } });
         }
         return;
@@ -1029,7 +1033,8 @@ app.post('/api/packets', requireApiKey, (req, res) => {
       decoded_json: JSON.stringify(decoded.payload),
     };
     const packetId = pktStore.insert(apiPktData); _updateHashSizeForPacketLocal(apiPktData);
-    try { db.insertTransmission(apiPktData); } catch (e) { console.error('[dual-write] transmission insert error:', e.message); }
+    let txResult;
+    try { txResult = db.insertTransmission(apiPktData); } catch (e) { console.error('[dual-write] transmission insert error:', e.message); }
 
     if (decoded.path.hops.length > 0) {
       const _now = new Date().toISOString();
@@ -1043,6 +1048,7 @@ app.post('/api/packets', requireApiKey, (req, res) => {
       if (validation.valid) {
         const role = p.flags ? (p.flags.repeater ? 'repeater' : p.flags.room ? 'room' : p.flags.sensor ? 'sensor' : 'companion') : 'companion';
         db.upsertNode({ public_key: p.pubKey, name: p.name || null, role, lat: p.lat, lon: p.lon, last_seen: now });
+        if (txResult && txResult.isNew) db.incrementAdvertCount(p.pubKey);
       } else {
         console.warn(`[advert] Skipping corrupted ADVERT (API): ${validation.reason}`);
       }

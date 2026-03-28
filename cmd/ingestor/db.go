@@ -16,13 +16,14 @@ import (
 type Store struct {
 	db *sql.DB
 
-	stmtGetTxByHash        *sql.Stmt
-	stmtInsertTransmission *sql.Stmt
-	stmtUpdateTxFirstSeen  *sql.Stmt
-	stmtInsertObservation  *sql.Stmt
-	stmtUpsertNode         *sql.Stmt
-	stmtUpsertObserver     *sql.Stmt
-	stmtGetObserverRowid   *sql.Stmt
+	stmtGetTxByHash          *sql.Stmt
+	stmtInsertTransmission   *sql.Stmt
+	stmtUpdateTxFirstSeen    *sql.Stmt
+	stmtInsertObservation    *sql.Stmt
+	stmtUpsertNode           *sql.Stmt
+	stmtIncrementAdvertCount *sql.Stmt
+	stmtUpsertObserver       *sql.Stmt
+	stmtGetObserverRowid     *sql.Stmt
 }
 
 // OpenStore opens or creates a SQLite DB at the given path, applying the
@@ -137,6 +138,23 @@ func applySchema(db *sql.DB) error {
 		}
 	}
 
+	// One-time migration: recalculate advert_count to count unique transmissions only
+	db.Exec(`CREATE TABLE IF NOT EXISTS _migrations (name TEXT PRIMARY KEY)`)
+	var migDone int
+	row = db.QueryRow("SELECT 1 FROM _migrations WHERE name = 'advert_count_unique_v1'")
+	if row.Scan(&migDone) != nil {
+		log.Println("[migration] Recalculating advert_count (unique transmissions only)...")
+		db.Exec(`
+			UPDATE nodes SET advert_count = (
+				SELECT COUNT(*) FROM transmissions t
+				WHERE t.payload_type = 4
+				  AND t.decoded_json LIKE '%' || nodes.public_key || '%'
+			)
+		`)
+		db.Exec(`INSERT INTO _migrations (name) VALUES ('advert_count_unique_v1')`)
+		log.Println("[migration] advert_count recalculated")
+	}
+
 	return nil
 }
 
@@ -170,15 +188,21 @@ func (s *Store) prepareStatements() error {
 	}
 
 	s.stmtUpsertNode, err = s.db.Prepare(`
-		INSERT INTO nodes (public_key, name, role, lat, lon, last_seen, first_seen, advert_count)
-		VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+		INSERT INTO nodes (public_key, name, role, lat, lon, last_seen, first_seen)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(public_key) DO UPDATE SET
 			name = COALESCE(?, name),
 			role = COALESCE(?, role),
 			lat = COALESCE(?, lat),
 			lon = COALESCE(?, lon),
-			last_seen = ?,
-			advert_count = advert_count + 1
+			last_seen = ?
+	`)
+	if err != nil {
+		return err
+	}
+
+	s.stmtIncrementAdvertCount, err = s.db.Prepare(`
+		UPDATE nodes SET advert_count = advert_count + 1 WHERE public_key = ?
 	`)
 	if err != nil {
 		return err
@@ -206,10 +230,11 @@ func (s *Store) prepareStatements() error {
 }
 
 // InsertTransmission inserts a decoded packet into transmissions + observations.
-func (s *Store) InsertTransmission(data *PacketData) error {
+// Returns true if a new transmission was created (not a duplicate hash).
+func (s *Store) InsertTransmission(data *PacketData) (bool, error) {
 	hash := data.Hash
 	if hash == "" {
-		return nil
+		return false, nil
 	}
 
 	now := data.Timestamp
@@ -218,6 +243,7 @@ func (s *Store) InsertTransmission(data *PacketData) error {
 	}
 
 	var txID int64
+	isNew := false
 
 	// Check for existing transmission
 	var existingID int64
@@ -231,13 +257,14 @@ func (s *Store) InsertTransmission(data *PacketData) error {
 		}
 	} else {
 		// New transmission
+		isNew = true
 		result, err := s.stmtInsertTransmission.Exec(
 			data.RawHex, hash, now,
 			data.RouteType, data.PayloadType, data.PayloadVersion,
 			data.DecodedJSON,
 		)
 		if err != nil {
-			return fmt.Errorf("insert transmission: %w", err)
+			return false, fmt.Errorf("insert transmission: %w", err)
 		}
 		txID, _ = result.LastInsertId()
 	}
@@ -267,7 +294,7 @@ func (s *Store) InsertTransmission(data *PacketData) error {
 		log.Printf("[db] observation insert (non-fatal): %v", err)
 	}
 
-	return nil
+	return isNew, nil
 }
 
 // UpsertNode inserts or updates a node.
@@ -280,6 +307,12 @@ func (s *Store) UpsertNode(pubKey, name, role string, lat, lon *float64, lastSee
 		pubKey, name, role, lat, lon, now, now,
 		name, role, lat, lon, now,
 	)
+	return err
+}
+
+// IncrementAdvertCount increments advert_count for a node by public key.
+func (s *Store) IncrementAdvertCount(pubKey string) error {
+	_, err := s.stmtIncrementAdvertCount.Exec(pubKey)
 	return err
 }
 
