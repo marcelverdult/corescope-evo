@@ -64,7 +64,6 @@ services:
       - caddy-data-staging-go:/data/caddy
     environment:
       - NODE_ENV=staging
-      - MQTT_BROKER=mqtt://localhost:1883
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/stats"]
       interval: 30s
