@@ -2286,11 +2286,11 @@ app.get('/api/observers', (req, res) => {
   for (const n of allNodes) nodeMap.set(n.public_key?.toLowerCase(), n);
   const result = observers.map(o => {
     const obsPackets = pktStore.byObserver.get(o.id) || [];
-    // byObserver is sorted newest-first, so count from front until we pass the cutoff
+    // byObserver is NOT uniformly sorted — initial DB load is DESC but live
+    // ingestion appends newest at the end.  Full scan required.
     let count = 0;
-    for (let i = 0; i < obsPackets.length; i++) {
-      if (obsPackets[i].timestamp > oneHourAgo) count++;
-      else break;
+    for (const obs of obsPackets) {
+      if (obs.timestamp > oneHourAgo) count++;
     }
     const node = nodeMap.get(o.id?.toLowerCase());
     return { ...o, packetsLastHour: count, lat: node?.lat || null, lon: node?.lon || null, nodeRole: node?.role || null };

@@ -463,6 +463,19 @@ seedTestData();
     assert(typeof r.body === 'object', 'should return observers');
   });
 
+  await t('GET /api/observers — packetsLastHour regression #182', async () => {
+    // Clear cache so the handler re-computes counts
+    cache.clear();
+    const r = await request(app).get('/api/observers').expect(200);
+    const observers = r.body.observers || [];
+    const obs1 = observers.find(o => o.id === 'test-obs-1');
+    if (obs1) {
+      assert(typeof obs1.packetsLastHour === 'number', 'packetsLastHour must be a number');
+      // test-obs-1 has recent seeded packets — must not be zero
+      assert(obs1.packetsLastHour > 0, `packetsLastHour should be > 0, got ${obs1.packetsLastHour} (regression #182)`);
+    }
+  });
+
   await t('GET /api/observers/:id — existing', async () => {
     const r = await request(app).get('/api/observers/test-obs-1');
     assert(r.status === 200 || r.status === 404, 'should handle');

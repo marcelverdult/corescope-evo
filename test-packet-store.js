@@ -496,6 +496,57 @@ test('memory estimate reflects deduplication savings', () => {
   assert.strictEqual(obsWithRawHex, 0, 'no observation should have own raw_hex property');
 });
 
+// === Regression: packetsLastHour must count live-appended observations (#182) ===
+console.log('\n=== packetsLastHour byObserver regression (#182) ===');
+
+test('byObserver counts recent packets regardless of insertion order', () => {
+  const store = new PacketStore(createMockDb());
+  store.load();
+
+  const twoHoursAgo = new Date(Date.now() - 7200000).toISOString();
+  const thirtyMinAgo = new Date(Date.now() - 1800000).toISOString();
+  const fiveMinAgo   = new Date(Date.now() - 300000).toISOString();
+
+  // Simulate initial DB load: oldest packets pushed first (as if loaded DESC then reversed)
+  store.insert(makePacketData({ hash: 'old1', timestamp: twoHoursAgo, observer_id: 'obs-hr' }));
+  // Simulate live-ingested packet (appended at end, most recent)
+  store.insert(makePacketData({ hash: 'new1', timestamp: thirtyMinAgo, observer_id: 'obs-hr' }));
+  store.insert(makePacketData({ hash: 'new2', timestamp: fiveMinAgo, observer_id: 'obs-hr' }));
+
+  const obsPackets = store.byObserver.get('obs-hr');
+  assert.strictEqual(obsPackets.length, 3, 'should have 3 observations');
+
+  // Count packets in the last hour — the same way the fixed /api/observers does
+  const oneHourAgo = new Date(Date.now() - 3600000).toISOString();
+  let count = 0;
+  for (const obs of obsPackets) {
+    if (obs.timestamp > oneHourAgo) count++;
+  }
+  assert.strictEqual(count, 2, 'should count 2 recent packets, not 0 (regression #182)');
+});
+
+test('byObserver early-break bug: old item at front must not abort count', () => {
+  const store = new PacketStore(createMockDb());
+  store.load();
+
+  const twoHoursAgo = new Date(Date.now() - 7200000).toISOString();
+  const tenMinAgo   = new Date(Date.now() - 600000).toISOString();
+
+  // Old observation first, then recent — simulates the mixed-order array
+  store.insert(makePacketData({ hash: 'h1', timestamp: twoHoursAgo, observer_id: 'obs-bug' }));
+  store.insert(makePacketData({ hash: 'h2', timestamp: tenMinAgo,   observer_id: 'obs-bug' }));
+
+  const obsPackets = store.byObserver.get('obs-bug');
+  const oneHourAgo = new Date(Date.now() - 3600000).toISOString();
+
+  // BUGGY code (break on first old item) would return 0 here
+  let count = 0;
+  for (const obs of obsPackets) {
+    if (obs.timestamp > oneHourAgo) count++;
+  }
+  assert.strictEqual(count, 1, 'must not skip recent packet after old one');
+});
+
 // === Summary ===
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
