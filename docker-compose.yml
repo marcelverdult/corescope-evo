@@ -48,7 +48,7 @@ services:
   staging-go:
     build:
       context: .
-      dockerfile: Dockerfile.go
+      dockerfile: Dockerfile
       args:
         APP_VERSION: ${APP_VERSION:-unknown}
         GIT_COMMIT: ${GIT_COMMIT:-unknown}

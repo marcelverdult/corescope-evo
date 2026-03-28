@@ -1,33 +1,54 @@
-FROM node:22-alpine
+FROM golang:1.22-alpine AS builder
 
-RUN apk add --no-cache mosquitto mosquitto-clients supervisor caddy
+RUN apk add --no-cache build-base
+
+ARG APP_VERSION=unknown
+ARG GIT_COMMIT=unknown
+ARG BUILD_TIME=unknown
+
+# Build server
+WORKDIR /build/server
+COPY cmd/server/go.mod cmd/server/go.sum ./
+RUN go mod download
+COPY cmd/server/ ./
+RUN go build -ldflags "-X main.Version=${APP_VERSION} -X main.Commit=${GIT_COMMIT} -X main.BuildTime=${BUILD_TIME}" -o /meshcore-server .
+
+# Build ingestor
+WORKDIR /build/ingestor
+COPY cmd/ingestor/go.mod cmd/ingestor/go.sum ./
+RUN go mod download
+COPY cmd/ingestor/ ./
+RUN go build -o /meshcore-ingestor .
+
+# Runtime image
+FROM alpine:3.20
+
+RUN apk add --no-cache mosquitto mosquitto-clients supervisor caddy wget
 
 WORKDIR /app
 
-# Install Node dependencies
-COPY package.json package-lock.json ./
-RUN npm ci --production
+# Go binaries
+COPY --from=builder /meshcore-server /meshcore-ingestor /app/
 
-# Copy application
-COPY *.js config.example.json channel-rainbow.json ./
+# Frontend assets + config
 COPY public/ ./public/
+COPY config.example.json channel-rainbow.json ./
 
-# Bake git commit SHA (CI writes .git-commit before build; fallback to "unknown")
+# Bake git commit SHA (CI writes .git-commit before build; fallback for non-ldflags usage)
 COPY .git-commi[t] ./
 RUN if [ ! -f .git-commit ]; then echo "unknown" > .git-commit; fi
 
 # Supervisor + Mosquitto + Caddy config
-COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+COPY docker/supervisord-go.conf /etc/supervisor/conf.d/supervisord.conf
 COPY docker/mosquitto.conf /etc/mosquitto/mosquitto.conf
 COPY docker/Caddyfile /etc/caddy/Caddyfile
 
-# Create data directory for SQLite + Mosquitto persistence + Caddy certs
+# Data directory
 RUN mkdir -p /app/data /var/lib/mosquitto /data/caddy && \
-    chown -R node:node /app/data && \
     chown -R mosquitto:mosquitto /var/lib/mosquitto
 
-# Default config: copy example if no config mounted
-COPY docker/entrypoint.sh /entrypoint.sh
+# Entrypoint
+COPY docker/entrypoint-go.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 EXPOSE 80 443 1883
