@@ -52,19 +52,12 @@ is_done()    { [ -f "$STATE_FILE" ] && grep -qx "$1" "$STATE_FILE" 2>/dev/null; 
 # ─── Helpers ──────────────────────────────────────────────────────────────
 
 # Determine the correct data volume/mount args for docker run.
-# Detects existing host data directories and uses bind mounts if found.
+# Always uses bind mounts to ~/meshcore-data so the DB is visible on the filesystem.
 get_data_mount_args() {
-  # Check for existing host data directories with a DB file
-  if [ -d "$HOME/meshcore-data" ] && [ -f "$HOME/meshcore-data/meshcore.db" ]; then
-    echo "-v $HOME/meshcore-data:/app/data"
-    return
-  fi
-  if [ -d "$(pwd)/data" ] && [ -f "$(pwd)/data/meshcore.db" ]; then
-    echo "-v $(pwd)/data:/app/data"
-    return
-  fi
-  # Default: Docker named volume
-  echo "-v ${DATA_VOLUME}:/app/data"
+  # Always use bind mount to $HOME/meshcore-data
+  # Create the directory if it doesn't exist
+  mkdir -p "$HOME/meshcore-data"
+  echo "-v $HOME/meshcore-data:/app/data"
 }
 
 # Determine the required port mappings from Caddyfile
@@ -924,7 +917,8 @@ cmd_backup() {
   info "Backing up to ${BACKUP_DIR}/"
 
   # Database
-  DB_PATH=$(docker volume inspect "$DATA_VOLUME" --format '{{ .Mountpoint }}' 2>/dev/null)/meshcore.db
+  # Always use bind mount path
+  DB_PATH="$HOME/meshcore-data/meshcore.db"
   if [ -f "$DB_PATH" ]; then
     cp "$DB_PATH" "$BACKUP_DIR/meshcore.db"
     log "Database ($(du -h "$BACKUP_DIR/meshcore.db" | cut -f1))"
@@ -948,7 +942,8 @@ cmd_backup() {
   fi
 
   # Theme
-  THEME_PATH=$(docker volume inspect "$DATA_VOLUME" --format '{{ .Mountpoint }}' 2>/dev/null)/theme.json
+  # Always use bind mount path
+  THEME_PATH="$HOME/meshcore-data/theme.json"
   if [ -f "$THEME_PATH" ]; then
     cp "$THEME_PATH" "$BACKUP_DIR/theme.json"
     log "theme.json"
@@ -1024,12 +1019,10 @@ cmd_restore() {
   docker stop "$CONTAINER_NAME" 2>/dev/null || true
 
   # Restore database
-  DEST_DB=$(docker volume inspect "$DATA_VOLUME" --format '{{ .Mountpoint }}' 2>/dev/null)/meshcore.db
-  if [ -d "$(dirname "$DEST_DB")" ]; then
-    cp "$DB_FILE" "$DEST_DB"
-  else
-    docker cp "$DB_FILE" "${CONTAINER_NAME}:/app/data/meshcore.db"
-  fi
+  # Always use bind mount path
+  mkdir -p "$HOME/meshcore-data"
+  DEST_DB="$HOME/meshcore-data/meshcore.db"
+  cp "$DB_FILE" "$DEST_DB"
   log "Database restored"
 
   # Restore config if present
@@ -1047,10 +1040,8 @@ cmd_restore() {
 
   # Restore theme if present
   if [ -n "$THEME_FILE" ] && [ -f "$THEME_FILE" ]; then
-    DEST_THEME=$(docker volume inspect "$DATA_VOLUME" --format '{{ .Mountpoint }}' 2>/dev/null)/theme.json
-    if [ -d "$(dirname "$DEST_THEME")" ]; then
-      cp "$THEME_FILE" "$DEST_THEME"
-    fi
+    DEST_THEME="$HOME/meshcore-data/theme.json"
+    cp "$THEME_FILE" "$DEST_THEME"
     log "theme.json restored"
   fi
 
@@ -1098,7 +1089,7 @@ cmd_reset() {
   rm -f "$STATE_FILE"
 
   log "Reset complete. Run './manage.sh setup' to start over."
-  echo "   Data volume preserved. To delete it: docker volume rm ${DATA_VOLUME}"
+  echo "   Data directory: ~/meshcore-data (not removed)"
 }
 
 # ─── Help ─────────────────────────────────────────────────────────────────

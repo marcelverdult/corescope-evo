@@ -1,5 +1,7 @@
-# Volume paths unified with manage.sh — see manage.sh lines 9-12, 56-68, 98-113
+# Volume paths unified with manage.sh — see manage.sh lines 9-12, 55-62, 920, 944
 # Override defaults via .env or environment variables.
+# CRITICAL: All data mounts use bind mounts (~/path), NOT named volumes.
+# This ensures the DB and theme are visible on the host filesystem for backup.
 
 services:
   prod:
