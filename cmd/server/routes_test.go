@@ -397,7 +397,7 @@ func TestPerfEndpoint(t *testing.T) {
 	if !ok {
 		t.Fatal("expected goRuntime object in perf response")
 	}
-	for _, field := range []string{"heapMB", "sysMB", "numGoroutine", "numGC", "gcPauseMs"} {
+	for _, field := range []string{"goroutines", "numGC", "pauseTotalMs", "lastPauseMs", "heapAllocMB", "heapSysMB", "heapInuseMB", "heapIdleMB", "numCPU"} {
 		if _, ok := goRuntime[field]; !ok {
 			t.Errorf("expected %s in goRuntime", field)
 		}

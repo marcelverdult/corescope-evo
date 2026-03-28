@@ -179,8 +179,8 @@ func TestBroadcastFullBuffer(t *testing.T) {
 func TestBroadcastMarshalError(t *testing.T) {
 	hub := NewHub()
 
-	// Marshal error: channels can't be marshaled
-	hub.Broadcast(make(chan int))
+	// Marshal error: functions can't be marshaled to JSON
+	hub.Broadcast(map[string]interface{}{"bad": func() {}})
 	// Should not panic — just log and return
 }
 

@@ -425,7 +425,7 @@ func (s *Server) handlePerf(w http.ResponseWriter, r *http.Request) {
 		sorted := sortedCopy(ep.Recent)
 		d := &EndpointStatsResp{
 			Count: ep.Count,
-			AvgMs: round(ep.TotalMs/float64(ep.Count), 1),
+			AvgMs: safeAvg(ep.TotalMs, float64(ep.Count)),
 			P50Ms: round(percentile(sorted, 0.5), 1),
 			P95Ms: round(percentile(sorted, 0.95), 1),
 			MaxMs: round(ep.MaxMs, 1),

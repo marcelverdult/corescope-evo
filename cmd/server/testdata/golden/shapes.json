@@ -168,13 +168,18 @@
         "type": "array",
         "elementShape": {
           "type": "object",
-          "dynamicKeys": true,
-          "valueShape": {
-            "type": "number"
-          },
-          "requiredKeys": {
+          "keys": {
             "hour": {
               "type": "string"
+            },
+            "1": {
+              "type": "number"
+            },
+            "2": {
+              "type": "number"
+            },
+            "3": {
+              "type": "number"
             }
           }
         }
@@ -1483,19 +1488,31 @@
       "goRuntime": {
         "type": "object",
         "keys": {
-          "heapMB": {
-            "type": "number"
-          },
-          "sysMB": {
-            "type": "number"
-          },
-          "numGoroutine": {
+          "goroutines": {
             "type": "number"
           },
           "numGC": {
             "type": "number"
           },
-          "gcPauseMs": {
+          "pauseTotalMs": {
+            "type": "number"
+          },
+          "lastPauseMs": {
+            "type": "number"
+          },
+          "heapAllocMB": {
+            "type": "number"
+          },
+          "heapSysMB": {
+            "type": "number"
+          },
+          "heapInuseMB": {
+            "type": "number"
+          },
+          "heapIdleMB": {
+            "type": "number"
+          },
+          "numCPU": {
             "type": "number"
           }
         }
