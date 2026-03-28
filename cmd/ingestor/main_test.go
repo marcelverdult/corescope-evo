@@ -537,14 +537,20 @@ func TestLoadChannelKeysMergePriority(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.json")
 
-	// Create a rainbow file with one key
+	// Create a rainbow file with two keys: #rainbow (unique) and #override (to be overridden)
 	rainbowPath := filepath.Join(dir, "channel-rainbow.json")
+	t.Setenv("CHANNEL_KEYS_PATH", rainbowPath)
 	rainbow := map[string]string{
 		"#rainbow":  "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		"#override": "rainbow_value_should_be_overridden",
 	}
-	rainbowJSON, _ := json.Marshal(rainbow)
-	os.WriteFile(rainbowPath, rainbowJSON, 0o644)
+	rainbowJSON, err := json.Marshal(rainbow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(rainbowPath, rainbowJSON, 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	cfg := &Config{
 		HashChannels: []string{"General", "#override"},
@@ -571,6 +577,7 @@ func TestLoadChannelKeysMergePriority(t *testing.T) {
 }
 
 func TestLoadChannelKeysHashChannelsNormalization(t *testing.T) {
+	t.Setenv("CHANNEL_KEYS_PATH", "")
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.json")
 
@@ -600,6 +607,7 @@ func TestLoadChannelKeysHashChannelsNormalization(t *testing.T) {
 }
 
 func TestLoadChannelKeysSkipExplicit(t *testing.T) {
+	t.Setenv("CHANNEL_KEYS_PATH", "")
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.json")
 
