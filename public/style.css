@@ -1205,7 +1205,7 @@ button.ch-item.ch-item-encrypted .ch-badge { filter: grayscale(0.6); }
 
 /* Hide low-value columns on mobile */
 @media (max-width: 640px) {
-  .col-region, .col-rpt, .col-size { display: none; }
+  .col-region, .col-rpt, .col-size, .col-pubkey { display: none; }
 }
 
 /* Clickable hop links */
@@ -1389,6 +1389,12 @@ tr[data-hops]:hover { background: rgba(59,130,246,0.1); }
 /* #20 — Observers table horizontal scroll on mobile */
 .obs-table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .obs-table-scroll .obs-table { min-width: 640px; }
+
+/* #206 — Analytics/Compare tables scroll wrappers on mobile */
+.analytics-table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.analytics-table-scroll .analytics-table,
+.analytics-table-scroll .analytics-peer-table,
+.analytics-table-scroll .compare-table { min-width: 480px; }
 @media (max-width: 640px) {
   .spark-bar { min-width: 60px; width: auto; }
 }
@@ -1531,6 +1537,14 @@ tr[data-hops]:hover { background: rgba(59,130,246,0.1); }
 .perf-table .perf-slow td { color: var(--status-red); }
 .perf-table .perf-warn { background: rgba(251, 191, 36, 0.06); }
 .perf-table .perf-warn td { color: var(--status-yellow); }
+
+/* #204 — Perf page responsive */
+@media (max-width: 640px) {
+  #perfWrapper { padding: 12px !important; }
+  .perf-card { min-width: 0; flex: 1 1 calc(50% - 8px); }
+  .perf-table { font-size: 11px; }
+  .perf-table th, .perf-table td { padding: 4px 6px; }
+}
 
 /* ─── Region filter bar ─── */
 .region-filter-bar { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 0; }

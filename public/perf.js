@@ -5,7 +5,7 @@
   let interval = null;
 
   async function render(app) {
-    app.innerHTML = '<div style="height:100%;overflow-y:auto;padding:16px 24px;"><h2>⚡ Performance Dashboard</h2><div id="perfContent">Loading...</div></div>';
+    app.innerHTML = '<div id="perfWrapper" style="height:100%;overflow-y:auto;padding:16px 24px;"><h2>⚡ Performance Dashboard</h2><div id="perfContent">Loading...</div></div>';
     await refresh();
   }
 
@@ -125,7 +125,7 @@
       const eps = Object.entries(server.endpoints);
       if (eps.length) {
         html += '<h3>Server Endpoints (sorted by total time)</h3>';
-        html += '<div style="overflow-x:auto"><table class="perf-table"><thead><tr><th>Endpoint</th><th>Count</th><th>Avg</th><th>P50</th><th>P95</th><th>Max</th><th>Total</th></tr></thead><tbody>';
+        html += '<div style="overflow-x:auto"><table class="perf-table"><thead><tr><th scope="col">Endpoint</th><th scope="col">Count</th><th scope="col">Avg</th><th scope="col">P50</th><th scope="col">P95</th><th scope="col">Max</th><th scope="col">Total</th></tr></thead><tbody>';
         for (const [path, s] of eps) {
           const total = Math.round(s.count * s.avgMs);
           const cls = s.p95Ms > 200 ? ' class="perf-slow"' : s.p95Ms > 50 ? ' class="perf-warn"' : '';
@@ -137,7 +137,7 @@
       // Client API calls
       if (client && client.endpoints.length) {
         html += '<h3>Client API Calls (this session)</h3>';
-        html += '<div style="overflow-x:auto"><table class="perf-table"><thead><tr><th>Endpoint</th><th>Count</th><th>Avg</th><th>Max</th><th>Total</th></tr></thead><tbody>';
+        html += '<div style="overflow-x:auto"><table class="perf-table"><thead><tr><th scope="col">Endpoint</th><th scope="col">Count</th><th scope="col">Avg</th><th scope="col">Max</th><th scope="col">Total</th></tr></thead><tbody>';
         for (const s of client.endpoints) {
           const cls = s.maxMs > 500 ? ' class="perf-slow"' : s.avgMs > 200 ? ' class="perf-warn"' : '';
           html += `<tr${cls}><td><code>${s.path}</code></td><td>${s.count}</td><td>${s.avgMs}ms</td><td>${s.maxMs}ms</td><td>${s.totalMs}ms</td></tr>`;
@@ -148,7 +148,7 @@
       // Slow queries
       if (server.slowQueries.length) {
         html += '<h3>Recent Slow Queries (&gt;100ms)</h3>';
-        html += '<div style="overflow-x:auto"><table class="perf-table"><thead><tr><th>Time</th><th>Path</th><th>Duration</th><th>Status</th></tr></thead><tbody>';
+        html += '<div style="overflow-x:auto"><table class="perf-table"><thead><tr><th scope="col">Time</th><th scope="col">Path</th><th scope="col">Duration</th><th scope="col">Status</th></tr></thead><tbody>';
         for (const q of server.slowQueries.slice().reverse()) {
           html += `<tr class="perf-slow"><td>${new Date(q.time).toLocaleTimeString()}</td><td><code>${q.path}</code></td><td>${q.ms}ms</td><td>${q.status}</td></tr>`;
         }

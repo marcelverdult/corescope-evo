@@ -286,6 +286,9 @@
   .live-stat-pill { font-size: 11px; padding: 2px 7px; }
   .live-toggles { font-size: 10px; gap: 6px; margin-left: 0; }
   .live-title { font-size: 12px; letter-spacing: 1px; }
+  /* #203 — bottom-sheet node detail on mobile */
+  .live-node-detail { width: 100%; right: 0; left: 0; top: auto; bottom: 0; max-height: 60vh; border-radius: 16px 16px 0 0; overflow-y: auto; }
+  .live-node-detail.hidden { transform: translateY(100%); }
   .feed-detail-card {
     position: fixed !important;
     right: 0 !important;
@@ -663,9 +666,9 @@
   .vcr-mode { display: none; }
   /* Row 2: timeline takes full width */
   .vcr-timeline-container { order: 4; width: 100%; flex: none; height: 20px; }
-  /* Smaller buttons */
-  .vcr-btn { padding: 4px 8px; font-size: 0.75rem; min-height: 32px; min-width: 32px; }
-  .vcr-scope-btn { font-size: 0.6rem; padding: 2px 6px; min-height: 28px; }
+  /* #207 — 44px touch targets for VCR buttons */
+  .vcr-btn { padding: 4px 8px; font-size: 0.75rem; min-height: 44px; min-width: 44px; }
+  .vcr-scope-btn { font-size: 0.6rem; padding: 2px 6px; min-height: 44px; min-width: 44px; }
   .vcr-prompt { order: 5; width: 100%; font-size: 0.7rem; }
 }
 
