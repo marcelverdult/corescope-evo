@@ -1,6 +1,6 @@
 # MeshCore MQTT Ingestor (Go)
 
-Standalone MQTT ingestion service for MeshCore Analyzer. Connects to MQTT brokers, decodes raw MeshCore packets, and writes to the same SQLite database used by the Node.js web server.
+Standalone MQTT ingestion service for CoreScope. Connects to MQTT brokers, decodes raw MeshCore packets, and writes to the same SQLite database used by the Node.js web server.
 
 This is the first step of a larger Go rewrite — separating MQTT ingestion from the web server.
 
@@ -23,19 +23,19 @@ Requires Go 1.22+.
 
 ```bash
 cd cmd/ingestor
-go build -o meshcore-ingestor .
+go build -o corescope-ingestor .
 ```
 
 Cross-compile for Linux (e.g., for the production VM):
 
 ```bash
-GOOS=linux GOARCH=amd64 go build -o meshcore-ingestor .
+GOOS=linux GOARCH=amd64 go build -o corescope-ingestor .
 ```
 
 ## Run
 
 ```bash
-./meshcore-ingestor -config /path/to/config.json
+./corescope-ingestor -config /path/to/config.json
 ```
 
 The config file uses the same format as the Node.js `config.json`. The ingestor reads the `mqttSources` array (or legacy `mqtt` object) and `dbPath` fields.

@@ -3,8 +3,8 @@
 
 services:
   prod:
-    image: meshcore-analyzer:latest
-    container_name: meshcore-prod
+    image: corescope:latest
+    container_name: corescope-prod
     restart: unless-stopped
     ports:
       - "${PROD_HTTP_PORT:-80}:${PROD_HTTP_PORT:-80}"
@@ -24,8 +24,8 @@ services:
       retries: 3
 
   staging:
-    image: meshcore-analyzer:latest
-    container_name: meshcore-staging
+    image: corescope:latest
+    container_name: corescope-staging
     restart: unless-stopped
     ports:
       - "${STAGING_HTTP_PORT:-81}:${STAGING_HTTP_PORT:-81}"
@@ -52,8 +52,8 @@ services:
       args:
         APP_VERSION: ${APP_VERSION:-unknown}
         GIT_COMMIT: ${GIT_COMMIT:-unknown}
-    image: meshcore-go:latest
-    container_name: meshcore-staging-go
+    image: corescope-go:latest
+    container_name: corescope-staging-go
     restart: unless-stopped
     ports:
       - "${STAGING_GO_HTTP_PORT:-82}:80"

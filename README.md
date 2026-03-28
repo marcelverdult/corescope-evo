@@ -1,10 +1,10 @@
-# MeshCore Analyzer
+# CoreScope
 
-[![Go Server Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Kpa-clawbot/meshcore-analyzer/master/.badges/go-server-coverage.json)](https://github.com/Kpa-clawbot/meshcore-analyzer/actions/workflows/deploy.yml)
-[![Go Ingestor Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Kpa-clawbot/meshcore-analyzer/master/.badges/go-ingestor-coverage.json)](https://github.com/Kpa-clawbot/meshcore-analyzer/actions/workflows/deploy.yml)
-[![Frontend Tests](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Kpa-clawbot/meshcore-analyzer/master/.badges/frontend-tests.json)](https://github.com/Kpa-clawbot/meshcore-analyzer/actions/workflows/deploy.yml)
-[![Frontend Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Kpa-clawbot/meshcore-analyzer/master/.badges/frontend-coverage.json)](https://github.com/Kpa-clawbot/meshcore-analyzer/actions/workflows/deploy.yml)
-[![Deploy](https://github.com/Kpa-clawbot/meshcore-analyzer/actions/workflows/deploy.yml/badge.svg)](https://github.com/Kpa-clawbot/meshcore-analyzer/actions/workflows/deploy.yml)
+[![Go Server Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Kpa-clawbot/corescope/master/.badges/go-server-coverage.json)](https://github.com/Kpa-clawbot/corescope/actions/workflows/deploy.yml)
+[![Go Ingestor Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Kpa-clawbot/corescope/master/.badges/go-ingestor-coverage.json)](https://github.com/Kpa-clawbot/corescope/actions/workflows/deploy.yml)
+[![Frontend Tests](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Kpa-clawbot/corescope/master/.badges/frontend-tests.json)](https://github.com/Kpa-clawbot/corescope/actions/workflows/deploy.yml)
+[![Frontend Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Kpa-clawbot/corescope/master/.badges/frontend-coverage.json)](https://github.com/Kpa-clawbot/corescope/actions/workflows/deploy.yml)
+[![Deploy](https://github.com/Kpa-clawbot/corescope/actions/workflows/deploy.yml/badge.svg)](https://github.com/Kpa-clawbot/corescope/actions/workflows/deploy.yml)
 
 > High-performance mesh network analyzer powered by Go. Sub-millisecond packet queries, ~300 MB memory for 56K+ packets, real-time WebSocket broadcast, full channel decryption.
 
@@ -79,8 +79,8 @@ Full experience on your phone — proper touch controls, iOS safe area support, 
 No Go installation needed — everything builds inside the container.
 
 ```bash
-git clone https://github.com/Kpa-clawbot/meshcore-analyzer.git
-cd meshcore-analyzer
+git clone https://github.com/Kpa-clawbot/corescope.git
+cd corescope
 ./manage.sh setup
 ```
 
@@ -171,7 +171,7 @@ Or POST raw hex packets to `POST /api/packets` for manual injection.
 ## Project Structure
 
 ```
-meshcore-analyzer/
+corescope/
 ├── cmd/
 │   ├── server/              # Go HTTP server + WebSocket + REST API
 │   │   ├── main.go          # Entry point

@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package meshcore.v1;
 
-option go_package = "github.com/meshcore-analyzer/proto/v1";
+option go_package = "github.com/corescope/proto/v1";
 
 // ─── Decoded Packet Structure ──────────────────────────────────────────────────
 // Returned by POST /api/decode, POST /api/packets, and WS broadcast.

@@ -240,7 +240,7 @@ func (s *Server) handleConfigTheme(w http.ResponseWriter, r *http.Request) {
 	theme := LoadTheme(".")
 
 	branding := mergeMap(map[string]interface{}{
-		"siteName": "MeshCore Analyzer",
+		"siteName": "CoreScope",
 		"tagline":  "Real-time MeshCore LoRa mesh network analyzer",
 	}, s.cfg.Branding, theme.Branding)
 

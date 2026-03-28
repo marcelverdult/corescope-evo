@@ -344,7 +344,7 @@ app.get('/api/config/theme', (req, res) => {
   const theme = loadThemeFile();
   res.json({
     branding: {
-      siteName: 'MeshCore Analyzer',
+      siteName: 'CoreScope',
       tagline: 'Real-time MeshCore LoRa mesh network analyzer',
       ...(cfg.branding || {}),
       ...(theme.branding || {})
@@ -2956,7 +2956,7 @@ app.get('/{*splat}', (req, res) => {
   if (fs.existsSync(indexPath)) {
     res.sendFile(indexPath);
   } else {
-    res.status(200).send('<!DOCTYPE html><html><body><h1>MeshCore Analyzer</h1><p>Frontend not yet built.</p></body></html>');
+    res.status(200).send('<!DOCTYPE html><html><body><h1>CoreScope</h1><p>Frontend not yet built.</p></body></html>');
   }
 });
 
@@ -2967,7 +2967,7 @@ if (require.main === module) {
 db.removePhantomNodes();
 server.listen(listenPort, () => {
   const protocol = isHttps ? 'https' : 'http';
-  console.log(`MeshCore Analyzer running on ${protocol}://localhost:${listenPort}`);
+  console.log(`CoreScope running on ${protocol}://localhost:${listenPort}`);
   // Log theme file location
   let themeFound = false;
   for (const p of THEME_PATHS) {

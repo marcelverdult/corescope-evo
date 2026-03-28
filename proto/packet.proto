@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package meshcore.v1;
 
-option go_package = "github.com/meshcore-analyzer/proto/v1";
+option go_package = "github.com/corescope/proto/v1";
 
 import "common.proto";
 import "decoded.proto";

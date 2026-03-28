@@ -1,13 +1,13 @@
 #!/bin/bash
-# MeshCore Analyzer — Setup & Management Helper
+# CoreScope — Setup & Management Helper
 # Usage: ./manage.sh [command]
 #
 # Idempotent: safe to cancel and re-run at any point.
 # Each step checks what's already done and skips it.
 set -e
 
-CONTAINER_NAME="meshcore-analyzer"
-IMAGE_NAME="meshcore-analyzer"
+CONTAINER_NAME="corescope"
+IMAGE_NAME="corescope"
 DATA_VOLUME="meshcore-data"
 CADDY_VOLUME="caddy-data"
 STATE_FILE=".setup-state"
@@ -201,7 +201,7 @@ TOTAL_STEPS=6
 cmd_setup() {
   echo ""
   echo "═══════════════════════════════════════"
-  echo "  MeshCore Analyzer Setup"
+  echo "  CoreScope Setup"
   echo "═══════════════════════════════════════"
   echo ""
 
@@ -501,7 +501,7 @@ prepare_staging_config() {
   if [ ! -f "$staging_config" ] || [ "$prod_config" -nt "$staging_config" ]; then
     info "Copying production config to staging..."
     cp "$prod_config" "$staging_config"
-    sed -i 's/"siteName":\s*"[^"]*"/"siteName": "MeshCore Analyzer — STAGING"/' "$staging_config"
+    sed -i 's/"siteName":\s*"[^"]*"/"siteName": "CoreScope — STAGING"/' "$staging_config"
     log "Staging config created at ${staging_config} with STAGING site name."
   else
     log "Staging config is up to date."
@@ -541,13 +541,13 @@ cmd_start() {
       prepare_staging_db
       prepare_staging_config
 
-      info "Starting production container (meshcore-prod) on ports ${PROD_HTTP_PORT:-80}/${PROD_HTTPS_PORT:-443}..."
-      info "Starting staging container (meshcore-staging) on port ${STAGING_HTTP_PORT:-81}..."
+      info "Starting production container (corescope-prod) on ports ${PROD_HTTP_PORT:-80}/${PROD_HTTPS_PORT:-443}..."
+      info "Starting staging container (corescope-staging) on port ${STAGING_HTTP_PORT:-81}..."
       docker compose --profile staging up -d
       log "Production started on ports ${PROD_HTTP_PORT:-80}/${PROD_HTTPS_PORT:-443}/${PROD_MQTT_PORT:-1883}"
       log "Staging started on port ${STAGING_HTTP_PORT:-81} (MQTT: ${STAGING_MQTT_PORT:-1884})"
     else
-      info "Starting production container (meshcore-prod) on ports ${PROD_HTTP_PORT:-80}/${PROD_HTTPS_PORT:-443}..."
+      info "Starting production container (corescope-prod) on ports ${PROD_HTTP_PORT:-80}/${PROD_HTTPS_PORT:-443}..."
       docker compose up -d prod
       log "Production started. Staging NOT running (use --with-staging to start both)."
     fi
@@ -586,12 +586,12 @@ cmd_stop() {
   if $COMPOSE_MODE; then
     case "$TARGET" in
       prod)
-        info "Stopping production container (meshcore-prod)..."
+        info "Stopping production container (corescope-prod)..."
         docker compose stop prod
         log "Production stopped."
         ;;
       staging)
-        info "Stopping staging container (meshcore-staging)..."
+        info "Stopping staging container (corescope-staging)..."
         docker compose stop staging
         log "Staging stopped."
         ;;
@@ -617,12 +617,12 @@ cmd_restart() {
     local TARGET="${1:-prod}"
     case "$TARGET" in
       prod)
-        info "Restarting production container (meshcore-prod)..."
+        info "Restarting production container (corescope-prod)..."
         docker compose up -d --force-recreate prod
         log "Production restarted."
         ;;
       staging)
-        info "Restarting staging container (meshcore-staging)..."
+        info "Restarting staging container (corescope-staging)..."
         docker compose --profile staging up -d --force-recreate staging
         log "Staging restarted."
         ;;
@@ -698,19 +698,19 @@ cmd_status() {
 
   if $COMPOSE_MODE; then
     echo "═══════════════════════════════════════"
-    echo "  MeshCore Analyzer Status (Compose)"
+    echo "  CoreScope Status (Compose)"
     echo "═══════════════════════════════════════"
     echo ""
 
     # Production
-    show_container_status "meshcore-prod" "Production"
+    show_container_status "corescope-prod" "Production"
     echo ""
 
     # Staging
-    if container_running "meshcore-staging"; then
-      show_container_status "meshcore-staging" "Staging"
+    if container_running "corescope-staging"; then
+      show_container_status "corescope-staging" "Staging"
     else
-      info "Staging (meshcore-staging): Not running (use --with-staging to start both)"
+      info "Staging (corescope-staging): Not running (use --with-staging to start both)"
     fi
     echo ""
 
@@ -804,7 +804,7 @@ cmd_logs() {
         docker compose logs -f --tail="$LINES" prod
         ;;
       staging)
-        if container_running "meshcore-staging"; then
+        if container_running "corescope-staging"; then
           info "Tailing staging logs..."
           docker compose logs -f --tail="$LINES" staging
         else
@@ -843,10 +843,10 @@ cmd_promote() {
 
   # Show what's currently running
   local staging_image staging_created prod_image prod_created
-  staging_image=$(docker inspect meshcore-staging --format '{{.Config.Image}}' 2>/dev/null || echo "not running")
-  staging_created=$(docker inspect meshcore-staging --format '{{.Created}}' 2>/dev/null || echo "N/A")
-  prod_image=$(docker inspect meshcore-prod --format '{{.Config.Image}}' 2>/dev/null || echo "not running")
-  prod_created=$(docker inspect meshcore-prod --format '{{.Created}}' 2>/dev/null || echo "N/A")
+  staging_image=$(docker inspect corescope-staging --format '{{.Config.Image}}' 2>/dev/null || echo "not running")
+  staging_created=$(docker inspect corescope-staging --format '{{.Created}}' 2>/dev/null || echo "N/A")
+  prod_image=$(docker inspect corescope-prod --format '{{.Config.Image}}' 2>/dev/null || echo "not running")
+  prod_created=$(docker inspect corescope-prod --format '{{.Created}}' 2>/dev/null || echo "N/A")
 
   echo "  Staging: ${staging_image} (created ${staging_created})"
   echo "  Prod:    ${prod_image} (created ${prod_created})"
@@ -863,8 +863,8 @@ cmd_promote() {
   mkdir -p "$BACKUP_DIR"
   if [ -f "$PROD_DATA/meshcore.db" ]; then
     cp "$PROD_DATA/meshcore.db" "$BACKUP_DIR/"
-  elif container_running "meshcore-prod"; then
-    docker cp meshcore-prod:/app/data/meshcore.db "$BACKUP_DIR/"
+  elif container_running "corescope-prod"; then
+    docker cp corescope-prod:/app/data/meshcore.db "$BACKUP_DIR/"
   else
     warn "Could not backup production database."
   fi
@@ -878,7 +878,7 @@ cmd_promote() {
   info "Waiting for production health check..."
   local i health
   for i in $(seq 1 30); do
-    health=$(container_health "meshcore-prod")
+    health=$(container_health "corescope-prod")
     if [ "$health" = "healthy" ]; then
       log "Production healthy after ${i}s"
       break
@@ -918,7 +918,7 @@ cmd_update() {
 
 cmd_backup() {
   TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-  BACKUP_DIR="${1:-./backups/meshcore-${TIMESTAMP}}"
+  BACKUP_DIR="${1:-./backups/corescope-${TIMESTAMP}}"
   mkdir -p "$BACKUP_DIR"
 
   info "Backing up to ${BACKUP_DIR}/"
@@ -972,7 +972,7 @@ cmd_restore() {
     if [ -d "./backups" ]; then
       echo ""
       echo "   Available backups:"
-      ls -dt ./backups/meshcore-* 2>/dev/null | head -10 | while read d; do
+      ls -dt ./backups/meshcore-* ./backups/corescope-* 2>/dev/null | head -10 | while read d; do
         if [ -d "$d" ]; then
           echo "     $d/ ($(ls "$d" | wc -l) files)"
         elif [ -f "$d" ]; then
@@ -1019,7 +1019,7 @@ cmd_restore() {
 
   # Backup current state first
   info "Backing up current state..."
-  cmd_backup "./backups/meshcore-pre-restore-$(date +%Y%m%d-%H%M%S)"
+  cmd_backup "./backups/corescope-pre-restore-$(date +%Y%m%d-%H%M%S)"
 
   docker stop "$CONTAINER_NAME" 2>/dev/null || true
 
@@ -1105,7 +1105,7 @@ cmd_reset() {
 
 cmd_help() {
   echo ""
-  echo "MeshCore Analyzer — Management Script"
+  echo "CoreScope — Management Script"
   echo ""
   echo "Usage: ./manage.sh <command>"
   echo ""
