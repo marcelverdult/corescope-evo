@@ -342,12 +342,13 @@ Playwright E2E tests (16 tests in `test-e2e-playwright.js`) are slow in CI. Anal
 
 ---
 
-### 2026-03-27T20:56:00Z: Architecture decision — Protobuf API contract
+### 2026-03-27T20:56:00Z — Protobuf API Contract (Merged)
 **By:** Kpa-clawbot (via Copilot)  
-**Decision:** All frontend/backend interfaces get protobuf definitions as the single source of truth. Go generates structs with JSON tags from protos. Node stays unchanged — protos are derived FROM Node's current JSON shapes. Proto definitions MUST use inheritance and composition (no repeating field definitions). Data flow: SQLite → proto struct → JSON. JSON blobs from DB deserialize against proto structs for validation.  
-**Rationale:** Eliminates the endless parity bugs between Node and Go. Compiler-enforced contract instead of agent-verified field matching. DRY — shared message types composed, not duplicated.
+**Decision:** 
+1. All frontend/backend interfaces get protobuf definitions as single source of truth
+2. Go generates structs with JSON tags from protos; Node stays unchanged — protos derived from Node's current JSON shapes
+3. Proto definitions MUST use inheritance and composition (no repeating field definitions)
+4. Data flow: SQLite → proto struct → JSON; JSON blobs from DB deserialize against proto structs for validation
+5. CI pipeline's proto fixture capture runs against prod (stable reference), not staging
 
-### 2026-03-27T22:00:00Z: User directive — Proto fixture capture from prod
-**By:** Kpa-clawbot (via Copilot)  
-**Decision:** CI pipeline's proto fixture capture should run against prod (the stable reference), not staging. Staging may have broken code. Prod is the known-good baseline for contract validation.  
-**Rationale:** Ensures proto contracts are validated against production behavior, not potentially broken staging code.
+**Rationale:** Eliminates parity bugs between Node and Go. Compiler-enforced contract. Prod is known-good baseline.
