@@ -512,34 +512,64 @@ func firstNonEmpty(vals ...string) string {
 	return ""
 }
 
+// deriveHashtagChannelKey derives an AES-128 key from a channel name.
+// Same algorithm as Node.js: SHA-256(channelName) → first 32 hex chars (16 bytes).
+func deriveHashtagChannelKey(channelName string) string {
+	h := sha256.Sum256([]byte(channelName))
+	return hex.EncodeToString(h[:16])
+}
+
 // loadChannelKeys loads channel decryption keys from config and/or a JSON file.
-// Priority: CHANNEL_KEYS_PATH env var > cfg.ChannelKeysPath > channel-rainbow.json next to config.
+// Merge priority: rainbow (lowest) → derived from hashChannels → explicit config (highest).
 func loadChannelKeys(cfg *Config, configPath string) map[string]string {
 	keys := make(map[string]string)
 
-	// Determine file path for rainbow keys
+	// 1. Rainbow table keys (lowest priority)
 	keysPath := os.Getenv("CHANNEL_KEYS_PATH")
 	if keysPath == "" {
 		keysPath = cfg.ChannelKeysPath
 	}
 	if keysPath == "" {
-		// Default: look for channel-rainbow.json next to config file
 		keysPath = filepath.Join(filepath.Dir(configPath), "channel-rainbow.json")
 	}
 
+	rainbowCount := 0
 	if data, err := os.ReadFile(keysPath); err == nil {
 		var fileKeys map[string]string
 		if err := json.Unmarshal(data, &fileKeys); err == nil {
 			for k, v := range fileKeys {
 				keys[k] = v
 			}
-			log.Printf("Loaded %d channel keys from %s", len(fileKeys), keysPath)
+			rainbowCount = len(fileKeys)
+			log.Printf("Loaded %d channel keys from %s", rainbowCount, keysPath)
 		} else {
 			log.Printf("Warning: failed to parse channel keys file %s: %v", keysPath, err)
 		}
 	}
 
-	// Merge inline config keys (override file keys)
+	// 2. Derived keys from hashChannels (middle priority)
+	derivedCount := 0
+	for _, raw := range cfg.HashChannels {
+		trimmed := strings.TrimSpace(raw)
+		if trimmed == "" {
+			continue
+		}
+		channelName := trimmed
+		if !strings.HasPrefix(channelName, "#") {
+			channelName = "#" + channelName
+		}
+		// Skip if explicit config already has this key
+		if _, exists := cfg.ChannelKeys[channelName]; exists {
+			continue
+		}
+		keys[channelName] = deriveHashtagChannelKey(channelName)
+		derivedCount++
+	}
+	if derivedCount > 0 {
+		log.Printf("[channels] %d derived from hashChannels", derivedCount)
+	}
+
+	// 3. Explicit config keys (highest priority — overrides rainbow + derived)
 	for k, v := range cfg.ChannelKeys {
 		keys[k] = v
 	}
