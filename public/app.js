@@ -119,7 +119,7 @@ function formatVersionBadge(version, commit, engine) {
     var short = commit.length > 7 ? commit.slice(0, 7) : commit;
     parts.push('<a href="' + GH + '/commit/' + commit + '" target="_blank" rel="noopener">' + short + '</a>');
   }
-  if (engine) parts.push('[' + engine + ']');
+  if (engine) parts.push('<span class="engine-badge">' + engine + '</span>');
   if (parts.length === 0) return '';
   return ' <span class="version-badge">' + parts.join(' · ') + '</span>';
 }

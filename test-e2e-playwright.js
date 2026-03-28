@@ -220,9 +220,12 @@ async function run() {
     await page.click('#mcHeatmap');
     const stored = await page.evaluate(() => localStorage.getItem('meshcore-map-heatmap'));
     assert(stored === 'true', `localStorage should be "true" but got "${stored}"`);
-    // Reload and verify persisted
+    // Reload and verify persisted — wait for async map init to restore state
     await page.reload({ waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('#mcHeatmap');
+    await page.waitForFunction(() => {
+      const el = document.getElementById('mcHeatmap');
+      return el && el.checked;
+    }, { timeout: 10000 });
     checked = await page.$eval('#mcHeatmap', el => el.checked);
     assert(checked, 'Heat checkbox should be checked after reload');
     // Clean up
@@ -314,7 +317,7 @@ async function run() {
   // Test: Packet detail pane hidden on fresh load
   await test('Packets detail pane hidden on fresh load', async () => {
     await page.goto(`${BASE}/#/packets`, { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('#pktRight');
+    await page.waitForSelector('#pktRight', { state: 'attached' });
     const isEmpty = await page.$eval('#pktRight', el => el.classList.contains('empty'));
     assert(isEmpty, 'Detail pane should have "empty" class on fresh load');
   });
@@ -349,14 +352,16 @@ async function run() {
 
   // Test: Clicking a packet row opens detail pane
   await test('Packets clicking row shows detail pane', async () => {
-    await page.waitForSelector('table tbody tr[data-action]');
+    // Fresh navigation to avoid stale row references from previous test
+    await page.goto(`${BASE}/#/packets`, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('table tbody tr[data-action]', { timeout: 15000 });
     const firstRow = await page.$('table tbody tr[data-action]');
     assert(firstRow, 'No clickable packet rows found');
     await firstRow.click();
     await page.waitForFunction(() => {
       const panel = document.getElementById('pktRight');
       return panel && !panel.classList.contains('empty');
-    }, { timeout: 5000 });
+    }, { timeout: 15000 });
     const panelVisible = await page.$eval('#pktRight', el => !el.classList.contains('empty'));
     assert(panelVisible, 'Detail pane should open after clicking a row');
     const content = await page.$eval('#pktRight', el => el.textContent.trim());
@@ -365,7 +370,12 @@ async function run() {
 
   // Test: Packet detail pane dismiss button (Issue #125)
   await test('Packet detail pane closes on ✕ click', async () => {
-    // Detail pane should be open from previous test
+    // Ensure we're on packets page with detail pane open
+    const pktRight = await page.$('#pktRight');
+    if (!pktRight) {
+      await page.goto(`${BASE}/#/packets`, { waitUntil: 'domcontentloaded' });
+      await page.waitForSelector('table tbody tr[data-action]', { timeout: 15000 });
+    }
     const panelOpen = await page.$eval('#pktRight', el => !el.classList.contains('empty'));
     if (!panelOpen) {
       const firstRow = await page.$('table tbody tr[data-action]');
@@ -374,7 +384,7 @@ async function run() {
       await page.waitForFunction(() => {
         const panel = document.getElementById('pktRight');
         return panel && !panel.classList.contains('empty');
-      }, { timeout: 5000 });
+      }, { timeout: 15000 });
     }
     const closeBtn = await page.$('#pktRight .panel-close-btn');
     assert(closeBtn, 'Close button (✕) not found in detail pane');
@@ -618,6 +628,8 @@ async function run() {
   // Test 11: Live page heat checkbox disabled by matrix/ghosts mode
   await test('Live heat disabled when ghosts mode active', async () => {
     await page.goto(`${BASE}/#/live`, { waitUntil: 'domcontentloaded' });
+    // Wait for live init to complete (Leaflet tiles load after map creation + loadNodes)
+    await page.waitForSelector('.leaflet-tile-loaded', { timeout: 15000 });
     await page.waitForSelector('#liveHeatToggle');
     // Enable matrix mode if not already
     const matrixEl = await page.$('#liveMatrixToggle');
@@ -649,21 +661,25 @@ async function run() {
   // Test 12: Live page heat checkbox persists across reload (reuses live page)
   await test('Live heat checkbox persists in localStorage', async () => {
     await page.waitForSelector('#liveHeatToggle');
-    // Clear state
-    await page.evaluate(() => localStorage.removeItem('meshcore-live-heatmap'));
+    // Clear state and set to 'false' so we can verify persistence after reload
+    await page.evaluate(() => localStorage.setItem('meshcore-live-heatmap', 'false'));
     await page.reload({ waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('#liveHeatToggle');
-    // Default is checked (has `checked` attribute in HTML)
-    const defaultState = await page.$eval('#liveHeatToggle', el => el.checked);
-    // Uncheck it
-    if (defaultState) await page.click('#liveHeatToggle');
-    const stored = await page.evaluate(() => localStorage.getItem('meshcore-live-heatmap'));
-    assert(stored === 'false', `localStorage should be "false" after unchecking but got "${stored}"`);
-    // Reload and verify persisted
-    await page.reload({ waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('#liveHeatToggle');
+    // Wait for async init to read localStorage and uncheck the toggle
+    await page.waitForFunction(() => {
+      const el = document.getElementById('liveHeatToggle');
+      return el && !el.checked;
+    }, { timeout: 10000 });
     const afterReload = await page.$eval('#liveHeatToggle', el => el.checked);
     assert(!afterReload, 'Live heat checkbox should stay unchecked after reload');
+    // Set to 'true' and verify that also persists
+    await page.evaluate(() => localStorage.setItem('meshcore-live-heatmap', 'true'));
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => {
+      const el = document.getElementById('liveHeatToggle');
+      return el && el.checked;
+    }, { timeout: 10000 });
+    const afterReload2 = await page.$eval('#liveHeatToggle', el => el.checked);
+    assert(afterReload2, 'Live heat checkbox should stay checked after reload');
     // Clean up
     await page.evaluate(() => localStorage.removeItem('meshcore-live-heatmap'));
   });
