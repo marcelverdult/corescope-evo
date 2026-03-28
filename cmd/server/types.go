@@ -211,11 +211,15 @@ type PerfResponse struct {
 
 // GoRuntimeStats holds Go runtime metrics for the perf endpoint.
 type GoRuntimeStats struct {
-	HeapMB       float64 `json:"heapMB"`
-	SysMB        float64 `json:"sysMB"`
-	NumGoroutine int     `json:"numGoroutine"`
+	Goroutines   int     `json:"goroutines"`
 	NumGC        uint32  `json:"numGC"`
-	GCPauseMs    float64 `json:"gcPauseMs"`
+	PauseTotalMs float64 `json:"pauseTotalMs"`
+	LastPauseMs  float64 `json:"lastPauseMs"`
+	HeapAllocMB  float64 `json:"heapAllocMB"`
+	HeapSysMB    float64 `json:"heapSysMB"`
+	HeapInuseMB  float64 `json:"heapInuseMB"`
+	HeapIdleMB   float64 `json:"heapIdleMB"`
+	NumCPU       int     `json:"numCPU"`
 }
 
 // ─── Packets ───────────────────────────────────────────────────────────────────

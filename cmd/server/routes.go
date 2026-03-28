@@ -495,11 +495,15 @@ func (s *Server) handlePerf(w http.ResponseWriter, r *http.Request) {
 		GoRuntime: func() *GoRuntimeStats {
 			ms := s.getMemStats()
 			return &GoRuntimeStats{
-				HeapMB:       float64(ms.HeapAlloc) / 1024 / 1024,
-				SysMB:        float64(ms.Sys) / 1024 / 1024,
-				NumGoroutine: runtime.NumGoroutine(),
+				Goroutines:   runtime.NumGoroutine(),
 				NumGC:        ms.NumGC,
-				GCPauseMs:    float64(ms.PauseNs[(ms.NumGC+255)%256]) / 1e6,
+				PauseTotalMs: float64(ms.PauseTotalNs) / 1e6,
+				LastPauseMs:  float64(ms.PauseNs[(ms.NumGC+255)%256]) / 1e6,
+				HeapAllocMB:  float64(ms.HeapAlloc) / 1024 / 1024,
+				HeapSysMB:    float64(ms.HeapSys) / 1024 / 1024,
+				HeapInuseMB:  float64(ms.HeapInuse) / 1024 / 1024,
+				HeapIdleMB:   float64(ms.HeapIdle) / 1024 / 1024,
+				NumCPU:       runtime.NumCPU(),
 			}
 		}(),
 	})
