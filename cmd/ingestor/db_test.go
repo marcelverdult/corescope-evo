@@ -472,7 +472,7 @@ func TestBuildPacketDataWithHops(t *testing.T) {
 }
 
 func TestBuildPacketDataNilSNRRSSI(t *testing.T) {
-	decoded, _ := DecodePacket("0A00", nil + strings.Repeat("00", 10))
+	decoded, _ := DecodePacket("0A00"+strings.Repeat("00", 10), nil)
 	msg := &MQTTPacketMessage{Raw: "0A00" + strings.Repeat("00", 10)}
 	pkt := BuildPacketData(msg, decoded, "", "")
 

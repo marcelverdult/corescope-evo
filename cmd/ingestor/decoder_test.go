@@ -55,7 +55,7 @@ func TestDecodeHeaderPayloadTypes(t *testing.T) {
 
 func TestDecodePathZeroHops(t *testing.T) {
 	// 0x00: 0 hops, 1-byte hashes
-	pkt, err := DecodePacket("0500", nil + strings.Repeat("00", 10))
+	pkt, err := DecodePacket("0500"+strings.Repeat("00", 10), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func TestDecodePathZeroHops(t *testing.T) {
 
 func TestDecodePath1ByteHashes(t *testing.T) {
 	// 0x05: 5 hops, 1-byte hashes → 5 path bytes
-	pkt, err := DecodePacket("0505", nil + "AABBCCDDEE" + strings.Repeat("00", 10))
+	pkt, err := DecodePacket("0505"+"AABBCCDDEE"+strings.Repeat("00", 10), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +95,7 @@ func TestDecodePath1ByteHashes(t *testing.T) {
 
 func TestDecodePath2ByteHashes(t *testing.T) {
 	// 0x45: 5 hops, 2-byte hashes
-	pkt, err := DecodePacket("0545", nil + "AA11BB22CC33DD44EE55" + strings.Repeat("00", 10))
+	pkt, err := DecodePacket("0545"+"AA11BB22CC33DD44EE55"+strings.Repeat("00", 10), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +112,7 @@ func TestDecodePath2ByteHashes(t *testing.T) {
 
 func TestDecodePath3ByteHashes(t *testing.T) {
 	// 0x8A: 10 hops, 3-byte hashes
-	pkt, err := DecodePacket("058A", nil + strings.Repeat("AA11FF", 10) + strings.Repeat("00", 10))
+	pkt, err := DecodePacket("058A"+strings.Repeat("AA11FF", 10)+strings.Repeat("00", 10), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +148,7 @@ func TestTransportCodes(t *testing.T) {
 	}
 
 	// Route type 1 (FLOOD) should NOT have transport codes
-	pkt2, err := DecodePacket("0500", nil + strings.Repeat("00", 10))
+	pkt2, err := DecodePacket("0500"+strings.Repeat("00", 10), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -611,49 +611,49 @@ func TestDecodePayloadRAWCustom(t *testing.T) {
 
 func TestDecodePayloadAllTypes(t *testing.T) {
 	// REQ
-	p := decodePayload(PayloadREQ, make([]byte, 10, nil))
+	p := decodePayload(PayloadREQ, make([]byte, 10), nil)
 	if p.Type != "REQ" {
 		t.Errorf("REQ: type=%s", p.Type)
 	}
 
 	// RESPONSE
-	p = decodePayload(PayloadRESPONSE, make([]byte, 10, nil))
+	p = decodePayload(PayloadRESPONSE, make([]byte, 10), nil)
 	if p.Type != "RESPONSE" {
 		t.Errorf("RESPONSE: type=%s", p.Type)
 	}
 
 	// TXT_MSG
-	p = decodePayload(PayloadTXT_MSG, make([]byte, 10, nil))
+	p = decodePayload(PayloadTXT_MSG, make([]byte, 10), nil)
 	if p.Type != "TXT_MSG" {
 		t.Errorf("TXT_MSG: type=%s", p.Type)
 	}
 
 	// ACK
-	p = decodePayload(PayloadACK, make([]byte, 10, nil))
+	p = decodePayload(PayloadACK, make([]byte, 10), nil)
 	if p.Type != "ACK" {
 		t.Errorf("ACK: type=%s", p.Type)
 	}
 
 	// GRP_TXT
-	p = decodePayload(PayloadGRP_TXT, make([]byte, 10, nil))
+	p = decodePayload(PayloadGRP_TXT, make([]byte, 10), nil)
 	if p.Type != "GRP_TXT" {
 		t.Errorf("GRP_TXT: type=%s", p.Type)
 	}
 
 	// ANON_REQ
-	p = decodePayload(PayloadANON_REQ, make([]byte, 40, nil))
+	p = decodePayload(PayloadANON_REQ, make([]byte, 40), nil)
 	if p.Type != "ANON_REQ" {
 		t.Errorf("ANON_REQ: type=%s", p.Type)
 	}
 
 	// PATH
-	p = decodePayload(PayloadPATH, make([]byte, 10, nil))
+	p = decodePayload(PayloadPATH, make([]byte, 10), nil)
 	if p.Type != "PATH" {
 		t.Errorf("PATH: type=%s", p.Type)
 	}
 
 	// TRACE
-	p = decodePayload(PayloadTRACE, make([]byte, 20, nil))
+	p = decodePayload(PayloadTRACE, make([]byte, 20), nil)
 	if p.Type != "TRACE" {
 		t.Errorf("TRACE: type=%s", p.Type)
 	}
