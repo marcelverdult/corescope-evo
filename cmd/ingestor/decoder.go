@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"unicode/utf8"
 )
 
 // Route type constants (header bits 1-0)
@@ -268,6 +269,19 @@ type channelDecryptResult struct {
 	Message   string
 }
 
+// countNonPrintable counts characters that are non-printable (< 0x20 except \n, \t).
+func countNonPrintable(s string) int {
+	count := 0
+	for _, r := range s {
+		if r < 0x20 && r != '\n' && r != '\t' {
+			count++
+		} else if r == utf8.RuneError {
+			count++
+		}
+	}
+	return count
+}
+
 // decryptChannelMessage implements MeshCore channel decryption:
 // HMAC-SHA256 MAC verification followed by AES-128-ECB decryption.
 func decryptChannelMessage(ciphertextHex, macHex, channelKeyHex string) (*channelDecryptResult, error) {
@@ -320,6 +334,11 @@ func decryptChannelMessage(ciphertextHex, macHex, channelKeyHex string) (*channe
 	messageText := string(plaintext[5:])
 	if idx := strings.IndexByte(messageText, 0); idx >= 0 {
 		messageText = messageText[:idx]
+	}
+
+	// Validate decrypted text is printable UTF-8 (not binary garbage)
+	if !utf8.ValidString(messageText) || countNonPrintable(messageText) > 2 {
+		return nil, fmt.Errorf("decrypted text contains non-printable characters")
 	}
 
 	result := &channelDecryptResult{Timestamp: timestamp, Flags: flags}

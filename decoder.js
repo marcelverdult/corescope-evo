@@ -145,6 +145,22 @@ function decodeAdvert(buf) {
   return result;
 }
 
+/**
+ * Check if text contains non-printable characters (binary garbage).
+ * Returns true if more than 2 non-printable chars found (excluding \n, \t).
+ */
+function hasNonPrintableChars(text) {
+  if (!text) return false;
+  let count = 0;
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    if (code < 0x20 && code !== 0x0A && code !== 0x09) count++;
+    else if (code === 0xFFFD) count++;  // Unicode replacement char (invalid UTF-8)
+    if (count > 2) return true;
+  }
+  return false;
+}
+
 /** GRP_TXT: channel_hash(1) + MAC(2) + encrypted */
 function decodeGrpTxt(buf, channelKeys) {
   if (buf.length < 3) return { error: 'too short', raw: buf.toString('hex') };
@@ -162,6 +178,16 @@ function decodeGrpTxt(buf, channelKeys) {
       for (const [name, key] of Object.entries(channelKeys)) {
         const result = ChannelCrypto.decryptGroupTextMessage(encryptedData, mac, key);
         if (result.success && result.data) {
+          const text = result.data.sender && result.data.message
+            ? `${result.data.sender}: ${result.data.message}`
+            : result.data.message || '';
+          // Validate decrypted text is printable UTF-8 (not binary garbage)
+          if (hasNonPrintableChars(text)) {
+            return {
+              type: 'GRP_TXT', channelHash, channelHashHex, channel: name,
+              decryptionStatus: 'decryption_failed', text: null, mac, encryptedData,
+            };
+          }
           return {
             type: 'CHAN',
             channel: name,
@@ -169,9 +195,7 @@ function decodeGrpTxt(buf, channelKeys) {
             channelHashHex,
             decryptionStatus: 'decrypted',
             sender: result.data.sender || null,
-            text: result.data.sender && result.data.message
-              ? `${result.data.sender}: ${result.data.message}`
-              : result.data.message || '',
+            text,
             sender_timestamp: result.data.timestamp,
             flags: result.data.flags,
           };

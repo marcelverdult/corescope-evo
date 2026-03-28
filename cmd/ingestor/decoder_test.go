@@ -1298,3 +1298,60 @@ func TestDecodeGrpTxtChannelHashHexFF(t *testing.T) {
 		t.Errorf("channelHashHex=%s, want FF", p.ChannelHashHex)
 	}
 }
+
+// --- Garbage text detection (fixes #197) ---
+
+func TestDecryptChannelMessageGarbageText(t *testing.T) {
+	// Build ciphertext with binary garbage as the message
+	key := "2cc3d22840e086105ad73443da2cacb8"
+	garbage := "\x01\x02\x03\x80\x81"
+	ctHex, macHex := buildTestCiphertext(key, garbage, 1700000000)
+
+	_, err := decryptChannelMessage(ctHex, macHex, key)
+	if err == nil {
+		t.Fatal("expected error for garbage text, got nil")
+	}
+	if !strings.Contains(err.Error(), "non-printable") {
+		t.Errorf("error should mention non-printable: %v", err)
+	}
+}
+
+func TestDecryptChannelMessageValidText(t *testing.T) {
+	key := "2cc3d22840e086105ad73443da2cacb8"
+	ctHex, macHex := buildTestCiphertext(key, "Alice: Hello\nworld", 1700000000)
+
+	result, err := decryptChannelMessage(ctHex, macHex, key)
+	if err != nil {
+		t.Fatalf("unexpected error for valid text: %v", err)
+	}
+	if result.Sender != "Alice" {
+		t.Errorf("sender=%q, want Alice", result.Sender)
+	}
+	if result.Message != "Hello\nworld" {
+		t.Errorf("message=%q, want 'Hello\\nworld'", result.Message)
+	}
+}
+
+func TestDecodeGrpTxtGarbageMarkedFailed(t *testing.T) {
+	key := "2cc3d22840e086105ad73443da2cacb8"
+	garbage := "\x01\x02\x03\x04\x05"
+	ctHex, macHex := buildTestCiphertext(key, garbage, 1700000000)
+
+	macBytes, _ := hex.DecodeString(macHex)
+	ctBytes, _ := hex.DecodeString(ctHex)
+	buf := make([]byte, 1+2+len(ctBytes))
+	buf[0] = 0xFF // channel hash
+	buf[1] = macBytes[0]
+	buf[2] = macBytes[1]
+	copy(buf[3:], ctBytes)
+
+	keys := map[string]string{"#general": key}
+	p := decodeGrpTxt(buf, keys)
+
+	if p.DecryptionStatus != "decryption_failed" {
+		t.Errorf("decryptionStatus=%s, want decryption_failed", p.DecryptionStatus)
+	}
+	if p.Type != "GRP_TXT" {
+		t.Errorf("type=%s, want GRP_TXT", p.Type)
+	}
+}

@@ -571,6 +571,60 @@ test('NaN lat invalid', () => {
   assert.strictEqual(validateAdvert({ pubKey: 'AB'.repeat(16), lat: NaN }).valid, false);
 });
 
+// --- GRP_TXT garbage detection (fixes #197) ---
+
+test('GRP_TXT decrypted garbage text marked as decryption_failed', () => {
+  const cryptoPath = require.resolve('@michaelhart/meshcore-decoder/dist/crypto/channel-crypto');
+  const originalModule = require.cache[cryptoPath];
+  require.cache[cryptoPath] = {
+    id: cryptoPath,
+    exports: {
+      ChannelCrypto: {
+        decryptGroupTextMessage: () => ({
+          success: true,
+          data: { sender: 'Node', message: '\x01\x02\x03\x80\x81', timestamp: 1700000000, flags: 0 },
+        }),
+      },
+    },
+  };
+  try {
+    const hex = '1500' + 'FF' + 'AABB' + 'CCDDEE112233';
+    const p = decodePacket(hex, { '#general': 'aabbccddaabbccddaabbccddaabbccdd' });
+    assert.strictEqual(p.payload.decryptionStatus, 'decryption_failed');
+    assert.strictEqual(p.payload.text, null);
+    assert.strictEqual(p.payload.channelHashHex, 'FF');
+    assert.strictEqual(p.payload.channel, '#general');
+  } finally {
+    if (originalModule) require.cache[cryptoPath] = originalModule;
+    else delete require.cache[cryptoPath];
+  }
+});
+
+test('GRP_TXT valid text still marked as decrypted', () => {
+  const cryptoPath = require.resolve('@michaelhart/meshcore-decoder/dist/crypto/channel-crypto');
+  const originalModule = require.cache[cryptoPath];
+  require.cache[cryptoPath] = {
+    id: cryptoPath,
+    exports: {
+      ChannelCrypto: {
+        decryptGroupTextMessage: () => ({
+          success: true,
+          data: { sender: 'Alice', message: 'Hello\nworld', timestamp: 1700000000, flags: 0 },
+        }),
+      },
+    },
+  };
+  try {
+    const hex = '1500' + 'FF' + 'AABB' + 'CCDDEE112233';
+    const p = decodePacket(hex, { '#general': 'aabbccddaabbccddaabbccddaabbccdd' });
+    assert.strictEqual(p.payload.decryptionStatus, 'decrypted');
+    assert.strictEqual(p.payload.text, 'Alice: Hello\nworld');
+  } finally {
+    if (originalModule) require.cache[cryptoPath] = originalModule;
+    else delete require.cache[cryptoPath];
+  }
+});
+
 // === Summary ===
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
