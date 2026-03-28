@@ -6,9 +6,23 @@
 [![Frontend Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Kpa-clawbot/meshcore-analyzer/master/.badges/frontend-coverage.json)](https://github.com/Kpa-clawbot/meshcore-analyzer/actions/workflows/deploy.yml)
 [![Deploy](https://github.com/Kpa-clawbot/meshcore-analyzer/actions/workflows/deploy.yml/badge.svg)](https://github.com/Kpa-clawbot/meshcore-analyzer/actions/workflows/deploy.yml)
 
-> Self-hosted, open-source MeshCore packet analyzer — a community alternative to the closed-source `analyzer.letsmesh.net`.
+> High-performance mesh network analyzer powered by Go. Sub-millisecond packet queries, ~300 MB memory for 56K+ packets, real-time WebSocket broadcast, full channel decryption.
 
-Collects MeshCore packets via MQTT, decodes them, and presents a full web UI with live packet feed, node map, channel chat, packet tracing, per-node analytics, and more.
+Self-hosted, open-source MeshCore packet analyzer — a community alternative to the closed-source `analyzer.letsmesh.net`. Collects MeshCore packets via MQTT, decodes them in real time, and presents a full web UI with live packet feed, interactive maps, channel chat, packet tracing, and per-node analytics.
+
+## ⚡ Performance
+
+The Go backend serves all 40+ API endpoints from an in-memory packet store with 5 indexes (hash, txID, obsID, observer, node). SQLite is for persistence only — reads never touch disk.
+
+| Metric | Value |
+|--------|-------|
+| Packet queries | **< 1 ms** (in-memory) |
+| All API endpoints | **< 100 ms** |
+| Memory (56K packets) | **~300 MB** (vs 1.3 GB on Node.js) |
+| WebSocket broadcast | **Real-time** to all connected browsers |
+| Channel decryption | **AES-128-ECB** with rainbow table |
+
+See [PERFORMANCE.md](PERFORMANCE.md) for full benchmarks.
 
 ## ✨ Features
 
@@ -27,13 +41,8 @@ At-a-glance mesh stats — node counts, packet volume, observer coverage.
 
 ![Network overview](docs/screenshots/mesh-overview.png)
 
-### 🔀 Route Patterns
-Visualize how packets traverse the mesh — see which repeaters carry the most traffic and identify routing patterns.
-
-![Route patterns](docs/screenshots/route-patterns.png)
-
 ### 📊 Node Analytics
-Per-node deep dive with 6 interactive charts: activity timeline, packet type breakdown, SNR distribution, hop count analysis, peer network graph, and hourly heatmap.
+Per-node deep dive with interactive charts: activity timeline, packet type breakdown, SNR distribution, hop count analysis, peer network graph, and hourly heatmap.
 
 ![Node analytics](docs/screenshots/node-analytics.png)
 
@@ -43,43 +52,31 @@ Decoded group messages with sender names, @mentions, timestamps — like reading
 ![Channels](docs/screenshots/channels1.png)
 
 ### 📱 Mobile Ready
-Full experience on your phone — proper touch controls, iOS safe area support, and a compact VCR bar that doesn't fight your thumb.
+Full experience on your phone — proper touch controls, iOS safe area support, and a compact VCR bar.
 
 <img src="docs/screenshots/Live-view-iOS.png" alt="Live view on iOS" width="300">
 
 ### And More
 
-- **Node Directory** — searchable list with role tabs, detail panel, QR codes, advert timeline, "Heard By" observer table
+- **11 Analytics Tabs** — RF, topology, channels, hash stats, distance, route patterns, and more
+- **Node Directory** — searchable list with role tabs, detail panel, QR codes, advert timeline
 - **Packet Tracing** — follow individual packets across observers with SNR/RSSI timeline
-- **Observer Status** — health monitoring, packet counts, uptime
+- **Observer Status** — health monitoring, packet counts, uptime, per-observer analytics
 - **Hash Collision Matrix** — detect address collisions across the mesh
-- **Claimed Nodes** — star your nodes, always sorted to top, visual distinction
-- **Dark / Light Mode** — auto-detects system preference, instant toggle, map tiles swap too
-- **Multi-Broker MQTT** — connect to multiple MQTT brokers simultaneously with per-source IATA filtering
-- **Observer Detail Pages** — click any observer for analytics, charts, status, radio info, recent packets
-- **Channel Key Auto-Derivation** — hashtag channels (`#channel`) keys derived automatically via SHA256
+- **Channel Key Auto-Derivation** — hashtag channels (`#channel`) keys derived via SHA256
+- **Multi-Broker MQTT** — connect to multiple brokers with per-source IATA filtering
+- **Dark / Light Mode** — auto-detects system preference, map tiles swap too
+- **Theme Customizer** — design your theme in-browser, export as `theme.json`
 - **Global Search** — search packets, nodes, and channels (Ctrl+K)
-- **Shareable URLs** — deep links to individual packets, channels, and observer detail pages
-- **Mobile Responsive** — proper two-row VCR bar, iOS safe area support, touch-friendly
-- **Accessible** — ARIA patterns, keyboard navigation, screen reader support, distinct marker shapes
-
-### ⚡ Performance (v2.1.1)
-
-Two-layer caching architecture: in-memory packet store + TTL response cache. All packet reads served from RAM — SQLite is write-only. Heavy endpoints pre-warmed on startup.
-
-| Endpoint | Before | After | Speedup |
-|---|---|---|---|
-| Bulk Health | 7,059 ms | 1 ms | **7,059×** |
-| Node Analytics | 381 ms | 1 ms | **381×** |
-| Topology | 685 ms | 2 ms | **342×** |
-| Node Health | 195 ms | 1 ms | **195×** |
-| Node Detail | 133 ms | 1 ms | **133×** |
-
-See [PERFORMANCE.md](PERFORMANCE.md) for the full benchmark.
+- **Shareable URLs** — deep links to packets, channels, and observer detail pages
+- **Protobuf API Contract** — typed API definitions in `proto/`
+- **Accessible** — ARIA patterns, keyboard navigation, screen reader support
 
 ## Quick Start
 
 ### Docker (Recommended)
+
+No Go installation needed — everything builds inside the container.
 
 ```bash
 git clone https://github.com/Kpa-clawbot/meshcore-analyzer.git
@@ -87,9 +84,8 @@ cd meshcore-analyzer
 ./manage.sh setup
 ```
 
-The setup wizard walks you through everything — config, domain, HTTPS, build, and run. Safe to cancel and re-run at any point.
+The setup wizard walks you through config, domain, HTTPS, build, and run.
 
-After setup:
 ```bash
 ./manage.sh status       # Health check + packet/node counts
 ./manage.sh logs         # Follow logs
@@ -99,36 +95,15 @@ After setup:
 ./manage.sh help         # All commands
 ```
 
-See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the full deployment guide, HTTPS options (auto cert, bring your own, Cloudflare Tunnel), MQTT security, backups, and troubleshooting.
-
-**Theme customization:** Use the built-in customizer (Tools → Customize) to design your theme, download the `theme.json` file, and place it next to your `config.json`. Changes are picked up on page refresh.
-
-### Manual Install
-
-#### Prerequisites
-
-- **Node.js** 18+ (tested with 22.x)
-- **MQTT broker** (Mosquitto recommended) — optional, can inject packets via API
-
-### Install
-
-```bash
-git clone https://github.com/Kpa-clawbot/meshcore-analyzer.git
-cd meshcore-analyzer
-npm install
-```
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the full deployment guide — HTTPS options (auto cert, bring your own, Cloudflare Tunnel), MQTT security, backups, and troubleshooting.
 
 ### Configure
 
-Edit `config.json`:
+Copy `config.example.json` to `config.json` and edit:
 
 ```json
 {
   "port": 3000,
-  "https": {
-    "cert": "/path/to/cert.pem",
-    "key": "/path/to/key.pem"
-  },
   "mqtt": {
     "broker": "mqtt://localhost:1883",
     "topic": "meshcore/+/+/packets"
@@ -137,136 +112,135 @@ Edit `config.json`:
     {
       "name": "remote-feed",
       "broker": "mqtts://remote-broker:8883",
-      "topics": ["meshcore/+/+/packets", "meshcore/+/+/status"],
+      "topics": ["meshcore/+/+/packets"],
       "username": "user",
       "password": "pass",
-      "rejectUnauthorized": false,
       "iataFilter": ["SJC", "SFO", "OAK"]
     }
   ],
   "channelKeys": {
     "public": "8b3387e9c5cdea6ac9e5edbaa115cd72"
   },
-  "defaultRegion": "SJC",
-  "regions": {
-    "SJC": "San Jose, US",
-    "SFO": "San Francisco, US",
-    "OAK": "Oakland, US"
-  }
+  "defaultRegion": "SJC"
 }
 ```
 
 | Field | Description |
 |-------|-------------|
 | `port` | HTTP server port (default: 3000) |
-| `https.cert` / `https.key` | Optional PEM cert/key paths to enable native HTTPS (falls back to HTTP if omitted or unreadable) |
-| `mqtt.broker` | Local MQTT broker URL. Set to `""` to disable |
-| `mqtt.topic` | MQTT topic pattern for packet ingestion |
-| `mqttSources` | Array of external MQTT broker connections (optional) |
-| `mqttSources[].name` | Friendly name for logging |
-| `mqttSources[].broker` | Broker URL (`mqtt://` or `mqtts://` for TLS) |
-| `mqttSources[].topics` | Array of MQTT topic patterns to subscribe to |
-| `mqttSources[].username` / `password` | Broker credentials |
-| `mqttSources[].rejectUnauthorized` | Set `false` for self-signed TLS certs |
-| `mqttSources[].iataFilter` | Only accept packets from these IATA regions |
-| `channelKeys` | Named channel decryption keys (hex). Hashtag channels auto-derived via SHA256 |
+| `mqtt.broker` | Local MQTT broker URL (`""` to disable) |
+| `mqttSources` | External MQTT broker connections (optional) |
+| `channelKeys` | Channel decryption keys (hex). Hashtag channels auto-derived via SHA256 |
 | `defaultRegion` | Default IATA region code for the UI |
-| `regions` | Map of IATA codes to human-readable region names |
-
-### Run
-
-```bash
-node server.js
-```
-
-Open `http://localhost:3000` in your browser.
+| `dbPath` | SQLite database path (default: `data/meshcore.db`) |
 
 ### Environment Variables
 
 | Variable | Description |
 |----------|-------------|
-| `PORT` | Override config.json port |
-| `DB_PATH` | Override SQLite database path (default: `data/meshcore.db`) |
+| `PORT` | Override config port |
+| `DB_PATH` | Override SQLite database path |
 
-### Generate Test Data
+## Architecture
 
-```bash
-# Generate and inject 200 packets via API
-node tools/generate-packets.js --api --count 200
-
-# Or output as JSON
-node tools/generate-packets.js --json --count 50
+```
+                           ┌─────────────────────────────────────────────┐
+                           │              Docker Container               │
+                           │                                             │
+Observer → USB →           │  Mosquitto ──→ Go Ingestor ──→ SQLite DB   │
+  meshcoretomqtt → MQTT ──→│                    │                        │
+                           │              Go HTTP Server ──→ WebSocket   │
+                           │                    │               │        │
+                           │              Caddy (HTTPS) ←───────┘        │
+                           └────────────────────┼────────────────────────┘
+                                                │
+                                             Browser
 ```
 
-### Run Tests
-
-```bash
-# End-to-end test
-DB_PATH=/tmp/test-e2e.db PORT=13590 node tools/e2e-test.js
-
-# Frontend smoke test
-DB_PATH=/tmp/test-fe.db PORT=13591 node tools/frontend-test.js
-```
+**Two-process model:** The Go ingestor handles MQTT ingestion and packet decoding. The Go HTTP server loads all packets into an in-memory store on startup (5 indexes for fast lookups) and serves the REST API + WebSocket broadcast. Both are managed by supervisord inside a single container with Caddy for HTTPS and Mosquitto for local MQTT.
 
 ## MQTT Setup
-
-MeshCore packets flow into the analyzer via MQTT:
 
 1. **Flash an observer node** with `MESH_PACKET_LOGGING=1` build flag
 2. **Connect via USB** to a host running [meshcoretomqtt](https://github.com/Cisien/meshcoretomqtt)
 3. **Configure meshcoretomqtt** with your IATA region code and MQTT broker address
 4. **Packets appear** on topic `meshcore/{IATA}/{PUBKEY}/packets`
 
-Alternatively, POST raw hex packets to `POST /api/packets` for manual injection.
-
-## Architecture
-
-```
-Observer Node → USB → meshcoretomqtt → MQTT Broker → Analyzer Server → WebSocket → Browser
-                                                    → SQLite DB
-                                                    → REST API
-```
+Or POST raw hex packets to `POST /api/packets` for manual injection.
 
 ## Project Structure
 
 ```
 meshcore-analyzer/
-├── Dockerfile           # Single-container build (Node + Mosquitto + Caddy)
-├── .dockerignore
-├── config.example.json  # Example config (copy to config.json)
-├── config.json          # MQTT, channel keys, regions (gitignored)
-├── server.js            # Express + WebSocket + MQTT + REST API
-├── decoder.js           # Custom MeshCore packet decoder
-├── db.js                # SQLite schema + queries
-├── packet-store.js      # In-memory packet store (ring buffer, indexed)
+├── cmd/
+│   ├── server/              # Go HTTP server + WebSocket + REST API
+│   │   ├── main.go          # Entry point
+│   │   ├── routes.go        # 40+ API endpoint handlers
+│   │   ├── store.go         # In-memory packet store (5 indexes)
+│   │   ├── db.go            # SQLite persistence layer
+│   │   ├── decoder.go       # MeshCore packet decoder
+│   │   ├── websocket.go     # WebSocket broadcast
+│   │   └── *_test.go        # 327 test functions
+│   └── ingestor/            # Go MQTT ingestor
+│       ├── main.go          # MQTT subscription + packet processing
+│       ├── decoder.go       # Packet decoder (shared logic)
+│       ├── db.go            # SQLite write path
+│       └── *_test.go        # 53 test functions
+├── proto/                   # Protobuf API definitions
+├── public/                  # Vanilla JS frontend (no build step)
+│   ├── index.html           # SPA shell
+│   ├── app.js               # Router, WebSocket, utilities
+│   ├── packets.js           # Packet feed + hex breakdown
+│   ├── map.js               # Leaflet map + route visualization
+│   ├── live.js              # Live trace + VCR playback
+│   ├── channels.js          # Channel chat
+│   ├── nodes.js             # Node directory + detail views
+│   ├── analytics.js         # 11-tab analytics dashboard
+│   └── style.css            # CSS variable theming (light/dark)
 ├── docker/
-│   ├── supervisord.conf # Process manager config
-│   ├── mosquitto.conf   # MQTT broker config
-│   ├── Caddyfile        # Default Caddy config (localhost)
-│   └── entrypoint.sh    # Container entrypoint
-├── data/
-│   └── meshcore.db      # Packet database (auto-created)
-├── public/
-│   ├── index.html       # SPA shell
-│   ├── style.css        # Theme (light/dark)
-│   ├── app.js           # Router, WebSocket, utilities
-│   ├── packets.js       # Packet feed + byte breakdown + detail page
-│   ├── map.js           # Leaflet map with route visualization
-│   ├── live.js          # Live trace page with VCR playback
-│   ├── channels.js      # Channel chat
-│   ├── nodes.js         # Node directory + detail views
-│   ├── analytics.js     # Global analytics dashboard
-│   ├── node-analytics.js # Per-node analytics with charts
-│   ├── traces.js        # Packet tracing
-│   ├── observers.js     # Observer status
-│   ├── observer-detail.js # Observer detail with analytics
-│   ├── home.js          # Dashboard home page
-│   └── perf.js          # Performance monitoring dashboard
-└── tools/
-    ├── generate-packets.js  # Synthetic packet generator
-    ├── e2e-test.js          # End-to-end API tests
-    └── frontend-test.js     # Frontend smoke tests
+│   ├── supervisord-go.conf  # Process manager (server + ingestor)
+│   ├── mosquitto.conf       # MQTT broker config
+│   ├── Caddyfile            # Reverse proxy + HTTPS
+│   └── entrypoint-go.sh     # Container entrypoint
+├── Dockerfile               # Multi-stage Go build + Alpine runtime
+├── config.example.json      # Example configuration
+├── test-*.js                # Node.js test suite (frontend + legacy)
+└── tools/                   # Generators, E2E tests, utilities
 ```
+
+## For Developers
+
+### Test Suite
+
+**380 Go tests** covering the backend, plus **150+ Node.js tests** for the frontend and legacy logic, plus **49 Playwright E2E tests** for browser validation.
+
+```bash
+# Go backend tests
+cd cmd/server && go test ./... -v
+cd cmd/ingestor && go test ./... -v
+
+# Node.js frontend + integration tests
+npm test
+
+# Playwright E2E (requires running server on localhost:3000)
+node test-e2e-playwright.js
+```
+
+### Generate Test Data
+
+```bash
+node tools/generate-packets.js --api --count 200
+```
+
+### Migrating from Node.js
+
+If you're running an existing Node.js deployment, see [docs/go-migration.md](docs/go-migration.md) for a step-by-step guide. The Go engine reads the same SQLite database and `config.json` — no data migration needed.
+
+## Contributing
+
+Contributions welcome. Please read [AGENTS.md](AGENTS.md) for coding conventions, testing requirements, and engineering principles before submitting a PR.
+
+**Live instance:** [analyzer.00id.net](https://analyzer.00id.net) — all API endpoints are public, no auth required.
 
 ## License
 
