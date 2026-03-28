@@ -153,7 +153,7 @@ verify_health() {
   fi
 
   # Wait for /api/stats response
-  info "Waiting for Node.js to respond..."
+  info "Waiting for server to respond..."
   local healthy=false
   for i in $(seq 1 10); do
     if docker exec "$CONTAINER_NAME" wget -qO- http://localhost:3000/api/stats &>/dev/null; then
@@ -164,11 +164,11 @@ verify_health() {
   done
 
   if ! $healthy; then
-    err "Node.js did not respond after 20 seconds."
+    err "Server did not respond after 20 seconds."
     warn "Check logs: ./manage.sh logs"
     return 1
   fi
-  log "Node.js is responding."
+  log "Server is responding."
 
   # Check for MQTT errors in recent logs
   local mqtt_errors
@@ -675,7 +675,7 @@ show_container_status() {
     log "${LABEL} (${NAME}): Running — Health: ${health}"
     docker ps --filter "name=${NAME}" --format "   Ports:  {{.Ports}}"
 
-    # Node.js stats
+    # Server stats
     if docker exec "$NAME" wget -qO /dev/null http://localhost:3000/api/stats 2>/dev/null; then
       local stats packets nodes
       stats=$(docker exec "$NAME" wget -qO- http://localhost:3000/api/stats 2>/dev/null)
@@ -735,14 +735,14 @@ cmd_status() {
       echo ""
 
       info "Service health:"
-      # Node.js
+      # Server
       if docker exec "$CONTAINER_NAME" wget -qO /dev/null http://localhost:3000/api/stats 2>/dev/null; then
         STATS=$(docker exec "$CONTAINER_NAME" wget -qO- http://localhost:3000/api/stats 2>/dev/null)
         PACKETS=$(echo "$STATS" | grep -oP '"totalPackets":\K[0-9]+' 2>/dev/null || echo "?")
         NODES=$(echo "$STATS" | grep -oP '"totalNodes":\K[0-9]+' 2>/dev/null || echo "?")
-        log "  Node.js — ${PACKETS} packets, ${NODES} nodes"
+        log "  Server — ${PACKETS} packets, ${NODES} nodes"
       else
-        err "  Node.js — not responding"
+        err "  Server — not responding"
       fi
 
       # Mosquitto
