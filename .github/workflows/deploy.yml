@@ -46,6 +46,7 @@ jobs:
 
       - name: Build and test Go server (with coverage)
         run: |
+          set -e -o pipefail
           cd cmd/server
           go build .
           go test -coverprofile=server-coverage.out ./... 2>&1 | tee server-test.log
@@ -54,6 +55,7 @@ jobs:
 
       - name: Build and test Go ingestor (with coverage)
         run: |
+          set -e -o pipefail
           cd cmd/ingestor
           go build .
           go test -coverprofile=ingestor-coverage.out ./... 2>&1 | tee ingestor-test.log
