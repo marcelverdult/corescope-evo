@@ -16,14 +16,14 @@ concurrency:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
-# Pipeline (TWO INDEPENDENT TRACKS):
-#   Track 1 (Node): node-test → build-node → deploy-node ──┐
-#   Track 2 (Go):   go-test   → build-go   → deploy-go   ──┼──→ publish
-#                                                           └─ (both wait)
+# Pipeline:
+#   node-test (frontend tests) ──┐
+#   go-test                      ├──→ build → deploy → publish
+#                                └─ (both wait)
 #
 # Proto validation flow:
 #   1. go-test job: verify .proto files compile (syntax check)
-#   2. deploy-node job: capture fresh fixtures from prod, validate protos match actual API responses
+#   2. deploy job: capture fresh fixtures from prod, validate protos match actual API responses
 
 jobs:
   # ───────────────────────────────────────────────────────────────
@@ -266,35 +266,10 @@ jobs:
           if-no-files-found: ignore
 
   # ───────────────────────────────────────────────────────────────
-  # 3. Build Node Docker Image — Track 1
+  # 3. Build Docker Image
   # ───────────────────────────────────────────────────────────────
-  build-node:
-    name: "🏗️ Build Node Docker Image"
-    needs: [node-test]
-    runs-on: self-hosted
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js 22
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
-      - name: Validate JavaScript syntax
-        run: sh scripts/validate.sh
-
-      - name: Build Node.js Docker image
-        run: |
-          echo "${GITHUB_SHA::7}" > .git-commit
-          docker build -t meshcore-analyzer:latest .
-          echo "Built meshcore-analyzer:latest ($(git rev-parse --short HEAD))"
-
-  # ───────────────────────────────────────────────────────────────
-  # 4. Build Go Docker Image — Track 2
-  # ───────────────────────────────────────────────────────────────
-  build-go:
-    name: "🏗️ Build Go Docker Image"
+  build:
+    name: "🏗️ Build Docker Image"
     needs: [go-test]
     runs-on: self-hosted
     steps:
@@ -315,267 +290,17 @@ jobs:
           echo "Built Go staging image"
 
   # ───────────────────────────────────────────────────────────────
-  # 5. Deploy Node Staging — start on port 81, healthcheck, smoke test
+  # 4. Deploy Staging — start on port 82, healthcheck, smoke test
   # ───────────────────────────────────────────────────────────────
-  deploy-node:
-    name: "🚀 Deploy Node Staging"
-    needs: [build-node]
+  deploy:
+    name: "🚀 Deploy Staging"
+    needs: [build]
     runs-on: self-hosted
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Prepare staging environment
-        run: |
-          set -e
-
-          # Source environment overrides from deploy dir or home
-          if [ -f /opt/meshcore-deploy/.env ]; then
-            set -a; source /opt/meshcore-deploy/.env; set +a
-            echo "Sourced /opt/meshcore-deploy/.env"
-          elif [ -f "$HOME/.env" ]; then
-            set -a; source "$HOME/.env"; set +a
-            echo "Sourced $HOME/.env"
-          else
-            echo "No .env found, using defaults"
-          fi
-
-          # Ensure data directories exist
-          STAGING_DIR="${STAGING_DATA_DIR:-$HOME/meshcore-staging-data}"
-          mkdir -p "${PROD_DATA_DIR:-$HOME/meshcore-data}" "$STAGING_DIR"
-
-          # Ensure staging has a Caddyfile (generate from template if missing)
-          if [ ! -f "$STAGING_DIR/Caddyfile" ]; then
-            cp docker/Caddyfile.staging "$STAGING_DIR/Caddyfile"
-            echo "Generated staging Caddyfile"
-          fi
-
-          # Ensure staging has a config.json (copy from prod if missing)
-          if [ ! -f "$STAGING_DIR/config.json" ]; then
-            PROD_DIR="${PROD_DATA_DIR:-$HOME/meshcore-data}"
-            if [ -f "$PROD_DIR/config.json" ]; then
-              cp "$PROD_DIR/config.json" "$STAGING_DIR/config.json"
-            elif [ -f /opt/meshcore-deploy/config.json ]; then
-              cp /opt/meshcore-deploy/config.json "$STAGING_DIR/config.json"
-            else
-              echo '{}' > "$STAGING_DIR/config.json"
-              echo "WARNING: No config.json found, created empty one"
-            fi
-          fi
-
-          # Copy compose file to deploy dir so manage.sh can use it
-          mkdir -p /opt/meshcore-deploy
-          cp docker-compose.yml /opt/meshcore-deploy/docker-compose.yml
-
-      - name: Start Node staging on port 81
-        run: |
-          # Force remove stale containers and volumes
-          docker rm -f meshcore-staging 2>/dev/null || true
-          docker volume prune -f 2>/dev/null || true
-          # Clean up stale ports
-          fuser -k 81/tcp 2>/dev/null || true
-          docker compose --profile staging up -d staging
-
-      - name: Healthcheck Node staging container
-        run: |
-          for i in $(seq 1 300); do
-            HEALTH=$(docker inspect meshcore-staging --format '{{.State.Health.Status}}' 2>/dev/null || echo "starting")
-            if [ "$HEALTH" = "healthy" ]; then
-              echo "Node staging healthy after ${i}s"
-              break
-            fi
-            if [ "$i" -eq 300 ]; then
-              echo "Node staging failed health check after 300s"
-              docker logs meshcore-staging --tail 50
-              exit 1
-            fi
-            sleep 1
-          done
-
-      - name: Smoke test Node staging API
-        run: |
-          curl -f http://localhost:81/api/stats || exit 1
-          curl -f http://localhost:81/api/nodes || exit 1
-          echo "Node staging smoke tests passed ✅"
-
-      - name: 🔍 Validate API contract (protos vs prod fixtures)
-        run: |
-          set -e
-          echo "Refreshing Node fixtures from staging container..."
-          mkdir -p proto/testdata/node-fixtures
-          
-          # ─── Simple endpoints (no parameters) ──────────────────────────
-          ENDPOINTS=(
-            "stats" "health" "perf" "nodes" "packets" "observers" "channels"
-            "analytics/rf" "analytics/topology" "analytics/channels"
-            "analytics/hash-sizes" "analytics/distance" "analytics/subpaths"
-            "config/theme" "config/regions" "config/client" "config/cache" "config/map"
-            "iata-coords"
-          )
-          
-          for endpoint in "${ENDPOINTS[@]}"; do
-            fixture_name=$(echo "$endpoint" | tr '/' '-')
-            echo "  Fetching $endpoint → ${fixture_name}.json"
-            docker exec meshcore-prod wget -qO- "http://localhost:3000/api/$endpoint" \
-              > "proto/testdata/node-fixtures/${fixture_name}.json" 2>/dev/null || {
-                echo "  ⚠ Failed to fetch $endpoint (container may not have data yet)"
-              }
-          done
-          
-          # ─── Dynamic ID endpoints (require real data) ─────────────────
-          echo ""
-          echo "Fetching endpoints that require dynamic IDs..."
-          
-          # Get a real pubkey from nodes
-          PUBKEY=$(docker exec meshcore-prod wget -qO- "http://localhost:3000/api/nodes?limit=1" 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['nodes'][0]['public_key'] if d.get('nodes') and len(d['nodes']) > 0 else '')" 2>/dev/null || echo "")
-          
-          if [ -n "$PUBKEY" ]; then
-            echo "  Using pubkey: ${PUBKEY:0:16}..."
-            docker exec meshcore-prod wget -qO- "http://localhost:3000/api/nodes/$PUBKEY" \
-              > "proto/testdata/node-fixtures/node-detail.json" 2>/dev/null && \
-              echo "  ✓ node-detail.json"
-            docker exec meshcore-prod wget -qO- "http://localhost:3000/api/nodes/$PUBKEY/health" \
-              > "proto/testdata/node-fixtures/node-health.json" 2>/dev/null && \
-              echo "  ✓ node-health.json"
-            docker exec meshcore-prod wget -qO- "http://localhost:3000/api/nodes/$PUBKEY/paths" \
-              > "proto/testdata/node-fixtures/node-paths.json" 2>/dev/null && \
-              echo "  ✓ node-paths.json"
-            docker exec meshcore-prod wget -qO- "http://localhost:3000/api/nodes/$PUBKEY/analytics" \
-              > "proto/testdata/node-fixtures/node-analytics.json" 2>/dev/null && \
-              echo "  ✓ node-analytics.json"
-          else
-            echo "  ⚠ No nodes available — skipping node detail endpoints"
-          fi
-          
-          # Node search
-          docker exec meshcore-prod wget -qO- "http://localhost:3000/api/nodes/search?q=repeater" \
-            > "proto/testdata/node-fixtures/node-search.json" 2>/dev/null && \
-            echo "  ✓ node-search.json" || echo "  ⚠ node-search failed"
-          
-          # Bulk health
-          docker exec meshcore-prod wget -qO- "http://localhost:3000/api/nodes/bulk-health" \
-            > "proto/testdata/node-fixtures/bulk-health.json" 2>/dev/null && \
-            echo "  ✓ bulk-health.json" || echo "  ⚠ bulk-health failed"
-          
-          # Get a real hash from packets
-          HASH=$(docker exec meshcore-prod wget -qO- "http://localhost:3000/api/packets?limit=1" 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['packets'][0]['hash'] if d.get('packets') and len(d['packets']) > 0 else '')" 2>/dev/null || echo "")
-          
-          if [ -n "$HASH" ]; then
-            echo "  Using hash: $HASH"
-            docker exec meshcore-prod wget -qO- "http://localhost:3000/api/packets/$HASH" \
-              > "proto/testdata/node-fixtures/packet-detail.json" 2>/dev/null && \
-              echo "  ✓ packet-detail.json"
-          else
-            echo "  ⚠ No packets available — skipping packet-detail"
-          fi
-          
-          # ─── Per-type packet fixtures (one of each payload type) ──────
-          echo ""
-          echo "Fetching per-type packet fixtures..."
-          # payload_type: 0=REQ, 1=TXT_MSG, 4=ADVERT, 5=GRP_TXT
-          TYPES="0:req 1:txtmsg 4:advert 5:grptxt"
-          for entry in $TYPES; do
-            TYPE_NUM="${entry%%:*}"
-            TYPE_NAME="${entry##*:}"
-            TYPE_HASH=$(docker exec meshcore-prod wget -qO- "http://localhost:3000/api/packets?type=${TYPE_NUM}&limit=1" 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); pkts=d.get('packets',[]); print(pkts[0]['hash'] if pkts else '')" 2>/dev/null || echo "")
-            if [ -n "$TYPE_HASH" ]; then
-              if [ "$TYPE_NAME" = "grptxt" ]; then
-                # Save first as decrypted (most common), then find an undecrypted one
-                docker exec meshcore-prod wget -qO- "http://localhost:3000/api/packets/$TYPE_HASH" \
-                  > "proto/testdata/node-fixtures/packet-type-grptxt-decrypted.json" 2>/dev/null && \
-                  echo "  ✓ packet-type-grptxt-decrypted.json (hash: $TYPE_HASH)"
-                # Find a decryption_failed packet
-                UNDEC_HASH=$(docker exec meshcore-prod wget -qO- "http://localhost:3000/api/packets?type=5&limit=20" 2>/dev/null | python3 -c "import sys,json;d=json.load(sys.stdin);[print(p['hash']) or exit() for p in d.get('packets',[]) if 'decryption_failed' in p.get('decoded_json','') or 'no_key' in p.get('decoded_json','')]" 2>/dev/null || echo "")
-                if [ -n "$UNDEC_HASH" ]; then
-                  docker exec meshcore-prod wget -qO- "http://localhost:3000/api/packets/$UNDEC_HASH" \
-                    > "proto/testdata/node-fixtures/packet-type-grptxt-undecrypted.json" 2>/dev/null && \
-                    echo "  ✓ packet-type-grptxt-undecrypted.json (hash: $UNDEC_HASH)"
-                else
-                  echo "  ⚠ No undecrypted GRP_TXT found"
-                fi
-              else
-                docker exec meshcore-prod wget -qO- "http://localhost:3000/api/packets/$TYPE_HASH" \
-                  > "proto/testdata/node-fixtures/packet-type-${TYPE_NAME}.json" 2>/dev/null && \
-                  echo "  ✓ packet-type-${TYPE_NAME}.json (hash: $TYPE_HASH)"
-              fi
-            else
-              echo "  ⚠ No type=$TYPE_NUM ($TYPE_NAME) packets available"
-            fi
-          done
-          
-          # Packet timestamps
-          docker exec meshcore-prod wget -qO- "http://localhost:3000/api/packets/timestamps?since=2026-03-01T00:00:00Z" \
-            > "proto/testdata/node-fixtures/packet-timestamps.json" 2>/dev/null && \
-            echo "  ✓ packet-timestamps.json" || echo "  ⚠ packet-timestamps failed"
-          
-          # Packets grouped and since
-          docker exec meshcore-prod wget -qO- "http://localhost:3000/api/packets?limit=5&groupByHash=true" \
-            > "proto/testdata/node-fixtures/packets-grouped.json" 2>/dev/null && \
-            echo "  ✓ packets-grouped.json" || echo "  ⚠ packets-grouped failed"
-          docker exec meshcore-prod wget -qO- "http://localhost:3000/api/packets?limit=5&since=2026-03-01T00:00:00Z&groupByHash=true" \
-            > "proto/testdata/node-fixtures/packets-since.json" 2>/dev/null && \
-            echo "  ✓ packets-since.json" || echo "  ⚠ packets-since failed"
-          
-          # Get a real observer ID
-          OBSID=$(docker exec meshcore-prod wget -qO- "http://localhost:3000/api/observers" 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d[0]['id'] if d and len(d) > 0 else '')" 2>/dev/null || echo "")
-          
-          if [ -n "$OBSID" ]; then
-            echo "  Using observer ID: $OBSID"
-            docker exec meshcore-prod wget -qO- "http://localhost:3000/api/observers/$OBSID" \
-              > "proto/testdata/node-fixtures/observer-detail.json" 2>/dev/null && \
-              echo "  ✓ observer-detail.json"
-            docker exec meshcore-prod wget -qO- "http://localhost:3000/api/observers/$OBSID/analytics" \
-              > "proto/testdata/node-fixtures/observer-analytics.json" 2>/dev/null && \
-              echo "  ✓ observer-analytics.json"
-          else
-            echo "  ⚠ No observers available — skipping observer detail endpoints"
-          fi
-          
-          # Channel messages
-          docker exec meshcore-prod wget -qO- "http://localhost:3000/api/channels/public/messages?limit=5" \
-            > "proto/testdata/node-fixtures/channel-messages.json" 2>/dev/null && \
-            echo "  ✓ channel-messages.json" || echo "  ⚠ channel-messages failed"
-          
-          # WebSocket message capture (capture one message if available)
-          # Non-blocking: if no live packets, skip with warning
-          echo "  Capturing WebSocket message..."
-          if docker exec meshcore-prod timeout 5 node -e "
-            const WebSocket = require('ws');
-            const ws = new WebSocket('ws://localhost:3000');
-            ws.on('message', (data) => {
-              console.log(data);
-              ws.close();
-              process.exit(0);
-            });
-            ws.on('error', () => { process.exit(1); });
-          " > "proto/testdata/node-fixtures/websocket-message.json" 2>/dev/null; then
-            echo "  ✓ websocket-message.json"
-          else
-            echo "  ⚠ websocket-message failed (no live packets) — skipping"
-          fi
-          
-          echo ""
-          echo "Running proto validator..."
-          python3 tools/validate-protos.py || {
-            echo "❌ Proto validation failed — API contract drift detected"
-            echo "This means a Node.js API response doesn't match the proto definition."
-            echo "Fix by updating the .proto files in proto/ to match the actual API responses."
-            exit 1
-          }
-          echo "✅ Proto validation passed — API contract is consistent"
-
-  # ───────────────────────────────────────────────────────────────
-  # 6. Deploy Go Staging — start on port 82, healthcheck, smoke test
-  # ───────────────────────────────────────────────────────────────
-  deploy-go:
-    name: "🚀 Deploy Go Staging"
-    needs: [build-go]
-    runs-on: self-hosted
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Start Go staging on port 82
+      - name: Start staging on port 82
         run: |
           # Force remove stale containers
           docker rm -f meshcore-staging-go 2>/dev/null || true
@@ -583,37 +308,37 @@ jobs:
           fuser -k 82/tcp 2>/dev/null || true
           docker compose --profile staging-go up -d staging-go
 
-      - name: Healthcheck Go staging container
+      - name: Healthcheck staging container
         run: |
           for i in $(seq 1 120); do
             HEALTH=$(docker inspect meshcore-staging-go --format '{{.State.Health.Status}}' 2>/dev/null || echo "starting")
             if [ "$HEALTH" = "healthy" ]; then
-              echo "Go staging healthy after ${i}s"
+              echo "Staging healthy after ${i}s"
               break
             fi
             if [ "$i" -eq 120 ]; then
-              echo "Go staging failed health check after 120s"
+              echo "Staging failed health check after 120s"
               docker logs meshcore-staging-go --tail 50
               exit 1
             fi
             sleep 1
           done
 
-      - name: Smoke test Go staging API
+      - name: Smoke test staging API
         run: |
           if curl -sf http://localhost:82/api/stats | grep -q engine; then
-            echo "Go staging verified — engine field present ✅"
+            echo "Staging verified — engine field present ✅"
           else
-            echo "Go staging /api/stats did not return engine field"
+            echo "Staging /api/stats did not return engine field"
             exit 1
           fi
 
   # ───────────────────────────────────────────────────────────────
-  # 7. Publish Badges & Summary — waits for both tracks to complete
+  # 5. Publish Badges & Summary
   # ───────────────────────────────────────────────────────────────
   publish:
     name: "📝 Publish Badges & Summary"
-    needs: [deploy-node, deploy-go]
+    needs: [deploy]
     runs-on: self-hosted
     steps:
       - name: Checkout code
@@ -648,8 +373,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Commit:** \`$(git rev-parse --short HEAD)\` — $(git log -1 --format=%s)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Node Staging:** http://<VM_HOST>:81" >> $GITHUB_STEP_SUMMARY
-          echo "**Go Staging:** http://<VM_HOST>:82" >> $GITHUB_STEP_SUMMARY
+          echo "**Staging:** http://<VM_HOST>:82" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "To promote to production:" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
