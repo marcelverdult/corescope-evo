@@ -8,6 +8,13 @@ on:
       - 'LICENSE'
       - '.gitignore'
       - 'docs/**'
+  pull_request:
+    branches: [master]
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+      - '.gitignore'
+      - 'docs/**'
 
 concurrency:
   group: deploy
@@ -270,6 +277,7 @@ jobs:
   # ───────────────────────────────────────────────────────────────
   build:
     name: "🏗️ Build Docker Image"
+    if: github.event_name == 'push'
     needs: [go-test]
     runs-on: self-hosted
     steps:
@@ -294,6 +302,7 @@ jobs:
   # ───────────────────────────────────────────────────────────────
   deploy:
     name: "🚀 Deploy Staging"
+    if: github.event_name == 'push'
     needs: [build]
     runs-on: self-hosted
     steps:
@@ -303,7 +312,7 @@ jobs:
       - name: Start staging on port 82
         run: |
           # Force remove stale containers
-          docker rm -f meshcore-staging-go 2>/dev/null || true
+          docker rm -f corescope-staging-go 2>/dev/null || true
           # Clean up stale ports
           fuser -k 82/tcp 2>/dev/null || true
           docker compose --profile staging-go up -d staging-go
@@ -311,14 +320,14 @@ jobs:
       - name: Healthcheck staging container
         run: |
           for i in $(seq 1 120); do
-            HEALTH=$(docker inspect meshcore-staging-go --format '{{.State.Health.Status}}' 2>/dev/null || echo "starting")
+            HEALTH=$(docker inspect corescope-staging-go --format '{{.State.Health.Status}}' 2>/dev/null || echo "starting")
             if [ "$HEALTH" = "healthy" ]; then
               echo "Staging healthy after ${i}s"
               break
             fi
             if [ "$i" -eq 120 ]; then
               echo "Staging failed health check after 120s"
-              docker logs meshcore-staging-go --tail 50
+              docker logs corescope-staging-go --tail 50
               exit 1
             fi
             sleep 1
@@ -338,6 +347,7 @@ jobs:
   # ───────────────────────────────────────────────────────────────
   publish:
     name: "📝 Publish Badges & Summary"
+    if: github.event_name == 'push'
     needs: [deploy]
     runs-on: self-hosted
     steps:
@@ -378,6 +388,6 @@ jobs:
           echo "To promote to production:" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
           echo "ssh deploy@\$VM_HOST" >> $GITHUB_STEP_SUMMARY
-          echo "cd /opt/meshcore-deploy" >> $GITHUB_STEP_SUMMARY
+          echo "cd /opt/corescope-deploy" >> $GITHUB_STEP_SUMMARY
           echo "./manage.sh promote" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY

@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package meshcore.v1;
 
-option go_package = "github.com/meshcore-analyzer/proto/v1";
+option go_package = "github.com/corescope/proto/v1";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // GET /api/config/theme — Theme and branding configuration
@@ -10,7 +10,7 @@ option go_package = "github.com/meshcore-analyzer/proto/v1";
 
 // Site branding configuration.
 message Branding {
-  // Site name (default: "MeshCore Analyzer").
+  // Site name (default: "CoreScope").
   string site_name = 1 [json_name = "siteName"];
   // Site tagline.
   string tagline = 2;

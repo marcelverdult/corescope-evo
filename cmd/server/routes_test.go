@@ -18,7 +18,9 @@ func setupTestServer(t *testing.T) (*Server, *mux.Router) {
 	hub := NewHub()
 	srv := NewServer(db, cfg, hub)
 	store := NewPacketStore(db)
-	store.Load()
+	if err := store.Load(); err != nil {
+		t.Fatalf("store.Load failed: %v", err)
+	}
 	srv.store = store
 	router := mux.NewRouter()
 	srv.RegisterRoutes(router)
@@ -722,6 +724,9 @@ func TestNodePathsFound(t *testing.T) {
 	if body["paths"] == nil {
 		t.Error("expected paths in response")
 	}
+	if got, ok := body["totalTransmissions"].(float64); !ok || got < 1 {
+		t.Errorf("expected totalTransmissions >= 1, got %v", body["totalTransmissions"])
+	}
 }
 
 func TestNodePathsNotFound(t *testing.T) {
@@ -831,6 +836,9 @@ func TestObserverAnalytics(t *testing.T) {
 		}
 		if body["recentPackets"] == nil {
 			t.Error("expected recentPackets")
+		}
+		if recent, ok := body["recentPackets"].([]interface{}); !ok || len(recent) == 0 {
+			t.Errorf("expected non-empty recentPackets, got %v", body["recentPackets"])
 		}
 	})
 
@@ -1251,6 +1259,11 @@ func TestNodeAnalyticsNoNameNode(t *testing.T) {
 	cfg := &Config{Port: 3000}
 	hub := NewHub()
 	srv := NewServer(db, cfg, hub)
+	store := NewPacketStore(db)
+	if err := store.Load(); err != nil {
+		t.Fatalf("store.Load failed: %v", err)
+	}
+	srv.store = store
 	router := mux.NewRouter()
 	srv.RegisterRoutes(router)
 
@@ -1282,6 +1295,11 @@ func TestNodeHealthForNoNameNode(t *testing.T) {
 	cfg := &Config{Port: 3000}
 	hub := NewHub()
 	srv := NewServer(db, cfg, hub)
+	store := NewPacketStore(db)
+	if err := store.Load(); err != nil {
+		t.Fatalf("store.Load failed: %v", err)
+	}
+	srv.store = store
 	router := mux.NewRouter()
 	srv.RegisterRoutes(router)
 
@@ -1521,8 +1539,6 @@ func TestHandlerErrorPaths(t *testing.T) {
 	router := mux.NewRouter()
 	srv.RegisterRoutes(router)
 
-	// Drop the view to force query errors
-	db.conn.Exec("DROP VIEW IF EXISTS packets_v")
 
 	t.Run("stats error", func(t *testing.T) {
 		db.conn.Exec("DROP TABLE IF EXISTS transmissions")
@@ -1563,7 +1579,7 @@ func TestHandlerErrorTraces(t *testing.T) {
 	router := mux.NewRouter()
 	srv.RegisterRoutes(router)
 
-	db.conn.Exec("DROP VIEW IF EXISTS packets_v")
+	db.conn.Exec("DROP TABLE IF EXISTS observations")
 
 	req := httptest.NewRequest("GET", "/api/traces/abc123def4567890", nil)
 	w := httptest.NewRecorder()
@@ -1697,13 +1713,12 @@ func TestHandlerErrorTimestamps(t *testing.T) {
 	router := mux.NewRouter()
 	srv.RegisterRoutes(router)
 
-	db.conn.Exec("DROP VIEW IF EXISTS packets_v")
-
+	// Without a store, timestamps returns empty 200
 	req := httptest.NewRequest("GET", "/api/packets/timestamps?since=2020-01-01", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
-	if w.Code != 500 {
-		t.Errorf("expected 500 for timestamps error, got %d", w.Code)
+	if w.Code != 200 {
+		t.Errorf("expected 200 for timestamps without store, got %d", w.Code)
 	}
 }
 
@@ -1740,8 +1755,8 @@ func TestHandlerErrorBulkHealth(t *testing.T) {
 	req := httptest.NewRequest("GET", "/api/nodes/bulk-health", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
-	if w.Code != 500 {
-		t.Errorf("expected 500, got %d", w.Code)
+	if w.Code != 200 {
+		t.Errorf("expected 200, got %d", w.Code)
 	}
 }
 
@@ -1876,7 +1891,9 @@ func TestGetNodeHashSizeInfoFlipFlop(t *testing.T) {
 db := setupTestDB(t)
 seedTestData(t, db)
 store := NewPacketStore(db)
-store.Load()
+if err := store.Load(); err != nil {
+	t.Fatalf("store.Load failed: %v", err)
+}
 
 pk := "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
 db.conn.Exec("INSERT OR IGNORE INTO nodes (public_key, name, role) VALUES (?, 'TestNode', 'repeater')", pk)
@@ -1934,7 +1951,17 @@ for _, field := range arrayFields {
 if body[field] == nil {
 t.Errorf("field %q is null, expected []", field)
 }
+	}
 }
+func TestObserverAnalyticsNoStore(t *testing.T) {
+	_, router := setupNoStoreServer(t)
+	req := httptest.NewRequest("GET", "/api/observers/obs1/analytics", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != 503 {
+		t.Fatalf("expected 503, got %d", w.Code)
+	}
 }
 func min(a, b int) int {
 	if a < b {

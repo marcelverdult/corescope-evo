@@ -3,6 +3,8 @@ package main
 import (
 	"encoding/json"
 	"math"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -490,5 +492,134 @@ func TestAdvertRole(t *testing.T) {
 				t.Errorf("advertRole(%+v) = %s, want %s", tt.flags, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestDeriveHashtagChannelKey(t *testing.T) {
+	// Test vectors validated against Node.js server-helpers.js
+	tests := []struct {
+		name string
+		want string
+	}{
+		{"#General", "649af2cab73ed5a890890a5485a0c004"},
+		{"#test", "9cd8fcf22a47333b591d96a2b848b73f"},
+		{"#MeshCore", "dcf73f393fa217f6b28fcec6ffc411ad"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := deriveHashtagChannelKey(tt.name)
+			if got != tt.want {
+				t.Errorf("deriveHashtagChannelKey(%q) = %q, want %q", tt.name, got, tt.want)
+			}
+		})
+	}
+
+	// Deterministic
+	k1 := deriveHashtagChannelKey("#foo")
+	k2 := deriveHashtagChannelKey("#foo")
+	if k1 != k2 {
+		t.Error("deriveHashtagChannelKey should be deterministic")
+	}
+
+	// Returns 32-char hex string (16 bytes)
+	if len(k1) != 32 {
+		t.Errorf("key length = %d, want 32", len(k1))
+	}
+
+	// Different inputs → different keys
+	k3 := deriveHashtagChannelKey("#bar")
+	if k1 == k3 {
+		t.Error("different inputs should produce different keys")
+	}
+}
+
+func TestLoadChannelKeysMergePriority(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+
+	// Create a rainbow file with two keys: #rainbow (unique) and #override (to be overridden)
+	rainbowPath := filepath.Join(dir, "channel-rainbow.json")
+	t.Setenv("CHANNEL_KEYS_PATH", rainbowPath)
+	rainbow := map[string]string{
+		"#rainbow":  "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		"#override": "rainbow_value_should_be_overridden",
+	}
+	rainbowJSON, err := json.Marshal(rainbow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(rainbowPath, rainbowJSON, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &Config{
+		HashChannels: []string{"General", "#override"},
+		ChannelKeys:  map[string]string{"#override": "explicit_wins"},
+	}
+
+	keys := loadChannelKeys(cfg, cfgPath)
+
+	// Rainbow key loaded
+	if keys["#rainbow"] != "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" {
+		t.Errorf("rainbow key missing or wrong: %q", keys["#rainbow"])
+	}
+
+	// HashChannels derived #General
+	expected := deriveHashtagChannelKey("#General")
+	if keys["#General"] != expected {
+		t.Errorf("#General = %q, want %q (derived)", keys["#General"], expected)
+	}
+
+	// Explicit config wins over both rainbow and derived
+	if keys["#override"] != "explicit_wins" {
+		t.Errorf("#override = %q, want explicit_wins", keys["#override"])
+	}
+}
+
+func TestLoadChannelKeysHashChannelsNormalization(t *testing.T) {
+	t.Setenv("CHANNEL_KEYS_PATH", "")
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+
+	cfg := &Config{
+		HashChannels: []string{
+			"NoPound",       // should become #NoPound
+			"#HasPound",     // stays #HasPound
+			"  Spaced  ",   // trimmed → #Spaced
+			"",              // skipped
+		},
+	}
+
+	keys := loadChannelKeys(cfg, cfgPath)
+
+	if _, ok := keys["#NoPound"]; !ok {
+		t.Error("should derive key for #NoPound (auto-prefixed)")
+	}
+	if _, ok := keys["#HasPound"]; !ok {
+		t.Error("should derive key for #HasPound")
+	}
+	if _, ok := keys["#Spaced"]; !ok {
+		t.Error("should derive key for #Spaced (trimmed)")
+	}
+	if len(keys) != 3 {
+		t.Errorf("expected 3 keys, got %d", len(keys))
+	}
+}
+
+func TestLoadChannelKeysSkipExplicit(t *testing.T) {
+	t.Setenv("CHANNEL_KEYS_PATH", "")
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+
+	cfg := &Config{
+		HashChannels: []string{"General"},
+		ChannelKeys:  map[string]string{"#General": "my_explicit_key"},
+	}
+
+	keys := loadChannelKeys(cfg, cfgPath)
+
+	// Explicit key should win — hashChannels derivation should be skipped
+	if keys["#General"] != "my_explicit_key" {
+		t.Errorf("#General = %q, want my_explicit_key", keys["#General"])
 	}
 }

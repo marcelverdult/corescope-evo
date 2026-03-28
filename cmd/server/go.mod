@@ -1,4 +1,4 @@
-module github.com/meshcore-analyzer/server
+module github.com/corescope/server
 
 go 1.22
 

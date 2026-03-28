@@ -344,7 +344,7 @@ app.get('/api/config/theme', (req, res) => {
   const theme = loadThemeFile();
   res.json({
     branding: {
-      siteName: 'MeshCore Analyzer',
+      siteName: 'CoreScope',
       tagline: 'Real-time MeshCore LoRa mesh network analyzer',
       ...(cfg.branding || {}),
       ...(theme.branding || {})
@@ -716,6 +716,10 @@ for (const source of mqttSources) {
             const role = p.flags ? (p.flags.repeater ? 'repeater' : p.flags.room ? 'room' : p.flags.sensor ? 'sensor' : 'companion') : 'companion';
             db.upsertNode({ public_key: p.pubKey, name: p.name || null, role, lat: p.lat, lon: p.lon, last_seen: now });
             if (txResult && txResult.isNew) db.incrementAdvertCount(p.pubKey);
+            // Update telemetry if present in advert
+            if (p.battery_mv != null || p.temperature_c != null) {
+                db.updateNodeTelemetry({ public_key: p.pubKey, battery_mv: p.battery_mv ?? null, temperature_c: p.temperature_c ?? null });
+            }
             // Invalidate this node's caches on advert
             cache.invalidate('node:' + p.pubKey);
             cache.invalidate('health:' + p.pubKey);
@@ -1057,6 +1061,10 @@ app.post('/api/packets', requireApiKey, (req, res) => {
         const role = p.flags ? (p.flags.repeater ? 'repeater' : p.flags.room ? 'room' : p.flags.sensor ? 'sensor' : 'companion') : 'companion';
         db.upsertNode({ public_key: p.pubKey, name: p.name || null, role, lat: p.lat, lon: p.lon, last_seen: now });
         if (txResult && txResult.isNew) db.incrementAdvertCount(p.pubKey);
+        // Update telemetry if present in advert
+        if (p.battery_mv != null || p.temperature_c != null) {
+            db.updateNodeTelemetry({ public_key: p.pubKey, battery_mv: p.battery_mv ?? null, temperature_c: p.temperature_c ?? null });
+        }
       } else {
         console.warn(`[advert] Skipping corrupted ADVERT (API): ${validation.reason}`);
       }
@@ -2948,7 +2956,7 @@ app.get('/{*splat}', (req, res) => {
   if (fs.existsSync(indexPath)) {
     res.sendFile(indexPath);
   } else {
-    res.status(200).send('<!DOCTYPE html><html><body><h1>MeshCore Analyzer</h1><p>Frontend not yet built.</p></body></html>');
+    res.status(200).send('<!DOCTYPE html><html><body><h1>CoreScope</h1><p>Frontend not yet built.</p></body></html>');
   }
 });
 
@@ -2959,7 +2967,7 @@ if (require.main === module) {
 db.removePhantomNodes();
 server.listen(listenPort, () => {
   const protocol = isHttps ? 'https' : 'http';
-  console.log(`MeshCore Analyzer running on ${protocol}://localhost:${listenPort}`);
+  console.log(`CoreScope running on ${protocol}://localhost:${listenPort}`);
   // Log theme file location
   let themeFound = false;
   for (const p of THEME_PATHS) {

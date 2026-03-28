@@ -1,4 +1,4 @@
-# AGENTS.md — MeshCore Analyzer
+# AGENTS.md — CoreScope
 
 Guide for AI agents working on this codebase. Read this before writing any code.
 

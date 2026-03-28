@@ -73,8 +73,8 @@ Advert counts now reflect unique transmissions, not total observations. A packet
 
 The Go backend is two binaries managed by supervisord inside Docker:
 
-- **`meshcore-ingestor`** — connects to MQTT brokers, decodes packets, writes to SQLite, maintains the in-memory store
-- **`meshcore-server`** — HTTP API, WebSocket broadcast, static file serving, analytics computation
+- **`corescope-ingestor`** — connects to MQTT brokers, decodes packets, writes to SQLite, maintains the in-memory store
+- **`corescope-server`** — HTTP API, WebSocket broadcast, static file serving, analytics computation
 
 Both share the same SQLite database (WAL mode). The frontend is unchanged — same vanilla JS, same `public/` directory, served by the Go HTTP server through Caddy.
 
@@ -120,7 +120,7 @@ curl -s http://localhost/api/health | grep engine
 The Node.js Dockerfile is preserved as `Dockerfile.node`:
 
 ```bash
-docker build -f Dockerfile.node -t meshcore-analyzer:latest .
+docker build -f Dockerfile.node -t corescope:latest .
 docker compose up -d --force-recreate prod
 ```
 
@@ -152,7 +152,7 @@ This release wouldn't exist without the community:
 - **LitBomb** — issue reports from production deployments
 - **mibzzer15** — issue reports and edge case discovery
 
-And to everyone running MeshCore Analyzer in the wild — your packet data, bug reports, and feature requests are what drive this project forward. The Go rewrite happened because the community outgrew what Node.js could handle. 56K packets, dozens of observers, sub-second queries. This is your tool. We just rewrote the engine.
+And to everyone running CoreScope in the wild — your packet data, bug reports, and feature requests are what drive this project forward. The Go rewrite happened because the community outgrew what Node.js could handle. 56K packets, dozens of observers, sub-second queries. This is your tool. We just rewrote the engine.
 
 ---
 

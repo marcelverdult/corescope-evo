@@ -11,14 +11,14 @@ WORKDIR /build/server
 COPY cmd/server/go.mod cmd/server/go.sum ./
 RUN go mod download
 COPY cmd/server/ ./
-RUN go build -ldflags "-X main.Version=${APP_VERSION} -X main.Commit=${GIT_COMMIT} -X main.BuildTime=${BUILD_TIME}" -o /meshcore-server .
+RUN go build -ldflags "-X main.Version=${APP_VERSION} -X main.Commit=${GIT_COMMIT} -X main.BuildTime=${BUILD_TIME}" -o /corescope-server .
 
 # Build ingestor
 WORKDIR /build/ingestor
 COPY cmd/ingestor/go.mod cmd/ingestor/go.sum ./
 RUN go mod download
 COPY cmd/ingestor/ ./
-RUN go build -o /meshcore-ingestor .
+RUN go build -o /corescope-ingestor .
 
 # Runtime image
 FROM alpine:3.20
@@ -28,7 +28,7 @@ RUN apk add --no-cache mosquitto mosquitto-clients supervisor caddy wget
 WORKDIR /app
 
 # Go binaries
-COPY --from=builder /meshcore-server /meshcore-ingestor /app/
+COPY --from=builder /corescope-server /corescope-ingestor /app/
 
 # Frontend assets + config
 COPY public/ ./public/
