@@ -142,9 +142,9 @@ type Observer struct {
 	Firmware      *string `json:"firmware"`
 	ClientVersion *string `json:"client_version"`
 	Radio         *string `json:"radio"`
-	BatteryMv     *int    `json:"battery_mv"`
-	UptimeSecs    *int    `json:"uptime_secs"`
-	NoiseFloor    *int    `json:"noise_floor"`
+	BatteryMv     *float64 `json:"battery_mv"`
+	UptimeSecs    *float64 `json:"uptime_secs"`
+	NoiseFloor    *float64 `json:"noise_floor"`
 }
 
 // Transmission represents a row from the transmissions table.
