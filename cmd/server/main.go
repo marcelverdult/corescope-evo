@@ -116,7 +116,7 @@ func main() {
 	var tableName string
 	err = database.conn.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='transmissions'").Scan(&tableName)
 	if err == sql.ErrNoRows {
-		log.Fatalf("[db] table 'transmissions' not found — is this a MeshCore Analyzer database?")
+		log.Fatalf("[db] table 'transmissions' not found — is this a CoreScope database?")
 	}
 
 	stats, err := database.GetStats()
@@ -155,7 +155,7 @@ func main() {
 		log.Printf("[static] directory %s not found — API-only mode", absPublic)
 		router.PathPrefix("/").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/html")
-			w.Write([]byte(`<!DOCTYPE html><html><body><h1>MeshCore Analyzer</h1><p>Frontend not found. API available at /api/</p></body></html>`))
+			w.Write([]byte(`<!DOCTYPE html><html><body><h1>CoreScope</h1><p>Frontend not found. API available at /api/</p></body></html>`))
 		})
 	}
 
@@ -182,7 +182,7 @@ func main() {
 		httpServer.Close()
 	}()
 
-	log.Printf("[server] MeshCore Analyzer (Go) listening on http://localhost:%d", cfg.Port)
+	log.Printf("[server] CoreScope (Go) listening on http://localhost:%d", cfg.Port)
 	if err := httpServer.ListenAndServe(); err != http.ErrServerClosed {
 		log.Fatalf("[server] %v", err)
 	}

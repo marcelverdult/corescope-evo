@@ -1,4 +1,4 @@
-module github.com/meshcore-analyzer/ingestor
+module github.com/corescope/ingestor
 
 go 1.22
 

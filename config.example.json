@@ -10,7 +10,7 @@
     "key": "/path/to/key.pem"
   },
   "branding": {
-    "siteName": "MeshCore Analyzer",
+    "siteName": "CoreScope",
     "tagline": "Real-time MeshCore LoRa mesh network analyzer",
     "logoUrl": null,
     "faviconUrl": null
@@ -32,7 +32,7 @@
     "observer": "#8b5cf6"
   },
   "home": {
-    "heroTitle": "MeshCore Analyzer",
+    "heroTitle": "CoreScope",
     "heroSubtitle": "Find your nodes to start monitoring them.",
     "steps": [
       { "emoji": "📡", "title": "Connect", "description": "Link your node to the mesh" },

@@ -552,7 +552,7 @@ var version = "dev"
 
 func init() {
 	if len(os.Args) > 1 && os.Args[1] == "--version" {
-		fmt.Println("meshcore-ingestor", version)
+		fmt.Println("corescope-ingestor", version)
 		os.Exit(0)
 	}
 }
