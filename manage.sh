@@ -1,5 +1,5 @@
 #!/bin/bash
-# MeshCore Analyzer — Setup & Management Helper
+# CoreScope — Setup & Management Helper
 # Usage: ./manage.sh [command]
 #
 # Idempotent: safe to cancel and re-run at any point.
@@ -1105,7 +1105,7 @@ cmd_reset() {
 
 cmd_help() {
   echo ""
-  echo "MeshCore Analyzer — Management Script"
+  echo "CoreScope — Management Script"
   echo ""
   echo "Usage: ./manage.sh <command>"
   echo ""

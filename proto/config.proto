@@ -10,7 +10,7 @@ option go_package = "github.com/corescope/proto/v1";
 
 // Site branding configuration.
 message Branding {
-  // Site name (default: "MeshCore Analyzer").
+  // Site name (default: "CoreScope").
   string site_name = 1 [json_name = "siteName"];
   // Site tagline.
   string tagline = 2;
