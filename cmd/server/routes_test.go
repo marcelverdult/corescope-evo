@@ -392,9 +392,15 @@ func TestPerfEndpoint(t *testing.T) {
 	var body map[string]interface{}
 	json.Unmarshal(w.Body.Bytes(), &body)
 
-	// Verify goRuntime is NOT present (removed per api-spec.md)
-	if _, ok := body["goRuntime"]; ok {
-		t.Error("goRuntime should not be in perf response (removed per api-spec.md)")
+	// Verify goRuntime IS present with expected fields
+	goRuntime, ok := body["goRuntime"].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected goRuntime object in perf response")
+	}
+	for _, field := range []string{"heapMB", "sysMB", "numGoroutine", "numGC", "gcPauseMs"} {
+		if _, ok := goRuntime[field]; !ok {
+			t.Errorf("expected %s in goRuntime", field)
+		}
 	}
 	// Verify status, uptimeHuman, websocket are NOT present
 	for _, removed := range []string{"status", "uptimeHuman", "websocket"} {

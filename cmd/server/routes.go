@@ -492,6 +492,16 @@ func (s *Server) handlePerf(w http.ResponseWriter, r *http.Request) {
 		Cache:         perfCS,
 		PacketStore:   pktStoreStats,
 		Sqlite:        sqliteStats,
+		GoRuntime: func() *GoRuntimeStats {
+			ms := s.getMemStats()
+			return &GoRuntimeStats{
+				HeapMB:       float64(ms.HeapAlloc) / 1024 / 1024,
+				SysMB:        float64(ms.Sys) / 1024 / 1024,
+				NumGoroutine: runtime.NumGoroutine(),
+				NumGC:        ms.NumGC,
+				GCPauseMs:    float64(ms.PauseNs[(ms.NumGC+255)%256]) / 1e6,
+			}
+		}(),
 	})
 }
 
@@ -862,7 +872,13 @@ func (s *Server) handleNodeDetail(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleNodeHealth(w http.ResponseWriter, r *http.Request) {
 	pubkey := mux.Vars(r)["pubkey"]
-	result, err := s.db.GetNodeHealth(pubkey)
+	var result map[string]interface{}
+	var err error
+	if s.store != nil {
+		result, err = s.store.GetNodeHealth(pubkey)
+	} else {
+		result, err = s.db.GetNodeHealth(pubkey)
+	}
 	if err != nil || result == nil {
 		writeError(w, 404, "Not found")
 		return

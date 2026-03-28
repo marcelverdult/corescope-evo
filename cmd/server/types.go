@@ -206,6 +206,16 @@ type PerfResponse struct {
 	Cache         PerfCacheStats                `json:"cache"`
 	PacketStore   *PerfPacketStoreStats         `json:"packetStore"`
 	Sqlite        *SqliteStats                  `json:"sqlite"`
+	GoRuntime     *GoRuntimeStats               `json:"goRuntime,omitempty"`
+}
+
+// GoRuntimeStats holds Go runtime metrics for the perf endpoint.
+type GoRuntimeStats struct {
+	HeapMB       float64 `json:"heapMB"`
+	SysMB        float64 `json:"sysMB"`
+	NumGoroutine int     `json:"numGoroutine"`
+	NumGC        uint32  `json:"numGC"`
+	GCPauseMs    float64 `json:"gcPauseMs"`
 }
 
 // ─── Packets ───────────────────────────────────────────────────────────────────

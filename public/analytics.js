@@ -974,8 +974,10 @@
       }
     }
 
-    renderHashMatrix(data.topHops, allNodes);
-    renderCollisions(data.topHops, allNodes);
+    // Only repeaters matter for routing — filter out non-repeaters for collision analysis
+    const repeaterNodes = allNodes.filter(n => n.role === 'repeater');
+    renderHashMatrix(data.topHops, repeaterNodes);
+    renderCollisions(data.topHops, repeaterNodes);
   }
 
   function renderHashTimeline(hourly) {

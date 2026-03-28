@@ -1322,7 +1322,7 @@ func (s *PacketStore) enrichObs(obs *StoreObs) map[string]interface{} {
 
 // txToMap converts a StoreTx to the map shape matching scanTransmissionRow output.
 func txToMap(tx *StoreTx) map[string]interface{} {
-	return map[string]interface{}{
+	m := map[string]interface{}{
 		"id":                tx.ID,
 		"raw_hex":           strOrNil(tx.RawHex),
 		"hash":              strOrNil(tx.Hash),
@@ -1339,6 +1339,22 @@ func txToMap(tx *StoreTx) map[string]interface{} {
 		"path_json":         strOrNil(tx.PathJSON),
 		"direction":         strOrNil(tx.Direction),
 	}
+	// Include observations for expand=observations support (stripped by handler when not requested)
+	obs := make([]map[string]interface{}, 0, len(tx.Observations))
+	for _, o := range tx.Observations {
+		obs = append(obs, map[string]interface{}{
+			"id":            o.ID,
+			"observer_id":   strOrNil(o.ObserverID),
+			"observer_name": strOrNil(o.ObserverName),
+			"snr":           floatPtrOrNil(o.SNR),
+			"rssi":          floatPtrOrNil(o.RSSI),
+			"path_json":     strOrNil(o.PathJSON),
+			"timestamp":     strOrNil(o.Timestamp),
+			"direction":     strOrNil(o.Direction),
+		})
+	}
+	m["observations"] = obs
+	return m
 }
 
 func strOrNil(s string) interface{} {
@@ -3689,6 +3705,134 @@ func (s *PacketStore) GetBulkHealth(limit int, region string) []map[string]inter
 }
 
 // --- Subpaths Analytics ---
+
+// GetNodeHealth returns health info for a single node using in-memory data.
+func (s *PacketStore) GetNodeHealth(pubkey string) (map[string]interface{}, error) {
+	// Fetch node info from DB (fast single-row lookup)
+	node, err := s.db.GetNodeByPubkey(pubkey)
+	if err != nil || node == nil {
+		return nil, err
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	packets := s.byNode[pubkey]
+	todayStart := time.Now().UTC().Truncate(24 * time.Hour).Format(time.RFC3339)
+
+	var packetsToday int
+	var snrSum float64
+	var snrCount int
+	var totalHops, hopCount int
+	var lastHeard string
+	totalObservations := 0
+
+	observerStats := map[string]*struct {
+		name                       string
+		snrSum, rssiSum            float64
+		snrCount, rssiCount, count int
+	}{}
+
+	for _, pkt := range packets {
+		totalObservations += pkt.ObservationCount
+		if pkt.FirstSeen > todayStart {
+			packetsToday++
+		}
+		if pkt.SNR != nil {
+			snrSum += *pkt.SNR
+			snrCount++
+		}
+		if lastHeard == "" || pkt.FirstSeen > lastHeard {
+			lastHeard = pkt.FirstSeen
+		}
+		// Hop counting
+		hops := txGetParsedPath(pkt)
+		if len(hops) > 0 {
+			totalHops += len(hops)
+			hopCount++
+		}
+		// Observer stats
+		obsID := pkt.ObserverID
+		if obsID != "" {
+			obs := observerStats[obsID]
+			if obs == nil {
+				obs = &struct {
+					name                       string
+					snrSum, rssiSum            float64
+					snrCount, rssiCount, count int
+				}{name: pkt.ObserverName}
+				observerStats[obsID] = obs
+			}
+			obs.count++
+			if pkt.SNR != nil {
+				obs.snrSum += *pkt.SNR
+				obs.snrCount++
+			}
+			if pkt.RSSI != nil {
+				obs.rssiSum += *pkt.RSSI
+				obs.rssiCount++
+			}
+		}
+	}
+
+	observerRows := make([]map[string]interface{}, 0)
+	for id, o := range observerStats {
+		var avgSnr, avgRssi interface{}
+		if o.snrCount > 0 {
+			avgSnr = o.snrSum / float64(o.snrCount)
+		}
+		if o.rssiCount > 0 {
+			avgRssi = o.rssiSum / float64(o.rssiCount)
+		}
+		observerRows = append(observerRows, map[string]interface{}{
+			"observer_id": id, "observer_name": o.name,
+			"avgSnr": avgSnr, "avgRssi": avgRssi, "packetCount": o.count,
+		})
+	}
+	sort.Slice(observerRows, func(i, j int) bool {
+		return observerRows[i]["packetCount"].(int) > observerRows[j]["packetCount"].(int)
+	})
+
+	var avgSnr interface{}
+	if snrCount > 0 {
+		avgSnr = snrSum / float64(snrCount)
+	}
+	avgHops := 0
+	if hopCount > 0 {
+		avgHops = int(math.Round(float64(totalHops) / float64(hopCount)))
+	}
+	var lhVal interface{}
+	if lastHeard != "" {
+		lhVal = lastHeard
+	}
+
+	// Recent packets (up to 20, newest first — packets are already sorted DESC)
+	recentLimit := 20
+	if len(packets) < recentLimit {
+		recentLimit = len(packets)
+	}
+	recentPackets := make([]map[string]interface{}, 0, recentLimit)
+	for i := 0; i < recentLimit; i++ {
+		p := txToMap(packets[i])
+		delete(p, "observations")
+		recentPackets = append(recentPackets, p)
+	}
+
+	return map[string]interface{}{
+		"node":      node,
+		"observers": observerRows,
+		"stats": map[string]interface{}{
+			"totalTransmissions": len(packets),
+			"totalObservations":  totalObservations,
+			"totalPackets":       len(packets),
+			"packetsToday":       packetsToday,
+			"avgSnr":             avgSnr,
+			"avgHops":            avgHops,
+			"lastHeard":          lhVal,
+		},
+		"recentPackets": recentPackets,
+	}, nil
+}
 
 func (s *PacketStore) GetAnalyticsSubpaths(region string, minLen, maxLen, limit int) map[string]interface{} {
 	cacheKey := fmt.Sprintf("%s|%d|%d|%d", region, minLen, maxLen, limit)

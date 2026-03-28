@@ -1479,6 +1479,26 @@
             }
           }
         }
+      },
+      "goRuntime": {
+        "type": "object",
+        "keys": {
+          "heapMB": {
+            "type": "number"
+          },
+          "sysMB": {
+            "type": "number"
+          },
+          "numGoroutine": {
+            "type": "number"
+          },
+          "numGC": {
+            "type": "number"
+          },
+          "gcPauseMs": {
+            "type": "number"
+          }
+        }
       }
     }
   },
