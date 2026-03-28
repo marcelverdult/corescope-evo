@@ -1,0 +1,73 @@
+{
+    "packet": {
+        "id": 56862,
+        "raw_hex": "0200331f3d018f5e63b16998a6adb8da91ef9558ecaf",
+        "hash": "fa8ec84a7ca6ced2",
+        "first_seen": "2026-03-28T01:16:01.295Z",
+        "timestamp": "2026-03-28T01:16:01.295Z",
+        "route_type": 2,
+        "payload_type": 0,
+        "decoded_json": "{\"type\":\"REQ\",\"destHash\":\"33\",\"srcHash\":\"1f\",\"mac\":\"3d01\",\"encryptedData\":\"8f5e63b16998a6adb8da91ef9558ecaf\"}",
+        "observations": [
+            {
+                "id": 2564587,
+                "transmission_id": 56862,
+                "hash": "fa8ec84a7ca6ced2",
+                "observer_id": "1F445B75F5EB65EEC244A17A1E8660812A2529727A2329DDA37C44684D8841EA",
+                "observer_name": "lutin-observer-1",
+                "snr": null,
+                "rssi": null,
+                "path_json": "[]",
+                "timestamp": "2026-03-28T01:16:01.295Z"
+            }
+        ],
+        "observation_count": 1,
+        "observer_id": "1F445B75F5EB65EEC244A17A1E8660812A2529727A2329DDA37C44684D8841EA",
+        "observer_name": "lutin-observer-1",
+        "snr": null,
+        "rssi": null,
+        "path_json": "[]",
+        "_parsedPath": []
+    },
+    "path": [],
+    "breakdown": {
+        "ranges": [
+            {
+                "start": 0,
+                "end": 0,
+                "color": "red",
+                "label": "Header"
+            },
+            {
+                "start": 1,
+                "end": 1,
+                "color": "orange",
+                "label": "Path Length"
+            },
+            {
+                "start": 2,
+                "end": 21,
+                "color": "yellow",
+                "label": "Payload"
+            }
+        ]
+    },
+    "observation_count": 1,
+    "observations": [
+        {
+            "id": 2564587,
+            "transmission_id": 56862,
+            "hash": "fa8ec84a7ca6ced2",
+            "observer_id": "1F445B75F5EB65EEC244A17A1E8660812A2529727A2329DDA37C44684D8841EA",
+            "observer_name": "lutin-observer-1",
+            "snr": null,
+            "rssi": null,
+            "path_json": "[]",
+            "timestamp": "2026-03-28T01:16:01.295Z",
+            "raw_hex": "0200331f3d018f5e63b16998a6adb8da91ef9558ecaf",
+            "payload_type": 0,
+            "decoded_json": "{\"type\":\"REQ\",\"destHash\":\"33\",\"srcHash\":\"1f\",\"mac\":\"3d01\",\"encryptedData\":\"8f5e63b16998a6adb8da91ef9558ecaf\"}",
+            "route_type": 2
+        }
+    ]
+}

@@ -458,6 +458,49 @@ jobs:
             echo "  ⚠ No packets available — skipping packet-detail"
           fi
           
+          # ─── Per-type packet fixtures (one of each payload type) ──────
+          echo ""
+          echo "Fetching per-type packet fixtures..."
+          # payload_type: 0=REQ, 1=TXT_MSG, 4=ADVERT, 5=GRP_TXT
+          TYPES="0:req 1:txtmsg 4:advert 5:grptxt"
+          for entry in $TYPES; do
+            TYPE_NUM="${entry%%:*}"
+            TYPE_NAME="${entry##*:}"
+            TYPE_HASH=$(docker exec meshcore-prod wget -qO- "http://localhost:3000/api/packets?type=${TYPE_NUM}&limit=1" 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); pkts=d.get('packets',[]); print(pkts[0]['hash'] if pkts else '')" 2>/dev/null || echo "")
+            if [ -n "$TYPE_HASH" ]; then
+              if [ "$TYPE_NAME" = "grptxt" ]; then
+                # Save first as decrypted (most common), then find an undecrypted one
+                docker exec meshcore-prod wget -qO- "http://localhost:3000/api/packets/$TYPE_HASH" \
+                  > "proto/testdata/node-fixtures/packet-type-grptxt-decrypted.json" 2>/dev/null && \
+                  echo "  ✓ packet-type-grptxt-decrypted.json (hash: $TYPE_HASH)"
+                # Find a decryption_failed packet
+                UNDEC_HASH=$(docker exec meshcore-prod wget -qO- "http://localhost:3000/api/packets?type=5&limit=20" 2>/dev/null | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+for p in d.get('packets',[]):
+    dj = p.get('decoded_json','')
+    if dj:
+        dd = json.loads(dj)
+        if dd.get('decryptionStatus') in ('no_key','decryption_failed'):
+            print(p['hash']); break
+" 2>/dev/null || echo "")
+                if [ -n "$UNDEC_HASH" ]; then
+                  docker exec meshcore-prod wget -qO- "http://localhost:3000/api/packets/$UNDEC_HASH" \
+                    > "proto/testdata/node-fixtures/packet-type-grptxt-undecrypted.json" 2>/dev/null && \
+                    echo "  ✓ packet-type-grptxt-undecrypted.json (hash: $UNDEC_HASH)"
+                else
+                  echo "  ⚠ No undecrypted GRP_TXT found"
+                fi
+              else
+                docker exec meshcore-prod wget -qO- "http://localhost:3000/api/packets/$TYPE_HASH" \
+                  > "proto/testdata/node-fixtures/packet-type-${TYPE_NAME}.json" 2>/dev/null && \
+                  echo "  ✓ packet-type-${TYPE_NAME}.json (hash: $TYPE_HASH)"
+              fi
+            else
+              echo "  ⚠ No type=$TYPE_NUM ($TYPE_NAME) packets available"
+            fi
+          done
+          
           # Packet timestamps
           docker exec meshcore-prod wget -qO- "http://localhost:3000/api/packets/timestamps?since=2026-03-01T00:00:00Z" \
             > "proto/testdata/node-fixtures/packet-timestamps.json" 2>/dev/null && \

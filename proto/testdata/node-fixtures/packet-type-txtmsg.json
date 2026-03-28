@@ -1,0 +1,73 @@
+{
+    "packet": {
+        "id": 56863,
+        "raw_hex": "06001f330a3ebfca2495c738befb247875e4571da31088b8ac01b859b361fdc4bf5d59daf971ad28649a8d27404adfb69d915a9ee291e6a7b2c87a8bf14d72ccf69ab9213ccb",
+        "hash": "9b254fed5cad798a",
+        "first_seen": "2026-03-28T01:16:02.017Z",
+        "timestamp": "2026-03-28T01:16:02.017Z",
+        "route_type": 2,
+        "payload_type": 1,
+        "decoded_json": "{\"type\":\"RESPONSE\",\"destHash\":\"1f\",\"srcHash\":\"33\",\"mac\":\"0a3e\",\"encryptedData\":\"bfca2495c738befb247875e4571da31088b8ac01b859b361fdc4bf5d59daf971ad28649a8d27404adfb69d915a9ee291e6a7b2c87a8bf14d72ccf69ab9213ccb\"}",
+        "observations": [
+            {
+                "id": 2564597,
+                "transmission_id": 56863,
+                "hash": "9b254fed5cad798a",
+                "observer_id": "1F445B75F5EB65EEC244A17A1E8660812A2529727A2329DDA37C44684D8841EA",
+                "observer_name": "lutin-observer-1",
+                "snr": null,
+                "rssi": null,
+                "path_json": "[]",
+                "timestamp": "2026-03-28T01:16:02.017Z"
+            }
+        ],
+        "observation_count": 1,
+        "observer_id": "1F445B75F5EB65EEC244A17A1E8660812A2529727A2329DDA37C44684D8841EA",
+        "observer_name": "lutin-observer-1",
+        "snr": null,
+        "rssi": null,
+        "path_json": "[]",
+        "_parsedPath": []
+    },
+    "path": [],
+    "breakdown": {
+        "ranges": [
+            {
+                "start": 0,
+                "end": 0,
+                "color": "red",
+                "label": "Header"
+            },
+            {
+                "start": 1,
+                "end": 1,
+                "color": "orange",
+                "label": "Path Length"
+            },
+            {
+                "start": 2,
+                "end": 69,
+                "color": "yellow",
+                "label": "Payload"
+            }
+        ]
+    },
+    "observation_count": 1,
+    "observations": [
+        {
+            "id": 2564597,
+            "transmission_id": 56863,
+            "hash": "9b254fed5cad798a",
+            "observer_id": "1F445B75F5EB65EEC244A17A1E8660812A2529727A2329DDA37C44684D8841EA",
+            "observer_name": "lutin-observer-1",
+            "snr": null,
+            "rssi": null,
+            "path_json": "[]",
+            "timestamp": "2026-03-28T01:16:02.017Z",
+            "raw_hex": "06001f330a3ebfca2495c738befb247875e4571da31088b8ac01b859b361fdc4bf5d59daf971ad28649a8d27404adfb69d915a9ee291e6a7b2c87a8bf14d72ccf69ab9213ccb",
+            "payload_type": 1,
+            "decoded_json": "{\"type\":\"RESPONSE\",\"destHash\":\"1f\",\"srcHash\":\"33\",\"mac\":\"0a3e\",\"encryptedData\":\"bfca2495c738befb247875e4571da31088b8ac01b859b361fdc4bf5d59daf971ad28649a8d27404adfb69d915a9ee291e6a7b2c87a8bf14d72ccf69ab9213ccb\"}",
+            "route_type": 2
+        }
+    ]
+}
