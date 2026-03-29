@@ -34,8 +34,9 @@ services:
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/stats"]
       interval: 30s
-      timeout: 5s
-      retries: 3
+      timeout: 10s
+      retries: 5
+      start_period: 60s
 
 volumes:
   # Named volume for Caddy TLS certificates (not user data — managed by Caddy internally)

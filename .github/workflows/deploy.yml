@@ -262,7 +262,29 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Deploy staging
-        run: ./manage.sh restart staging
+        run: |
+          # Use docker compose down (not just stop/rm) to properly clean up
+          # the old container, network, and release memory before starting new one
+          docker compose -f "$STAGING_COMPOSE_FILE" -p corescope-staging down --timeout 30 2>/dev/null || true
+
+          # Wait for container to be fully gone and OS to reclaim memory (3GB limit)
+          for i in $(seq 1 15); do
+            if ! docker ps -a --format '{{.Names}}' | grep -q 'corescope-staging-go'; then
+              break
+            fi
+            sleep 1
+          done
+          sleep 5  # extra pause for OS memory reclaim
+
+          # Ensure staging config exists (docker creates a directory if bind mount source missing)
+          STAGING_DATA="${STAGING_DATA_DIR:-$HOME/meshcore-staging-data}"
+          if [ ! -f "$STAGING_DATA/config.json" ]; then
+            echo "Staging config missing — copying from repo config.example.json"
+            mkdir -p "$STAGING_DATA"
+            cp config.example.json "$STAGING_DATA/config.json"
+          fi
+
+          docker compose -f "$STAGING_COMPOSE_FILE" -p corescope-staging up -d staging-go
 
       - name: Healthcheck staging container
         run: |
