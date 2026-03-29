@@ -18,6 +18,7 @@ STATE_FILE=".setup-state"
 # Resolved paths for prod/staging data (must match docker-compose.yml)
 PROD_DATA="${PROD_DATA_DIR:-$HOME/meshcore-data}"
 STAGING_DATA="${STAGING_DATA_DIR:-$HOME/meshcore-staging-data}"
+STAGING_COMPOSE_FILE="docker-compose.staging.yml"
 
 # Build metadata — exported so docker compose build picks them up via args
 export APP_VERSION=$(node -p "require('./package.json').version" 2>/dev/null || echo "unknown")
@@ -391,7 +392,7 @@ prepare_staging_db() {
 
 # Copy config.prod.json → config.staging.json with siteName change
 prepare_staging_config() {
-  local prod_config="$PROD_DATA/config.json"
+  local prod_config="./config.json"
   local staging_config="$STAGING_DATA/config.json"
   if [ ! -f "$prod_config" ]; then
     warn "No config.json found at ${prod_config} — staging may not start correctly."
@@ -440,10 +441,11 @@ cmd_start() {
     prepare_staging_config
 
     info "Starting production container (corescope-prod) on ports ${PROD_HTTP_PORT:-80}/${PROD_HTTPS_PORT:-443}..."
-    info "Starting staging container (corescope-staging) on port ${STAGING_HTTP_PORT:-81}..."
-    docker compose --profile staging up -d
+    info "Starting staging container (corescope-staging-go) on port ${STAGING_GO_HTTP_PORT:-82}..."
+    docker compose up -d prod
+    docker compose -f "$STAGING_COMPOSE_FILE" -p corescope-staging up -d staging-go
     log "Production started on ports ${PROD_HTTP_PORT:-80}/${PROD_HTTPS_PORT:-443}/${PROD_MQTT_PORT:-1883}"
-    log "Staging started on port ${STAGING_HTTP_PORT:-81} (MQTT: ${STAGING_MQTT_PORT:-1884})"
+    log "Staging started on port ${STAGING_GO_HTTP_PORT:-82} (MQTT: ${STAGING_GO_MQTT_PORT:-1885})"
   else
     info "Starting production container (corescope-prod) on ports ${PROD_HTTP_PORT:-80}/${PROD_HTTPS_PORT:-443}..."
     docker compose up -d prod
@@ -461,13 +463,16 @@ cmd_stop() {
       log "Production stopped."
       ;;
     staging)
-      info "Stopping staging container (corescope-staging)..."
-      docker compose --profile staging stop staging
-      log "Staging stopped."
+      info "Stopping staging container (corescope-staging-go)..."
+      docker compose -f "$STAGING_COMPOSE_FILE" -p corescope-staging rm -sf staging-go 2>/dev/null || true
+      docker rm -f corescope-staging-go meshcore-staging-go corescope-staging meshcore-staging 2>/dev/null || true
+      log "Staging stopped and cleaned up."
       ;;
     all)
       info "Stopping all containers..."
-      docker compose --profile staging --profile staging-go down
+      docker compose stop prod
+      docker compose -f "$STAGING_COMPOSE_FILE" -p corescope-staging rm -sf staging-go 2>/dev/null || true
+      docker rm -f corescope-staging-go meshcore-staging-go corescope-staging meshcore-staging 2>/dev/null || true
       log "All containers stopped."
       ;;
     *)
@@ -486,13 +491,18 @@ cmd_restart() {
       log "Production restarted."
       ;;
     staging)
-      info "Restarting staging container (corescope-staging)..."
-      docker compose --profile staging up -d --force-recreate staging
+      info "Restarting staging container (corescope-staging-go)..."
+      docker compose -f "$STAGING_COMPOSE_FILE" -p corescope-staging rm -sf staging-go 2>/dev/null || true
+      docker rm -f corescope-staging-go 2>/dev/null || true
+      docker compose -f "$STAGING_COMPOSE_FILE" -p corescope-staging up -d staging-go
       log "Staging restarted."
       ;;
     all)
       info "Restarting all containers..."
-      docker compose --profile staging up -d --force-recreate
+      docker compose up -d --force-recreate prod
+      docker compose -f "$STAGING_COMPOSE_FILE" -p corescope-staging rm -sf staging-go 2>/dev/null || true
+      docker rm -f corescope-staging-go 2>/dev/null || true
+      docker compose -f "$STAGING_COMPOSE_FILE" -p corescope-staging up -d staging-go
       log "All containers restarted."
       ;;
     *)
@@ -544,10 +554,10 @@ cmd_status() {
   echo ""
 
   # Staging
-  if container_running "corescope-staging"; then
-    show_container_status "corescope-staging" "Staging"
+  if container_running "corescope-staging-go"; then
+    show_container_status "corescope-staging-go" "Staging"
   else
-    info "Staging (corescope-staging): Not running (use --with-staging to start both)"
+    info "Staging (corescope-staging-go): Not running (use --with-staging to start both)"
   fi
   echo ""
 
@@ -579,7 +589,7 @@ cmd_logs() {
     staging)
       if container_running "corescope-staging"; then
         info "Tailing staging logs..."
-        docker compose logs -f --tail="$LINES" staging
+        docker compose -f "$STAGING_COMPOSE_FILE" -p corescope-staging logs -f --tail="$LINES" staging-go
       else
         err "Staging container is not running."
         info "Start with: ./manage.sh start --with-staging"
@@ -607,7 +617,7 @@ cmd_promote() {
 
   # Show what's currently running
   local staging_image staging_created prod_image prod_created
-  staging_image=$(docker inspect corescope-staging --format '{{.Config.Image}}' 2>/dev/null || echo "not running")
+  staging_image=$(docker inspect corescope-staging-go --format '{{.Config.Image}}' 2>/dev/null || echo "not running")
   staging_created=$(docker inspect corescope-staging --format '{{.Created}}' 2>/dev/null || echo "N/A")
   prod_image=$(docker inspect corescope-prod --format '{{.Config.Image}}' 2>/dev/null || echo "not running")
   prod_created=$(docker inspect corescope-prod --format '{{.Created}}' 2>/dev/null || echo "N/A")
@@ -853,7 +863,8 @@ cmd_reset() {
     exit 0
   fi
 
-  docker compose --profile staging --profile staging-go down --rmi local 2>/dev/null || true
+  docker compose down --rmi local 2>/dev/null || true
+  docker compose -f "$STAGING_COMPOSE_FILE" -p corescope-staging down --rmi local 2>/dev/null || true
   rm -f "$STATE_FILE"
 
   log "Reset complete. Run './manage.sh setup' to start over."
@@ -874,7 +885,7 @@ cmd_help() {
   echo ""
   printf '%b\n' "  ${BOLD}Run${NC}"
   echo "    start              Start production container"
-  echo "    start --with-staging  Start production + staging (copies prod DB + config)"
+  echo "    start --with-staging  Start production + staging-go (copies prod DB + config)"
   echo "    stop [prod|staging|all]  Stop specific or all containers (default: all)"
   echo "    restart [prod|staging|all]  Restart specific or all containers"
   echo "    status             Show health, stats, and service status"
@@ -887,7 +898,7 @@ cmd_help() {
   echo "    restore <d>        Restore from backup dir or .db file"
   echo "    mqtt-test          Check if MQTT data is flowing"
   echo ""
-  echo "All commands use docker compose with docker-compose.yml."
+  echo "Prod uses docker-compose.yml; staging uses ${STAGING_COMPOSE_FILE}."
   echo ""
 }
 

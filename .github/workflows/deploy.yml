@@ -12,6 +12,9 @@ concurrency:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  STAGING_COMPOSE_FILE: docker-compose.staging.yml
+  STAGING_SERVICE: staging-go
+  STAGING_CONTAINER: corescope-staging-go
 
 # Pipeline (sequential, fail-fast):
 #   go-test → e2e-test → build → deploy → publish
@@ -243,7 +246,7 @@ jobs:
           GIT_COMMIT=$(git rev-parse --short HEAD)
           BUILD_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
           export APP_VERSION GIT_COMMIT BUILD_TIME
-          docker compose --profile staging-go build staging-go
+          docker compose -f "$STAGING_COMPOSE_FILE" -p corescope-staging build "$STAGING_SERVICE"
           echo "Built Go staging image ✅"
 
   # ───────────────────────────────────────────────────────────────
@@ -258,28 +261,28 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
-      - name: Stop old containers
+      - name: Reset staging service
         run: |
-          docker compose --profile staging-go down 2>/dev/null || true
-          # Kill legacy container names from pre-rename era
+          docker compose -f "$STAGING_COMPOSE_FILE" -p corescope-staging down --remove-orphans 2>/dev/null || true
+          # Legacy fallback from pre-rename/pre-split deployments
           docker rm -f meshcore-staging meshcore-staging-go corescope-staging 2>/dev/null || true
           sleep 2
 
       - name: Start staging on port 82
         run: |
-          docker compose --profile staging-go up -d staging-go
+          docker compose -f "$STAGING_COMPOSE_FILE" -p corescope-staging up -d "$STAGING_SERVICE"
 
       - name: Healthcheck staging container
         run: |
           for i in $(seq 1 120); do
-            HEALTH=$(docker inspect corescope-staging-go --format '{{.State.Health.Status}}' 2>/dev/null || echo "starting")
+            HEALTH=$(docker inspect "$STAGING_CONTAINER" --format '{{.State.Health.Status}}' 2>/dev/null || echo "starting")
             if [ "$HEALTH" = "healthy" ]; then
               echo "Staging healthy after ${i}s"
               break
             fi
             if [ "$i" -eq 120 ]; then
               echo "Staging failed health check after 120s"
-              docker logs corescope-staging-go --tail 50
+              docker logs "$STAGING_CONTAINER" --tail 50
               exit 1
             fi
             sleep 1
