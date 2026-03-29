@@ -239,6 +239,10 @@ jobs:
           echo "${GITHUB_SHA::7}" > .git-commit
           APP_VERSION=$(node -p "require('./package.json').version") \
           GIT_COMMIT="${GITHUB_SHA::7}" \
+          APP_VERSION=$(grep -oP 'APP_VERSION:-\K[^}]+' docker-compose.yml | head -1 || echo "3.0.0")
+          GIT_COMMIT=$(git rev-parse --short HEAD)
+          BUILD_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+          export APP_VERSION GIT_COMMIT BUILD_TIME
           docker compose --profile staging-go build staging-go
           echo "Built Go staging image ✅"
 

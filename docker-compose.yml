@@ -60,6 +60,7 @@ services:
       args:
         APP_VERSION: ${APP_VERSION:-unknown}
         GIT_COMMIT: ${GIT_COMMIT:-unknown}
+        BUILD_TIME: ${BUILD_TIME:-unknown}
     image: corescope-go:latest
     container_name: corescope-staging-go
     restart: unless-stopped
