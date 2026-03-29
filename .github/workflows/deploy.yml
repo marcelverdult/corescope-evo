@@ -261,24 +261,20 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
-      - name: Stop old staging
-        run: ./manage.sh stop staging
-
-      - name: Start staging
-        run: |
-          docker compose -f "$STAGING_COMPOSE_FILE" -p corescope-staging up -d "$STAGING_SERVICE"
+      - name: Deploy staging
+        run: ./manage.sh restart staging
 
       - name: Healthcheck staging container
         run: |
           for i in $(seq 1 120); do
-            HEALTH=$(docker inspect "$STAGING_CONTAINER" --format '{{.State.Health.Status}}' 2>/dev/null || echo "starting")
+            HEALTH=$(docker inspect corescope-staging-go --format '{{.State.Health.Status}}' 2>/dev/null || echo "starting")
             if [ "$HEALTH" = "healthy" ]; then
               echo "Staging healthy after ${i}s"
               break
             fi
             if [ "$i" -eq 120 ]; then
               echo "Staging failed health check after 120s"
-              docker logs "$STAGING_CONTAINER" --tail 50
+              docker logs corescope-staging-go --tail 50
               exit 1
             fi
             sleep 1
