@@ -19,6 +19,11 @@ STATE_FILE=".setup-state"
 PROD_DATA="${PROD_DATA_DIR:-$HOME/meshcore-data}"
 STAGING_DATA="${STAGING_DATA_DIR:-$HOME/meshcore-staging-data}"
 
+# Build metadata — exported so docker compose build picks them up via args
+export APP_VERSION=$(node -p "require('./package.json').version" 2>/dev/null || echo "unknown")
+export GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+export BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
