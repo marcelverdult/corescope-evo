@@ -200,6 +200,7 @@ jobs:
             echo "## Frontend: ${FE_COVERAGE}% coverage" >> $GITHUB_STEP_SUMMARY
           fi
           echo "{\"schemaVersion\":1,\"label\":\"e2e tests\",\"message\":\"${E2E_PASS:-0} passed\",\"color\":\"brightgreen\"}" > .badges/e2e-tests.json
+          cp .badges/e2e-tests.json .badges/frontend-tests.json
 
       - name: Stop test server
         if: success()
