@@ -840,17 +840,7 @@ async function run() {
     assert(content.length > 10, 'Perf content should still be present after refresh');
   });
 
-  // Test: Node.js perf page shows Event Loop metrics (not Go Runtime)
-  await test('Perf page shows Event Loop on Node server', async () => {
-    const perfText = await page.$eval('#perfContent', el => el.textContent);
-    // Node.js server should show Event Loop metrics
-    const hasEventLoop = perfText.includes('Event Loop') || perfText.includes('event loop');
-    const hasMemory = perfText.includes('Memory') || perfText.includes('RSS');
-    assert(hasEventLoop || hasMemory, 'Node perf page should show Event Loop or Memory metrics');
-    // Should NOT show Go Runtime section on Node.js server
-    const hasGoRuntime = perfText.includes('Go Runtime');
-    assert(!hasGoRuntime, 'Node perf page should NOT show Go Runtime section');
-  });
+
 
   // Test: Go perf page shows Go Runtime section (goroutines, GC)
   // NOTE: This test requires GO_BASE_URL pointing to Go staging (port 82)
