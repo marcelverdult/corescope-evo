@@ -2,7 +2,7 @@
 
 [![Go Server Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Kpa-clawbot/corescope/master/.badges/go-server-coverage.json)](https://github.com/Kpa-clawbot/corescope/actions/workflows/deploy.yml)
 [![Go Ingestor Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Kpa-clawbot/corescope/master/.badges/go-ingestor-coverage.json)](https://github.com/Kpa-clawbot/corescope/actions/workflows/deploy.yml)
-[![Frontend Tests](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Kpa-clawbot/corescope/master/.badges/frontend-tests.json)](https://github.com/Kpa-clawbot/corescope/actions/workflows/deploy.yml)
+[![E2E Tests](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Kpa-clawbot/corescope/master/.badges/e2e-tests.json)](https://github.com/Kpa-clawbot/corescope/actions/workflows/deploy.yml)
 [![Frontend Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Kpa-clawbot/corescope/master/.badges/frontend-coverage.json)](https://github.com/Kpa-clawbot/corescope/actions/workflows/deploy.yml)
 [![Deploy](https://github.com/Kpa-clawbot/corescope/actions/workflows/deploy.yml/badge.svg)](https://github.com/Kpa-clawbot/corescope/actions/workflows/deploy.yml)
 
