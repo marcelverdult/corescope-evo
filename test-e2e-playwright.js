@@ -909,6 +909,19 @@ async function run() {
     assert(hexDump, 'Hex dump should be visible after selecting a packet');
   });
 
+  // Extract frontend coverage if instrumented server is running
+  try {
+    const coverage = await page.evaluate(() => window.__coverage__);
+    if (coverage) {
+      const fs = require('fs');
+      const path = require('path');
+      const outDir = path.join(__dirname, '.nyc_output');
+      if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
+      fs.writeFileSync(path.join(outDir, 'e2e-coverage.json'), JSON.stringify(coverage));
+      console.log(`Frontend coverage from E2E: ${Object.keys(coverage).length} files`);
+    }
+  } catch {}
+
   await browser.close();
 
   // Summary
