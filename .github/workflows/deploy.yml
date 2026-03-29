@@ -30,6 +30,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Clean Go module cache
+        run: rm -rf ~/go/pkg/mod 2>/dev/null || true
+
       - name: Set up Go 1.22
         uses: actions/setup-go@v6
         with:
