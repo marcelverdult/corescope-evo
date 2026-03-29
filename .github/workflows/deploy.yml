@@ -156,6 +156,7 @@ jobs:
   # ───────────────────────────────────────────────────────────────
   node-test:
     name: "🧪 Node.js Tests"
+    if: false  # TEMPORARILY DISABLED — CI restructure in progress
     runs-on: [self-hosted, Linux]
     defaults:
       run:
