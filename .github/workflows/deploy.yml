@@ -129,6 +129,9 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Clean Go module cache
+        run: rm -rf ~/go/pkg/mod 2>/dev/null || true
+
       - name: Set up Go 1.22
         uses: actions/setup-go@v6
         with:
@@ -251,10 +254,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
-      - name: Start staging on port 82
+      - name: Stop old staging containers
         run: |
+          docker compose --profile staging-go down --remove-orphans 2>/dev/null || true
           docker rm -f corescope-staging-go 2>/dev/null || true
           fuser -k 82/tcp 2>/dev/null || true
+          docker system prune -f 2>/dev/null || true
+
+      - name: Start staging on port 82
+        run: |
           docker compose --profile staging-go up -d staging-go
 
       - name: Healthcheck staging container
