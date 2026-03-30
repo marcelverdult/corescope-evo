@@ -12,6 +12,7 @@
   let filters = { repeater: true, companion: true, room: true, sensor: true, observer: true, lastHeard: '30d', neighbors: false, clusters: false, hashLabels: localStorage.getItem('meshcore-map-hash-labels') !== 'false', statusFilter: localStorage.getItem('meshcore-map-status-filter') || 'all' };
   let wsHandler = null;
   let heatLayer = null;
+  let geoFilterLayer = null;
   let userHasMoved = false;
   let controlsCollapsed = false;
 
@@ -94,6 +95,7 @@
             <label for="mcClusters"><input type="checkbox" id="mcClusters"> Show clusters</label>
             <label for="mcHeatmap"><input type="checkbox" id="mcHeatmap"> Heat map</label>
             <label for="mcHashLabels"><input type="checkbox" id="mcHashLabels"> Hash prefix labels</label>
+            <label for="mcGeoFilter" id="mcGeoFilterLabel" style="display:none"><input type="checkbox" id="mcGeoFilter"> Geo filter area</label>
           </fieldset>
           <fieldset class="mc-section">
             <legend class="mc-label">Status</legend>
@@ -224,6 +226,9 @@
         renderMarkers();
       });
     });
+
+    // Geo filter overlay
+    initGeoFilterOverlay(map, 'mcGeoFilter', 'mcGeoFilterLabel').then(function (layer) { geoFilterLayer = layer; });
 
     // WS for live advert updates
     wsHandler = debouncedOnWS(function (msgs) {
@@ -727,6 +732,7 @@
     markerLayer = null;
     routeLayer = null;
     if (heatLayer) { heatLayer = null; }
+    geoFilterLayer = null;
   }
 
   function toggleHeatmap(on) {
