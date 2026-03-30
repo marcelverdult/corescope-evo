@@ -100,6 +100,9 @@ func main() {
 	if dbPath != "" {
 		cfg.DBPath = dbPath
 	}
+	if cfg.APIKey == "" {
+		log.Printf("[security] WARNING: no apiKey configured — write endpoints are BLOCKED (set apiKey in config.json to enable them)")
+	}
 
 	// Resolve DB path
 	resolvedDB := cfg.ResolveDBPath(configDir)
