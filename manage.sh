@@ -13,7 +13,12 @@ IMAGE_NAME="corescope"
 STATE_FILE=".setup-state"
 
 # Source .env for port/path overrides (same file docker compose reads)
-[ -f .env ] && set -a && . ./.env && set +a
+# Strip \r (Windows line endings) to avoid "$'\r': command not found"
+if [ -f .env ]; then
+  set -a
+  eval "$(sed 's/\r$//' .env)"
+  set +a
+fi
 
 # Resolved paths for prod/staging data (must match docker-compose.yml)
 PROD_DATA="${PROD_DATA_DIR:-$HOME/meshcore-data}"
@@ -24,6 +29,16 @@ STAGING_COMPOSE_FILE="docker-compose.staging.yml"
 export APP_VERSION=$(node -p "require('./package.json').version" 2>/dev/null || echo "unknown")
 export GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 export BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+# Docker Compose — detect v2 plugin vs v1 standalone
+if docker compose version &>/dev/null 2>&1; then
+  DC="docker compose"
+elif command -v docker-compose &>/dev/null; then
+  DC="docker-compose"
+else
+  echo "ERROR: Neither '$DC' nor 'docker-compose' found." >&2
+  exit 1
+fi
 
 # Colors
 RED='\033[0;31m'
@@ -157,12 +172,7 @@ cmd_setup() {
   fi
 
   log "Docker $(docker --version | grep -oP 'version \K[^ ,]+')"
-  
-  # Check docker compose (separate check since it's a plugin/separate binary)
-  if ! docker compose version &>/dev/null; then
-    err "docker compose is required. Install Docker Desktop or docker-compose-plugin."
-    exit 1
-  fi
+  log "Compose: $DC"
   
   mark_done "docker"
 
@@ -301,12 +311,12 @@ cmd_setup() {
   if [ -n "$IMAGE_EXISTS" ] && is_done "build"; then
     log "Image already built."
     if confirm "Rebuild? (only needed if you updated the code)"; then
-      docker compose build prod
+      $DC build prod
       log "Image rebuilt."
     fi
   else
     info "This takes 1-2 minutes the first time..."
-    docker compose build prod
+    $DC build prod
     log "Image built."
   fi
   mark_done "build"
@@ -323,7 +333,7 @@ cmd_setup() {
     log "Container already running."
   else
     mkdir -p "$PROD_DATA"
-    docker compose up -d prod
+    $DC up -d prod
     log "Container started."
   fi
   mark_done "container"
@@ -363,7 +373,7 @@ cmd_setup() {
     err "Container failed to start."
     echo ""
     echo "   Check what went wrong:"
-    echo "     docker compose logs prod"
+    echo "     $DC logs prod"
     echo ""
     echo "   Common fixes:"
     echo "     • Invalid config.json — check JSON syntax"
@@ -442,13 +452,13 @@ cmd_start() {
 
     info "Starting production container (corescope-prod) on ports ${PROD_HTTP_PORT:-80}/${PROD_HTTPS_PORT:-443}..."
     info "Starting staging container (corescope-staging-go) on port ${STAGING_GO_HTTP_PORT:-82}..."
-    docker compose up -d prod
-    docker compose -f "$STAGING_COMPOSE_FILE" -p corescope-staging up -d staging-go
+    $DC up -d prod
+    $DC -f "$STAGING_COMPOSE_FILE" -p corescope-staging up -d staging-go
     log "Production started on ports ${PROD_HTTP_PORT:-80}/${PROD_HTTPS_PORT:-443}/${PROD_MQTT_PORT:-1883}"
     log "Staging started on port ${STAGING_GO_HTTP_PORT:-82} (MQTT: ${STAGING_GO_MQTT_PORT:-1885})"
   else
     info "Starting production container (corescope-prod) on ports ${PROD_HTTP_PORT:-80}/${PROD_HTTPS_PORT:-443}..."
-    docker compose up -d prod
+    $DC up -d prod
     log "Production started. Staging NOT running (use --with-staging to start both)."
   fi
 }
@@ -459,19 +469,19 @@ cmd_stop() {
   case "$TARGET" in
     prod)
       info "Stopping production container (corescope-prod)..."
-      docker compose stop prod
+      $DC stop prod
       log "Production stopped."
       ;;
     staging)
       info "Stopping staging container (corescope-staging-go)..."
-      docker compose -f "$STAGING_COMPOSE_FILE" -p corescope-staging rm -sf staging-go 2>/dev/null || true
+      $DC -f "$STAGING_COMPOSE_FILE" -p corescope-staging rm -sf staging-go 2>/dev/null || true
       docker rm -f corescope-staging-go meshcore-staging-go corescope-staging meshcore-staging 2>/dev/null || true
       log "Staging stopped and cleaned up."
       ;;
     all)
       info "Stopping all containers..."
-      docker compose stop prod
-      docker compose -f "$STAGING_COMPOSE_FILE" -p corescope-staging rm -sf staging-go 2>/dev/null || true
+      $DC stop prod
+      $DC -f "$STAGING_COMPOSE_FILE" -p corescope-staging rm -sf staging-go 2>/dev/null || true
       docker rm -f corescope-staging-go meshcore-staging-go corescope-staging meshcore-staging 2>/dev/null || true
       log "All containers stopped."
       ;;
@@ -487,13 +497,13 @@ cmd_restart() {
   case "$TARGET" in
     prod)
       info "Restarting production container (corescope-prod)..."
-      docker compose up -d --force-recreate prod
+      $DC up -d --force-recreate prod
       log "Production restarted."
       ;;
     staging)
       info "Restarting staging container (corescope-staging-go)..."
       # Stop and remove old container
-      docker compose -f "$STAGING_COMPOSE_FILE" -p corescope-staging rm -sf staging-go 2>/dev/null || true
+      $DC -f "$STAGING_COMPOSE_FILE" -p corescope-staging rm -sf staging-go 2>/dev/null || true
       docker rm -f corescope-staging-go 2>/dev/null || true
       # Wait for container to be fully gone and memory to be reclaimed
       # This prevents OOM when old + new containers overlap on small VMs
@@ -510,15 +520,15 @@ cmd_restart() {
         warn "Staging config not found at $staging_config — creating from prod config..."
         prepare_staging_config
       fi
-      docker compose -f "$STAGING_COMPOSE_FILE" -p corescope-staging up -d staging-go
+      $DC -f "$STAGING_COMPOSE_FILE" -p corescope-staging up -d staging-go
       log "Staging restarted."
       ;;
     all)
       info "Restarting all containers..."
-      docker compose up -d --force-recreate prod
-      docker compose -f "$STAGING_COMPOSE_FILE" -p corescope-staging rm -sf staging-go 2>/dev/null || true
+      $DC up -d --force-recreate prod
+      $DC -f "$STAGING_COMPOSE_FILE" -p corescope-staging rm -sf staging-go 2>/dev/null || true
       docker rm -f corescope-staging-go 2>/dev/null || true
-      docker compose -f "$STAGING_COMPOSE_FILE" -p corescope-staging up -d staging-go
+      $DC -f "$STAGING_COMPOSE_FILE" -p corescope-staging up -d staging-go
       log "All containers restarted."
       ;;
     *)
@@ -600,12 +610,12 @@ cmd_logs() {
   case "$TARGET" in
     prod)
       info "Tailing production logs..."
-      docker compose logs -f --tail="$LINES" prod
+      $DC logs -f --tail="$LINES" prod
       ;;
     staging)
       if container_running "corescope-staging"; then
         info "Tailing staging logs..."
-        docker compose -f "$STAGING_COMPOSE_FILE" -p corescope-staging logs -f --tail="$LINES" staging-go
+        $DC -f "$STAGING_COMPOSE_FILE" -p corescope-staging logs -f --tail="$LINES" staging-go
       else
         err "Staging container is not running."
         info "Start with: ./manage.sh start --with-staging"
@@ -662,7 +672,7 @@ cmd_promote() {
 
   # Restart prod with latest image
   info "Restarting production with latest image..."
-  docker compose up -d --force-recreate prod
+  $DC up -d --force-recreate prod
 
   # Wait for health
   info "Waiting for production health check..."
@@ -696,10 +706,10 @@ cmd_update() {
   git pull
 
   info "Rebuilding image..."
-  docker compose build prod
+  $DC build prod
 
   info "Restarting with new image..."
-  docker compose up -d --force-recreate prod
+  $DC up -d --force-recreate prod
 
   log "Updated and restarted. Data preserved."
 }
@@ -813,7 +823,7 @@ cmd_restore() {
   info "Backing up current state..."
   cmd_backup "./backups/corescope-pre-restore-$(date +%Y%m%d-%H%M%S)"
 
-  docker compose stop prod 2>/dev/null || true
+  $DC stop prod 2>/dev/null || true
 
   # Restore database
   mkdir -p "$PROD_DATA"
@@ -841,7 +851,7 @@ cmd_restore() {
     log "theme.json restored"
   fi
 
-  docker compose up -d prod
+  $DC up -d prod
   log "Restored and restarted."
 }
 
@@ -879,8 +889,8 @@ cmd_reset() {
     exit 0
   fi
 
-  docker compose down --rmi local 2>/dev/null || true
-  docker compose -f "$STAGING_COMPOSE_FILE" -p corescope-staging down --rmi local 2>/dev/null || true
+  $DC down --rmi local 2>/dev/null || true
+  $DC -f "$STAGING_COMPOSE_FILE" -p corescope-staging down --rmi local 2>/dev/null || true
   rm -f "$STATE_FILE"
 
   log "Reset complete. Run './manage.sh setup' to start over."
