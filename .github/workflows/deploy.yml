@@ -110,6 +110,7 @@ jobs:
           path: .badges/go-*.json
           retention-days: 1
           if-no-files-found: ignore
+          include-hidden-files: true
 
   # ───────────────────────────────────────────────────────────────
   # 2. Playwright E2E Tests (against Go server with fixture DB)
@@ -205,7 +206,7 @@ jobs:
           echo "{\"schemaVersion\":1,\"label\":\"e2e tests\",\"message\":\"${E2E_PASS:-0} passed\",\"color\":\"brightgreen\"}" > .badges/e2e-tests.json
 
       - name: Stop test server
-        if: success()
+        if: always()
         run: |
           if [ -f .server.pid ]; then
             kill $(cat .server.pid) 2>/dev/null || true
@@ -220,6 +221,7 @@ jobs:
           path: .badges/
           retention-days: 1
           if-no-files-found: ignore
+          include-hidden-files: true
 
   # ───────────────────────────────────────────────────────────────
   # 3. Build Docker Image
