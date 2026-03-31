@@ -91,6 +91,9 @@ Never use `git add -A` or `git add .`. Always list files explicitly: `git add fi
 ### 10. Don't regress performance
 The packets page loads 30K+ packets. Don't add per-packet API calls. Don't add O(n²) loops. Client-side filtering is preferred over server-side. If you need data from the server, fetch it once and cache it.
 
+### 11. PR descriptions must be clean markdown
+When opening a pull request, the description must be **valid, readable markdown**. Use real newlines (not `\n` literals), proper code fences, and correct heading syntax. Write it using `--body-file -` (piped from a heredoc or file), never inline `--body` with escaped characters. If the description renders as garbage, fix it before requesting review. This is the first thing reviewers see.
+
 ## MeshCore Firmware — Source of Truth
 
 The MeshCore firmware source is cloned at `firmware/` (gitignored — not part of this repo). This is THE authoritative reference for anything related to the protocol, packet format, device behavior, advert structure, flags, hash sizes, route types, or how repeaters/companions/rooms/sensors behave.
