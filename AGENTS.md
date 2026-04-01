@@ -72,6 +72,12 @@ Every change must consider performance impact BEFORE implementation. This codeba
 
 **If your change touches a hot path (packet rendering, ingest, analytics), include a perf justification in the PR description:** what the complexity is, what the expected scale is, and why it won't degrade.
 
+**Perf claims require proof.** "This is faster" without data is not acceptable. Every PR claiming to fix or improve performance MUST include one of:
+- A benchmark test (before/after timings with realistic data sizes)
+- Profile output or timing measurements (e.g. "renderTableRows: 450ms → 12ms on 30K packets")
+- A test assertion that enforces the perf characteristic (e.g. "filters 30K packets in <50ms")
+No proof = no merge.
+
 ### 1. No commit without tests
 Every change that touches logic MUST have tests. For Go backend: `cd cmd/server && go test ./...` and `cd cmd/ingestor && go test ./...`. For frontend: `node test-packet-filter.js && node test-aging.js && node test-frontend-helpers.js`. If you add new logic, add tests. No exceptions.
 
