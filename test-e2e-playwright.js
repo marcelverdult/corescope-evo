@@ -1261,6 +1261,151 @@ async function run() {
     await page.evaluate(() => localStorage.removeItem('cs-theme-overrides'));
   });
 
+  // --- Group: Show Neighbors (#484 fix) ---
+
+  await test('Show Neighbors populates neighborPubkeys from affinity API', async () => {
+    const testPubkey = 'aabbccdd11223344556677889900aabbccddeeff00112233445566778899001122';
+    const neighborPubkey1 = '1111111111111111111111111111111111111111111111111111111111111111';
+    const neighborPubkey2 = '2222222222222222222222222222222222222222222222222222222222222222';
+
+    await page.route(`**/api/nodes/${testPubkey}/neighbors*`, route => {
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          node: testPubkey,
+          neighbors: [
+            { pubkey: neighborPubkey1, prefix: '11', name: 'Neighbor-1', role: 'repeater', count: 50, score: 0.9, ambiguous: false },
+            { pubkey: neighborPubkey2, prefix: '22', name: 'Neighbor-2', role: 'companion', count: 20, score: 0.7, ambiguous: false }
+          ],
+          total_observations: 70
+        })
+      });
+    });
+
+    await page.goto(`${BASE}/#/map`, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(1500);
+
+    const result = await page.evaluate(async (args) => {
+      if (typeof window._mapSelectRefNode !== 'function') return { error: 'no _mapSelectRefNode' };
+      await window._mapSelectRefNode(args.pk, 'TestNode');
+      return { neighbors: window._mapGetNeighborPubkeys() };
+    }, { pk: testPubkey });
+
+    assert(!result.error, result.error || '');
+    assert(result.neighbors.includes(neighborPubkey1), 'Should contain neighbor1');
+    assert(result.neighbors.includes(neighborPubkey2), 'Should contain neighbor2');
+    assert(result.neighbors.length === 2, `Expected 2 neighbors, got ${result.neighbors.length}`);
+    await page.unroute(`**/api/nodes/${testPubkey}/neighbors*`);
+  });
+
+  await test('Show Neighbors resolves correct node on hash collision via affinity API', async () => {
+    const nodeA = 'c0dedad4208acb6cbe44b848943fc6d3c5d43cf38a21e48b43826a70862980e4';
+    const nodeB = 'c0f1a2b3000000000000000000000000000000000000000000000000000000ff';
+    const neighborR1 = 'r1aaaaaa000000000000000000000000000000000000000000000000000000aa';
+    const neighborR2 = 'r2bbbbbb000000000000000000000000000000000000000000000000000000bb';
+    const neighborR4 = 'r4dddddd000000000000000000000000000000000000000000000000000000dd';
+
+    await page.route(`**/api/nodes/${nodeA}/neighbors*`, route => {
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          node: nodeA,
+          neighbors: [
+            { pubkey: neighborR1, prefix: 'R1', name: 'Repeater-R1', role: 'repeater', count: 100, score: 0.95, ambiguous: false },
+            { pubkey: neighborR2, prefix: 'R2', name: 'Repeater-R2', role: 'repeater', count: 80, score: 0.85, ambiguous: false }
+          ],
+          total_observations: 180
+        })
+      });
+    });
+
+    await page.route(`**/api/nodes/${nodeB}/neighbors*`, route => {
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          node: nodeB,
+          neighbors: [
+            { pubkey: neighborR4, prefix: 'R4', name: 'Repeater-R4', role: 'repeater', count: 60, score: 0.75, ambiguous: false }
+          ],
+          total_observations: 60
+        })
+      });
+    });
+
+    await page.goto(`${BASE}/#/map`, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(1500);
+
+    // Select Node A — should get R1, R2 but NOT R4
+    const resultA = await page.evaluate(async (pk) => {
+      await window._mapSelectRefNode(pk, 'NodeA');
+      return window._mapGetNeighborPubkeys();
+    }, nodeA);
+    assert(resultA.includes(neighborR1), 'Node A should have R1');
+    assert(resultA.includes(neighborR2), 'Node A should have R2');
+    assert(!resultA.includes(neighborR4), 'Node A should NOT have R4');
+
+    // Select Node B — should get R4 but NOT R1, R2
+    const resultB = await page.evaluate(async (pk) => {
+      await window._mapSelectRefNode(pk, 'NodeB');
+      return window._mapGetNeighborPubkeys();
+    }, nodeB);
+    assert(resultB.includes(neighborR4), 'Node B should have R4');
+    assert(!resultB.includes(neighborR1), 'Node B should NOT have R1');
+    assert(!resultB.includes(neighborR2), 'Node B should NOT have R2');
+
+    await page.unroute(`**/api/nodes/${nodeA}/neighbors*`);
+    await page.unroute(`**/api/nodes/${nodeB}/neighbors*`);
+  });
+
+  await test('Show Neighbors falls back to path walking when affinity API returns empty', async () => {
+    const testPubkey = 'fallbacktest0000000000000000000000000000000000000000000000000000';
+    const hopBefore = 'aaaa000000000000000000000000000000000000000000000000000000000000';
+    const hopAfter = 'bbbb000000000000000000000000000000000000000000000000000000000000';
+
+    await page.route(`**/api/nodes/${testPubkey}/neighbors*`, route => {
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ node: testPubkey, neighbors: [], total_observations: 0 })
+      });
+    });
+
+    await page.route(`**/api/nodes/${testPubkey}/paths*`, route => {
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          paths: [{
+            hops: [
+              { pubkey: hopBefore, name: 'HopBefore' },
+              { pubkey: testPubkey, name: 'Self' },
+              { pubkey: hopAfter, name: 'HopAfter' }
+            ]
+          }]
+        })
+      });
+    });
+
+    await page.goto(`${BASE}/#/map`, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(1500);
+
+    const result = await page.evaluate(async (pk) => {
+      if (typeof window._mapSelectRefNode !== 'function') return { error: 'no-function' };
+      await window._mapSelectRefNode(pk, 'FallbackNode');
+      return { neighbors: window._mapGetNeighborPubkeys() };
+    }, testPubkey);
+
+    assert(!result.error, result.error || '');
+    assert(result.neighbors.includes(hopBefore), 'Fallback should find hopBefore');
+    assert(result.neighbors.includes(hopAfter), 'Fallback should find hopAfter');
+    assert(result.neighbors.length === 2, `Expected 2 fallback neighbors, got ${result.neighbors.length}`);
+    await page.unroute(`**/api/nodes/${testPubkey}/neighbors*`);
+    await page.unroute(`**/api/nodes/${testPubkey}/paths*`);
+  });
+
   // Extract frontend coverage if instrumented server is running
   try {
     const coverage = await page.evaluate(() => window.__coverage__);
