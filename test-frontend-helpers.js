@@ -998,6 +998,56 @@ console.log('\n=== live.js: pruneStaleNodes ===');
     assert.ok(markers['apiNode'], 'API stale node should NOT be removed');
     assert.ok(data['apiNode'], 'API stale node data should NOT be removed');
   });
+
+  test('pruneStaleNodes cleans up nodeActivity for removed nodes', () => {
+    const { ctx } = makeLiveSandbox();
+    const prune = ctx.window._livePruneStaleNodes;
+    const markers = ctx.window._liveNodeMarkers();
+    const data = ctx.window._liveNodeData();
+    const activity = ctx.window._liveNodeActivity();
+
+    // WS-only stale node
+    markers['staleNode'] = { _glowMarker: null };
+    data['staleNode'] = { public_key: 'staleNode', role: 'companion', _liveSeen: Date.now() - 48 * 3600000 };
+    activity['staleNode'] = 5;
+
+    // Active node
+    markers['activeNode'] = { setStyle: function() {}, _glowMarker: null };
+    data['activeNode'] = { public_key: 'activeNode', role: 'companion', _liveSeen: Date.now() };
+    activity['activeNode'] = 3;
+
+    prune();
+
+    assert.ok(!markers['staleNode'], 'stale node marker removed');
+    assert.ok(!data['staleNode'], 'stale node data removed');
+    assert.ok(!activity['staleNode'], 'stale node activity removed');
+    assert.ok(markers['activeNode'], 'active node marker preserved');
+    assert.ok(data['activeNode'], 'active node data preserved');
+    assert.strictEqual(activity['activeNode'], 3, 'active node activity preserved');
+  });
+
+  test('pruneStaleNodes removes orphaned nodeActivity entries', () => {
+    const { ctx } = makeLiveSandbox();
+    const prune = ctx.window._livePruneStaleNodes;
+    const markers = ctx.window._liveNodeMarkers();
+    const data = ctx.window._liveNodeData();
+    const activity = ctx.window._liveNodeActivity();
+
+    // Add an active node
+    markers['existingNode'] = { setStyle: function() {}, _glowMarker: null };
+    data['existingNode'] = { public_key: 'existingNode', role: 'companion', _liveSeen: Date.now() };
+    activity['existingNode'] = 2;
+
+    // Add orphaned activity (no corresponding nodeData)
+    activity['ghostNode'] = 10;
+
+    prune();
+
+    assert.ok(markers['existingNode'], 'existing node preserved');
+    assert.ok(data['existingNode'], 'existing node data preserved');
+    assert.strictEqual(activity['existingNode'], 2, 'existing node activity preserved');
+    assert.ok(!activity['ghostNode'], 'orphaned activity entry removed');
+  });
 }
 
 // ===== live.js: vcrFormatTime respects UTC/local setting =====

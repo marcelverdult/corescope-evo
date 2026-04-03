@@ -1650,6 +1650,7 @@
           }
           delete nodeMarkers[key];
           delete nodeData[key];
+          delete nodeActivity[key];
           pruned = true;
         }
       } else if (marker && marker._staleDimmed) {
@@ -1665,12 +1666,17 @@
       if (_el2) _el2.textContent = Object.keys(nodeMarkers).length;
       if (window.HopResolver) HopResolver.init(Object.values(nodeData));
     }
+    // Prune orphaned nodeActivity entries (nodes removed above or never tracked)
+    for (var aKey in nodeActivity) {
+      if (!(aKey in nodeData)) delete nodeActivity[aKey];
+    }
   }
 
   // Expose for testing
   window._livePruneStaleNodes = pruneStaleNodes;
   window._liveNodeMarkers = function() { return nodeMarkers; };
   window._liveNodeData = function() { return nodeData; };
+  window._liveNodeActivity = function() { return nodeActivity; };
   window._vcrFormatTime = vcrFormatTime;
   window._liveDbPacketToLive = dbPacketToLive;
   window._liveExpandToBufferEntries = expandToBufferEntries;
