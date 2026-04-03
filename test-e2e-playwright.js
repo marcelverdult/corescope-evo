@@ -550,7 +550,7 @@ async function run() {
     await page.goto(`${BASE}/#/analytics`, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#analyticsTabs');
     const tabs = await page.$$('#analyticsTabs .tab-btn');
-    assert(tabs.length >= 8, `Expected >=8 analytics tabs, got ${tabs.length}`);
+    assert(tabs.length >= 10, `Expected >=10 analytics tabs, got ${tabs.length}`);
     // Overview tab should be active by default and show stat cards
     await page.waitForSelector('#analyticsContent .stat-card', { timeout: 8000 });
     const cards = await page.$$('#analyticsContent .stat-card');
@@ -622,6 +622,53 @@ async function run() {
     }, { timeout: 8000 });
     const content = await page.$eval('#analyticsContent', el => el.textContent.trim());
     assert(content.length > 10, 'Distance tab should render content');
+  });
+
+  await test('Analytics Neighbor Graph tab renders canvas and stats', async () => {
+    await page.click('[data-tab="neighbor-graph"]');
+    await page.waitForSelector('#ngCanvas', { timeout: 8000 });
+    const hasCanvas = await page.$('#ngCanvas');
+    assert(hasCanvas, 'Neighbor Graph tab should have a canvas element');
+    const hasStats = await page.$$eval('#ngStats .stat-card', els => els.length);
+    assert(hasStats >= 3, `Neighbor Graph stats should have >=3 cards, got ${hasStats}`);
+    // Verify filters exist
+    const hasSlider = await page.$('#ngMinScore');
+    assert(hasSlider, 'Should have min score slider');
+    const hasConfidence = await page.$('#ngConfidence');
+    assert(hasConfidence, 'Should have confidence filter');
+  });
+
+  await test('Analytics Neighbor Graph filter changes update stats', async () => {
+    // Capture edge count before filter
+    const edgesBefore = await page.$eval('#ngStats', el => {
+      const cards = el.querySelectorAll('.stat-card');
+      for (const c of cards) {
+        if (c.textContent.toLowerCase().includes('edge')) {
+          const m = c.textContent.match(/\d+/);
+          if (m) return parseInt(m[0], 10);
+        }
+      }
+      return -1;
+    });
+    // Set min score slider to high value to reduce edges
+    await page.$eval('#ngMinScore', el => { el.value = 90; el.dispatchEvent(new Event('input')); });
+    await page.waitForTimeout(300);
+    const edgesAfter = await page.$eval('#ngStats', el => {
+      const cards = el.querySelectorAll('.stat-card');
+      for (const c of cards) {
+        if (c.textContent.toLowerCase().includes('edge')) {
+          const m = c.textContent.match(/\d+/);
+          if (m) return parseInt(m[0], 10);
+        }
+      }
+      return -1;
+    });
+    assert(edgesBefore >= 0, 'Should find edge count in stats before filter');
+    assert(edgesAfter >= 0, 'Should find edge count in stats after filter');
+    assert(edgesAfter <= edgesBefore, `Raising min score should reduce (or keep) edge count: ${edgesBefore} → ${edgesAfter}`);
+    // Reset slider
+    await page.$eval('#ngMinScore', el => { el.value = 0; el.dispatchEvent(new Event('input')); });
+    await page.waitForTimeout(200);
   });
 
   // --- Group: Compare page ---
