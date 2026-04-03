@@ -1,6 +1,10 @@
 (function() {
   'use strict';
 
+  // getParsedPath / getParsedDecoded are in shared packet-helpers.js (loaded before this file)
+  var getParsedPath = window.getParsedPath;
+  var getParsedDecoded = window.getParsedDecoded;
+
   // Status color helpers (read from CSS variables for theme support)
   function cssVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
   function statusGreen() { return cssVar('--status-green') || '#22c55e'; }
@@ -431,8 +435,8 @@
   }
 
   function dbPacketToLive(pkt) {
-    const raw = JSON.parse(pkt.decoded_json || '{}');
-    const hops = JSON.parse(pkt.path_json || '[]');
+    const raw = getParsedDecoded(pkt);
+    const hops = getParsedPath(pkt);
     const typeName = raw.type || pkt.payload_type_name || 'UNKNOWN';
     return {
       id: pkt.id, hash: pkt.hash,
@@ -1445,7 +1449,7 @@
       for (const op of group.packets) {
         let opHops = [];
         if (op.path_json) {
-          try { opHops = typeof op.path_json === 'string' ? JSON.parse(op.path_json) : op.path_json; } catch {}
+          try { opHops = getParsedPath(op); } catch {}
         } else if (op.decoded?.path?.hops) {
           opHops = op.decoded.path.hops;
         }
@@ -1729,7 +1733,7 @@
       for (const fp of packets) {
         let fpHops = [];
         if (fp.path_json) {
-          try { fpHops = typeof fp.path_json === 'string' ? JSON.parse(fp.path_json) : fp.path_json; } catch {}
+          try { fpHops = getParsedPath(fp); } catch {}
         } else if (fp.decoded?.path?.hops) {
           fpHops = fp.decoded.path.hops;
         }
@@ -1766,7 +1770,7 @@
       var qp = qd.payload || {};
       var hops;
       if (qpkt.path_json) {
-        try { hops = typeof qpkt.path_json === 'string' ? JSON.parse(qpkt.path_json) : qpkt.path_json; } catch (e) { hops = qd.path?.hops || []; }
+        try { hops = getParsedPath(qpkt); } catch (e) { hops = qd.path?.hops || []; }
       } else {
         hops = qd.path?.hops || [];
       }
