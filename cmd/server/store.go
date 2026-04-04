@@ -39,6 +39,7 @@ type StoreTx struct {
 	RSSI         *float64
 	PathJSON     string
 	Direction    string
+	ResolvedPath []*string // resolved path from best observation
 	LatestSeen string // max observation timestamp (or FirstSeen if no observations)
 	// Cached parsed fields (set once, read many)
 	parsedPath []string // cached parsePathJSON result
@@ -58,6 +59,7 @@ type StoreObs struct {
 	RSSI           *float64
 	Score          *int
 	PathJSON       string
+	ResolvedPath   []*string // resolved full pubkeys, parallel to path_json; nil elements = unresolved
 	Timestamp      string
 }
 
@@ -132,6 +134,9 @@ type PacketStore struct {
 	// Precomputed distinct advert pubkey count (refcounted for eviction correctness).
 	// Updated incrementally during Load/Ingest/Evict — avoids JSON parsing in GetPerfStoreStats.
 	advertPubkeys map[string]int // pubkey → number of advert packets referencing it
+
+	// Persisted neighbor graph for hop resolution at ingest time.
+	graph *NeighborGraph
 
 	// Eviction config and stats
 	retentionHours float64 // 0 = unlimited
@@ -217,11 +222,15 @@ func (s *PacketStore) Load() error {
 	t0 := time.Now()
 
 	var loadSQL string
+	rpCol := ""
+	if s.db.hasResolvedPath {
+		rpCol = ",\n\t\t\t\to.resolved_path"
+	}
 	if s.db.isV3 {
 		loadSQL = `SELECT t.id, t.raw_hex, t.hash, t.first_seen, t.route_type,
 				t.payload_type, t.payload_version, t.decoded_json,
 				o.id, obs.id, obs.name, o.direction,
-				o.snr, o.rssi, o.score, o.path_json, strftime('%Y-%m-%dT%H:%M:%fZ', o.timestamp, 'unixepoch')
+				o.snr, o.rssi, o.score, o.path_json, strftime('%Y-%m-%dT%H:%M:%fZ', o.timestamp, 'unixepoch')` + rpCol + `
 			FROM transmissions t
 			LEFT JOIN observations o ON o.transmission_id = t.id
 			LEFT JOIN observers obs ON obs.rowid = o.observer_idx
@@ -230,7 +239,7 @@ func (s *PacketStore) Load() error {
 		loadSQL = `SELECT t.id, t.raw_hex, t.hash, t.first_seen, t.route_type,
 				t.payload_type, t.payload_version, t.decoded_json,
 				o.id, o.observer_id, o.observer_name, o.direction,
-				o.snr, o.rssi, o.score, o.path_json, o.timestamp
+				o.snr, o.rssi, o.score, o.path_json, o.timestamp` + rpCol + `
 			FROM transmissions t
 			LEFT JOIN observations o ON o.transmission_id = t.id
 			ORDER BY t.first_seen ASC, o.timestamp DESC`
@@ -250,11 +259,16 @@ func (s *PacketStore) Load() error {
 		var observerID, observerName, direction, pathJSON, obsTimestamp sql.NullString
 		var snr, rssi sql.NullFloat64
 		var score sql.NullInt64
+		var resolvedPathStr sql.NullString
 
-		if err := rows.Scan(&txID, &rawHex, &hash, &firstSeen, &routeType, &payloadType,
+		scanArgs := []interface{}{&txID, &rawHex, &hash, &firstSeen, &routeType, &payloadType,
 			&payloadVersion, &decodedJSON,
 			&obsID, &observerID, &observerName, &direction,
-			&snr, &rssi, &score, &pathJSON, &obsTimestamp); err != nil {
+			&snr, &rssi, &score, &pathJSON, &obsTimestamp}
+		if s.db.hasResolvedPath {
+			scanArgs = append(scanArgs, &resolvedPathStr)
+		}
+		if err := rows.Scan(scanArgs...); err != nil {
 			log.Printf("[store] scan error: %v", err)
 			continue
 		}
@@ -305,6 +319,7 @@ func (s *PacketStore) Load() error {
 				RSSI:           nullFloatPtr(rssi),
 				Score:          nullIntPtr(score),
 				PathJSON:       obsPJ,
+				ResolvedPath:   unmarshalResolvedPath(nullStrVal(resolvedPathStr)),
 				Timestamp:      normalizeTimestamp(nullStrVal(obsTimestamp)),
 			}
 
@@ -366,6 +381,7 @@ func pickBestObservation(tx *StoreTx) {
 	tx.RSSI = best.RSSI
 	tx.PathJSON = best.PathJSON
 	tx.Direction = best.Direction
+	tx.ResolvedPath = best.ResolvedPath
 	tx.pathParsed = false // invalidate cached parsed path
 }
 
@@ -990,6 +1006,9 @@ func (s *PacketStore) IngestNewFromDB(sinceID, limit int) ([]map[string]interfac
 		limit = 100
 	}
 
+	// NOTE: The SQL query intentionally does NOT select resolved_path from the DB.
+	// New ingests always resolve fresh using the current prefix map and neighbor graph.
+	// On restart, Load() handles reading persisted resolved_path values. (review item #7)
 	var querySQL string
 	if s.db.isV3 {
 		querySQL = `SELECT t.id, t.raw_hex, t.hash, t.first_seen, t.route_type,
@@ -1094,6 +1113,10 @@ func (s *PacketStore) IngestNewFromDB(sinceID, limit int) ([]map[string]interfac
 	broadcastTxs := make(map[int]*StoreTx) // track new transmissions for broadcast
 	var broadcastOrder []int
 
+	// Hoist getCachedNodesAndPM() once before the observation loop to avoid
+	// per-observation function calls (review item #1).
+	_, cachedPM := s.getCachedNodesAndPM()
+
 	for _, r := range tempRows {
 		if r.txID > newMaxID {
 			newMaxID = r.txID
@@ -1153,6 +1176,13 @@ func (s *PacketStore) IngestNewFromDB(sinceID, limit int) ([]map[string]interfac
 				PathJSON:       r.pathJSON,
 				Timestamp:      normalizeTimestamp(r.obsTS),
 			}
+
+			// Resolve path at ingest time using neighbor graph
+			// (cachedPM is hoisted before the observation loop to avoid per-obs function calls)
+			if r.pathJSON != "" && r.pathJSON != "[]" && cachedPM != nil {
+				obs.ResolvedPath = resolvePathForObs(r.pathJSON, r.observerID, tx, cachedPM, s.graph)
+			}
+
 			tx.Observations = append(tx.Observations, obs)
 			tx.obsKeys[dk] = true
 			tx.ObservationCount++
@@ -1196,7 +1226,7 @@ func (s *PacketStore) IngestNewFromDB(sinceID, limit int) ([]map[string]interfac
 			if cached, ok := hopCache[hop]; ok {
 				return cached
 			}
-			r := pm.resolve(hop)
+			r, _, _ := pm.resolveWithContext(hop, nil, s.graph)
 			hopCache[hop] = r
 			return r
 		}
@@ -1246,6 +1276,9 @@ func (s *PacketStore) IngestNewFromDB(sinceID, limit int) ([]map[string]interfac
 				"direction":         strOrNil(obs.Direction),
 				"observation_count": tx.ObservationCount,
 			}
+			if obs.ResolvedPath != nil {
+				pkt["resolved_path"] = obs.ResolvedPath
+			}
 			// Broadcast map: top-level fields for live.js + nested packet for packets.js
 			broadcastMap := make(map[string]interface{}, len(pkt)+2)
 			for k, v := range pkt {
@@ -1278,6 +1311,36 @@ func (s *PacketStore) IngestNewFromDB(sinceID, limit int) ([]map[string]interfac
 			}
 		}
 		s.invalidateCachesFor(inv)
+	}
+
+	// Persist resolved paths and neighbor edges asynchronously (don't block ingest).
+	if len(broadcastTxs) > 0 && s.db != nil {
+		dbPath := s.db.path
+		var obsUpdates []persistObsUpdate
+		var edgeUpdates []persistEdgeUpdate
+
+		_, pm := s.getCachedNodesAndPM()
+		// Read graph ref under lock (it's set during startup and not replaced after,
+		// but reading under lock is safer — review item #5).
+		graphRef := s.graph
+		for _, tx := range broadcastTxs {
+			for _, obs := range tx.Observations {
+				if obs.ResolvedPath != nil {
+					rpJSON := marshalResolvedPath(obs.ResolvedPath)
+					if rpJSON != "" {
+						obsUpdates = append(obsUpdates, persistObsUpdate{obs.ID, rpJSON})
+					}
+				}
+				for _, ec := range extractEdgesFromObs(obs, tx, pm) {
+					edgeUpdates = append(edgeUpdates, persistEdgeUpdate{ec.A, ec.B, ec.Timestamp})
+					if graphRef != nil {
+						graphRef.upsertEdge(ec.A, ec.B, "", obs.ObserverID, obs.SNR, parseTimestamp(ec.Timestamp))
+					}
+				}
+			}
+		}
+
+		asyncPersistResolvedPathsAndEdges(dbPath, obsUpdates, edgeUpdates, "persist")
 	}
 
 	return result, newMaxID
@@ -1363,6 +1426,13 @@ func (s *PacketStore) IngestNewObservations(sinceObsID, limit int) []map[string]
 
 	updatedTxs := make(map[int]*StoreTx)
 	broadcastMaps := make([]map[string]interface{}, 0, len(obsRows))
+	// Track newly created observations for persistence — only these should be
+	// persisted, not all observations of each updated tx (fixes edge count inflation).
+	var newObs []*StoreObs
+
+	// Hoist getCachedNodesAndPM() before the loop — same pattern as IngestNewFromDB (review fix #1).
+	_, pm := s.getCachedNodesAndPM()
+	graphRef := s.graph
 
 	for _, r := range obsRows {
 		// Already ingested (e.g. by IngestNewFromDB in same cycle)
@@ -1396,9 +1466,18 @@ func (s *PacketStore) IngestNewObservations(sinceObsID, limit int) []map[string]
 			PathJSON:       r.pathJSON,
 			Timestamp:      normalizeTimestamp(r.timestamp),
 		}
+
+		// Resolve path at ingest time for late-arriving observations (review item #2).
+		if r.pathJSON != "" && r.pathJSON != "[]" {
+			if pm != nil {
+				obs.ResolvedPath = resolvePathForObs(r.pathJSON, r.observerID, tx, pm, s.graph)
+			}
+		}
+
 		tx.Observations = append(tx.Observations, obs)
 		tx.obsKeys[dk] = true
 		tx.ObservationCount++
+		newObs = append(newObs, obs)
 		if obs.Timestamp > tx.LatestSeen {
 			tx.LatestSeen = obs.Timestamp
 		}
@@ -1437,6 +1516,9 @@ func (s *PacketStore) IngestNewObservations(sinceObsID, limit int) []map[string]
 			"path_json":         strOrNil(obs.PathJSON),
 			"direction":         strOrNil(obs.Direction),
 			"observation_count": tx.ObservationCount,
+		}
+		if obs.ResolvedPath != nil {
+			pkt["resolved_path"] = obs.ResolvedPath
 		}
 		broadcastMap := make(map[string]interface{}, len(pkt)+2)
 		for k, v := range pkt {
@@ -1504,6 +1586,36 @@ func (s *PacketStore) IngestNewObservations(sinceObsID, limit int) []map[string]
 			hasNewObservations: true,
 			hasNewPaths:        hasPathChanges,
 		})
+	}
+
+	// Persist resolved paths and neighbor edges asynchronously (review fix #3).
+	// Only process NEW observations — not all observations of each updated tx —
+	// to avoid edge count inflation and unnecessary UPDATEs for pre-existing data.
+	if len(newObs) > 0 && s.db != nil {
+		dbPath := s.db.path
+		var obsUpdates []persistObsUpdate
+		var edgeUpdates []persistEdgeUpdate
+
+		for _, obs := range newObs {
+			tx := s.byTxID[obs.TransmissionID]
+			if tx == nil {
+				continue
+			}
+			if obs.ResolvedPath != nil {
+				rpJSON := marshalResolvedPath(obs.ResolvedPath)
+				if rpJSON != "" {
+					obsUpdates = append(obsUpdates, persistObsUpdate{obs.ID, rpJSON})
+				}
+			}
+			for _, ec := range extractEdgesFromObs(obs, tx, pm) {
+				edgeUpdates = append(edgeUpdates, persistEdgeUpdate{ec.A, ec.B, ec.Timestamp})
+				if graphRef != nil {
+					graphRef.upsertEdge(ec.A, ec.B, "", obs.ObserverID, obs.SNR, parseTimestamp(ec.Timestamp))
+				}
+			}
+		}
+
+		asyncPersistResolvedPathsAndEdges(dbPath, obsUpdates, edgeUpdates, "obs-persist")
 	}
 
 	return broadcastMaps
@@ -1686,6 +1798,9 @@ func (s *PacketStore) enrichObs(obs *StoreObs) map[string]interface{} {
 		"score":         intPtrOrNil(obs.Score),
 		"path_json":     strOrNil(obs.PathJSON),
 	}
+	if obs.ResolvedPath != nil {
+		m["resolved_path"] = obs.ResolvedPath
+	}
 
 	if tx != nil {
 		m["hash"] = strOrNil(tx.Hash)
@@ -1719,6 +1834,9 @@ func txToMap(tx *StoreTx) map[string]interface{} {
 		"path_json":         strOrNil(tx.PathJSON),
 		"direction":         strOrNil(tx.Direction),
 	}
+	if tx.ResolvedPath != nil {
+		m["resolved_path"] = tx.ResolvedPath
+	}
 	// Include parsed path array to match Node.js output shape
 	if hops := txGetParsedPath(tx); len(hops) > 0 {
 		m["_parsedPath"] = hops
@@ -1728,7 +1846,7 @@ func txToMap(tx *StoreTx) map[string]interface{} {
 	// Include observations for expand=observations support (stripped by handler when not requested)
 	obs := make([]map[string]interface{}, 0, len(tx.Observations))
 	for _, o := range tx.Observations {
-		obs = append(obs, map[string]interface{}{
+		om := map[string]interface{}{
 			"id":            o.ID,
 			"observer_id":   strOrNil(o.ObserverID),
 			"observer_name": strOrNil(o.ObserverName),
@@ -1737,7 +1855,11 @@ func txToMap(tx *StoreTx) map[string]interface{} {
 			"path_json":     strOrNil(o.PathJSON),
 			"timestamp":     strOrNil(o.Timestamp),
 			"direction":     strOrNil(o.Direction),
-		})
+		}
+		if o.ResolvedPath != nil {
+			om["resolved_path"] = o.ResolvedPath
+		}
+		obs = append(obs, om)
 	}
 	m["observations"] = obs
 	return m
@@ -1884,7 +2006,7 @@ func (s *PacketStore) buildDistanceIndex() {
 		if cached, ok := hopCache[hop]; ok {
 			return cached
 		}
-		r := pm.resolve(hop)
+		r, _, _ := pm.resolveWithContext(hop, nil, s.graph)
 		hopCache[hop] = r
 		return r
 	}
@@ -3545,7 +3667,7 @@ func (s *PacketStore) computeAnalyticsTopology(region string) map[string]interfa
 		if cached, ok := hopCache[hop]; ok {
 			return cached
 		}
-		r := pm.resolve(hop)
+		r, _, _ := pm.resolveWithContext(hop, nil, s.graph)
 		hopCache[hop] = r
 		return r
 	}
@@ -5536,7 +5658,7 @@ func (s *PacketStore) computeAnalyticsSubpaths(region string, minLen, maxLen, li
 			}
 			return hop
 		}
-		r := pm.resolve(hop)
+		r, _, _ := pm.resolveWithContext(hop, nil, s.graph)
 		hopCache[hop] = r
 		if r != nil {
 			return r.Name
@@ -5673,7 +5795,7 @@ func (s *PacketStore) GetSubpathDetail(rawHops []string) map[string]interface{} 
 	// Resolve the requested hops
 	nodes := make([]map[string]interface{}, len(rawHops))
 	for i, hop := range rawHops {
-		r := pm.resolve(hop)
+		r, _, _ := pm.resolveWithContext(hop, nil, s.graph)
 		entry := map[string]interface{}{"hop": hop, "name": hop, "lat": nil, "lon": nil, "pubkey": nil}
 		if r != nil {
 			entry["name"] = r.Name
@@ -5752,7 +5874,7 @@ func (s *PacketStore) GetSubpathDetail(rawHops []string) map[string]interface{} 
 		// Full parent path (resolved)
 		resolved := make([]string, len(hops))
 		for i, h := range hops {
-			r := pm.resolve(h)
+			r, _, _ := pm.resolveWithContext(h, nil, s.graph)
 			if r != nil {
 				resolved[i] = r.Name
 			} else {
