@@ -190,11 +190,17 @@
     });
 
     map.on('zoomend', () => {
-      if (!_renderingMarkers) renderMarkers();
+      clearTimeout(_zoomResizeTimer);
+      _zoomResizeTimer = setTimeout(() => {
+        if (!_renderingMarkers) _repositionMarkers();
+      }, 150);
     });
 
     map.on('resize', () => {
-      if (!_renderingMarkers) renderMarkers();
+      clearTimeout(_zoomResizeTimer);
+      _zoomResizeTimer = setTimeout(() => {
+        if (!_renderingMarkers) _repositionMarkers();
+      }, 150);
     });
 
     markerLayer = L.layerGroup().addTo(map);
@@ -631,6 +637,8 @@
 
   var _renderingMarkers = false;
   var _lastDeconflictZoom = null;
+  var _currentMarkerData = []; // stored marker data for zoom-only repositioning
+  var _zoomResizeTimer = null;
 
   function deconflictLabels(markers, mapRef) {
     const placed = [];
@@ -681,6 +689,62 @@
     }
   }
 
+  /**
+   * Create, update, or remove the offset indicator (dashed line + dot at true GPS position)
+   * for a deconflicted marker. Shared by _renderMarkersInner and _repositionMarkers.
+   * @param {Object} m - marker data object with latLng, adjustedLatLng, offset, _leafletLine, _leafletDot
+   * @param {L.LayerGroup} layer - layer group to add/remove indicators from
+   */
+  function _updateOffsetIndicator(m, layer) {
+    var pos = m.adjustedLatLng || m.latLng;
+    var redColor = getComputedStyle(document.documentElement).getPropertyValue('--status-red').trim() || '#ef4444';
+
+    if (m.offset > 10) {
+      // Line from true position to adjusted position
+      if (m._leafletLine) {
+        m._leafletLine.setLatLngs([m.latLng, pos]);
+      } else {
+        m._leafletLine = L.polyline([m.latLng, pos], {
+          color: redColor, weight: 2, dashArray: '6,4', opacity: 0.85
+        });
+        layer.addLayer(m._leafletLine);
+      }
+      // Dot at true GPS position
+      if (!m._leafletDot) {
+        m._leafletDot = L.circleMarker(m.latLng, {
+          radius: 3, fillColor: redColor, fillOpacity: 0.9, stroke: true, color: '#fff', weight: 1
+        });
+        layer.addLayer(m._leafletDot);
+      }
+    } else {
+      // No offset — remove indicator if it existed
+      if (m._leafletLine) { layer.removeLayer(m._leafletLine); m._leafletLine = null; }
+      if (m._leafletDot) { layer.removeLayer(m._leafletDot); m._leafletDot = null; }
+    }
+  }
+
+  /**
+   * Reposition existing markers by re-running deconfliction at the current zoom.
+   * Avoids clearing and rebuilding all markers — eliminates flicker on zoom/resize.
+   */
+  function _repositionMarkers() {
+    if (!map || _currentMarkerData.length === 0) return;
+    map.invalidateSize({ animate: false });
+
+    // Re-run deconfliction with current zoom pixel coordinates
+    deconflictLabels(_currentMarkerData, map);
+
+    for (var i = 0; i < _currentMarkerData.length; i++) {
+      var m = _currentMarkerData[i];
+      var pos = m.adjustedLatLng || m.latLng;
+
+      // Update marker position
+      if (m._leafletMarker) m._leafletMarker.setLatLng(pos);
+
+      _updateOffsetIndicator(m, markerLayer);
+    }
+  }
+
   function renderMarkers() {
     if (_renderingMarkers) return;
     _renderingMarkers = true;
@@ -689,6 +753,7 @@
 
   function _renderMarkersInner() {
     markerLayer.clearLayers();
+    _currentMarkerData = [];
 
     const filtered = nodes.filter(n => {
       if (!n.lat || !n.lon) return false;
@@ -743,24 +808,20 @@
       deconflictLabels(allMarkers, map);
     }
 
+    // Store marker data for zoom/resize repositioning (avoids full rebuild)
+    _currentMarkerData = allMarkers;
+
     for (const m of allMarkers) {
       const pos = m.adjustedLatLng || m.latLng;
       const marker = L.marker(pos, { icon: m.icon, alt: m.alt });
       marker._nodeKey = m.node.public_key || m.node.id || null;
       marker.bindPopup(m.popupFn(), { maxWidth: 280 });
       markerLayer.addLayer(marker);
+      m._leafletMarker = marker;
+      m._leafletLine = null;
+      m._leafletDot = null;
 
-      if (m.offset > 10) {
-        const line = L.polyline([m.latLng, pos], {
-          color: getComputedStyle(document.documentElement).getPropertyValue('--status-red').trim() || '#ef4444', weight: 2, dashArray: '6,4', opacity: 0.85
-        });
-        markerLayer.addLayer(line);
-        // Small dot at true GPS position
-        const dot = L.circleMarker(m.latLng, {
-          radius: 3, fillColor: getComputedStyle(document.documentElement).getPropertyValue('--status-red').trim() || '#ef4444', fillOpacity: 0.9, stroke: true, color: '#fff', weight: 1
-        });
-        markerLayer.addLayer(dot);
-      }
+      _updateOffsetIndicator(m, markerLayer);
     }
   }
 
@@ -894,6 +955,7 @@
       map = null;
     }
     markerLayer = null;
+    _currentMarkerData = [];
     routeLayer = null;
     if (heatLayer) { heatLayer = null; }
     geoFilterLayer = null;
