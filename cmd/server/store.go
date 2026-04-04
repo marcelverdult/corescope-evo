@@ -581,6 +581,9 @@ func (s *PacketStore) QueryGroupedPackets(q PacketQuery) *PacketResult {
 				"rssi":              floatPtrOrNil(tx.RSSI),
 			},
 		})
+		if tx.ResolvedPath != nil {
+			entries[len(entries)-1].latest["resolved_path"] = tx.ResolvedPath
+		}
 	}
 	s.mu.RUnlock()
 
