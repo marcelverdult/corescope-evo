@@ -1698,20 +1698,13 @@
 
   async function replayRecent() {
     try {
-      const resp = await fetch('/api/packets?limit=8&groupByHash=true');
+      // Single bulk fetch with expand=observations — no N+1 calls
+      const resp = await fetch('/api/packets?limit=8&expand=observations');
       const data = await resp.json();
       const groups = (data.packets || []).reverse();
 
-      // Fetch all observations first, then stagger rendering
-      const allGroups = [];
-      for (let i = 0; i < groups.length; i++) {
-        const group = groups[i];
-        let observations = [];
-        try {
-          const detail = await fetch('/api/packets/' + encodeURIComponent(group.hash));
-          const detailData = await detail.json();
-          observations = detailData.observations || [];
-        } catch {}
+      const allGroups = groups.map((group) => {
+        const observations = group.observations || [];
 
         const livePackets = observations.map(obs => {
           const livePkt = dbPacketToLive(Object.assign({}, group, obs, {
@@ -1730,8 +1723,8 @@
         }
 
         livePackets.forEach(lp => VCR.buffer.push({ ts: lp._ts, pkt: lp }));
-        allGroups.push(livePackets);
-      }
+        return livePackets;
+      });
 
       // Render with real timing gaps between packets
       // Sort by earliest timestamp
