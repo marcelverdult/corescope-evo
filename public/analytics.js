@@ -2993,7 +2993,11 @@ function destroy() { _analyticsData = {}; _channelData = null; if (_ngState && _
       const lastTx = txData[txData.length - 1];
       const lx = sx(new Date(lastTx.t).getTime());
       const ly = sy(lastTx.v);
-      svg += `<text x="${(lx + 4).toFixed(1)}" y="${(ly + 3).toFixed(1)}" font-size="9" fill="var(--danger, #e74c3c)">TX ${lastTx.v.toFixed(1)}%</text>`;
+      // Offset label up if RX label would overlap (within 12px)
+      const lastRx = rxData.length > 1 ? rxData[rxData.length - 1] : null;
+      const rxLy = lastRx ? sy(lastRx.v) : Infinity;
+      const txLabelY = (Math.abs(ly - rxLy) < 12) ? ly - 8 : ly + 3;
+      svg += `<text x="${(lx + 4).toFixed(1)}" y="${txLabelY.toFixed(1)}" font-size="9" fill="var(--danger, #e74c3c)">TX ${lastTx.v.toFixed(1)}%</text>`;
     }
 
     // RX line (blue)
@@ -3004,7 +3008,11 @@ function destroy() { _analyticsData = {}; _channelData = null; if (_ngState && _
       const lastRx = rxData[rxData.length - 1];
       const lx = sx(new Date(lastRx.t).getTime());
       const ly = sy(lastRx.v);
-      svg += `<text x="${(lx + 4).toFixed(1)}" y="${(ly + 3).toFixed(1)}" font-size="9" fill="var(--info, #3498db)">RX ${lastRx.v.toFixed(1)}%</text>`;
+      // Offset label down if TX label is nearby
+      const lastTx = txData.length > 1 ? txData[txData.length - 1] : null;
+      const txLy = lastTx ? sy(lastTx.v) : -Infinity;
+      const rxLabelY = (Math.abs(ly - txLy) < 12) ? ly + 12 : ly + 3;
+      svg += `<text x="${(lx + 4).toFixed(1)}" y="${rxLabelY.toFixed(1)}" font-size="9" fill="var(--info, #3498db)">RX ${lastRx.v.toFixed(1)}%</text>`;
     }
 
     // X-axis labels
