@@ -80,6 +80,45 @@ func (tx *StoreTx) ParsedDecoded() map[string]interface{} {
 }
 
 // PacketStore holds all transmissions in memory with indexes for fast queries.
+//
+// Lock ordering
+// =============
+// PacketStore uses several mutexes. To prevent deadlocks, locks MUST be
+// acquired in the order listed below. Never acquire a higher-numbered lock
+// while holding a lower-numbered one.
+//
+//   1. mu            (sync.RWMutex) — guards the core packet data: packets,
+//                     indexes (byHash, byTxID, byObsID, byObserver, byNode,
+//                     byPathHop, byPayloadType), counters, and loaded flag.
+//
+//   2. cacheMu       (sync.Mutex)  — guards analytics response caches:
+//                     rfCache, topoCache, hashCache, collisionCache, chanCache,
+//                     distCache, subpathCache, and their TTLs/hit counters.
+//                     Also guards rate-limited invalidation state
+//                     (lastInvalidated, pendingInv).
+//
+//   3. channelsCacheMu (sync.Mutex) — guards the short-lived GetChannels
+//                     cache (channelsCacheKey/Exp/Res).
+//
+//   4. groupedCacheMu (sync.Mutex)  — guards the short-lived
+//                     QueryGroupedPackets cache.
+//
+//   5. regionObsMu   (sync.Mutex)  — guards the region→observer mapping
+//                     cache (regionObsCache, regionObsCacheTime).
+//
+//   6. hashSizeInfoMu (sync.Mutex)  — guards the cached hash-size-info
+//                     result (hashSizeInfoCache). Acquired independently or
+//                     under mu (in EvictStale).
+//
+// Nesting that occurs today:
+//   - IngestNew:               mu → cacheMu → channelsCacheMu  (1 → 2 → 3, OK)
+//   - IngestObservations:      mu → cacheMu                    (1 → 2, OK)
+//   - RunEviction/EvictStale:  mu → cacheMu → channelsCacheMu  (1 → 2 → 3, OK)
+//   - RunEviction/EvictStale:  mu → hashSizeInfoMu             (1 → 6, OK)
+//   - invalidateCachesFor:     cacheMu → channelsCacheMu       (2 → 3, OK)
+//
+// All other locks are acquired independently (no nesting).
+// When adding new lock acquisitions, respect this ordering.
 type PacketStore struct {
 	mu            sync.RWMutex
 	db            *DB
