@@ -1781,7 +1781,7 @@
     }
 
     // Wire up view route on map button
-    const routeBtn = document.getElementById('viewRouteBtn');
+    const routeBtn = panel.querySelector('#viewRouteBtn');
     if (routeBtn && pathHops.length) {
       routeBtn.addEventListener('click', async () => {
         try {
