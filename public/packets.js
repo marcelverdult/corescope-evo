@@ -1104,7 +1104,7 @@
   }
 
   // Build HTML for a single grouped packet row
-  function buildGroupRowHtml(p) {
+  function buildGroupRowHtml(p, entryIdx = -1) {
     const isExpanded = expandedHashes.has(p.hash);
     let headerObserverId = p.observer_id;
     let headerPathJson = p.path_json;
@@ -1124,7 +1124,7 @@
     const groupSize = p.raw_hex ? Math.floor(p.raw_hex.length / 2) : 0;
     const groupHashBytes = ((parseInt(p.raw_hex?.slice(2, 4), 16) || 0) >> 6) + 1;
     const isSingle = p.count <= 1;
-    let html = `<tr class="${isSingle ? '' : 'group-header'} ${isExpanded ? 'expanded' : ''}" data-hash="${p.hash}" data-action="${isSingle ? 'select-hash' : 'toggle-select'}" data-value="${p.hash}" tabindex="0" role="row">
+    let html = `<tr class="${isSingle ? '' : 'group-header'} ${isExpanded ? 'expanded' : ''}" data-hash="${p.hash}" data-action="${isSingle ? 'select-hash' : 'toggle-select'}" data-value="${p.hash}" data-entry-idx="${entryIdx}" tabindex="0" role="row">
           <td style="width:28px;text-align:center;cursor:pointer">${isSingle ? '' : (isExpanded ? '▼' : '▶')}</td>
           <td class="col-region">${groupRegion ? `<span class="badge-region">${groupRegion}</span>` : '—'}</td>
           <td class="col-time">${renderTimestampCell(p.latest)}</td>
@@ -1150,7 +1150,7 @@
         const childRegion = c.observer_id ? (observerMap.get(c.observer_id)?.iata || '') : '';
         const childPath = getParsedPath(c);
         const childPathStr = renderPath(childPath, c.observer_id);
-        html += `<tr class="group-child" data-id="${c.id}" data-hash="${c.hash || ''}" data-action="select-observation" data-value="${c.id}" data-parent-hash="${p.hash}" tabindex="0" role="row">
+        html += `<tr class="group-child" data-id="${c.id}" data-hash="${c.hash || ''}" data-action="select-observation" data-value="${c.id}" data-parent-hash="${p.hash}" data-entry-idx="${entryIdx}" tabindex="0" role="row">
               <td></td><td class="col-region">${childRegion ? `<span class="badge-region">${childRegion}</span>` : '—'}</td>
               <td class="col-time">${renderTimestampCell(c.timestamp)}</td>
               <td class="mono col-hash">${truncate(c.hash || '', 8)}</td>
@@ -1168,7 +1168,7 @@
   }
 
   // Build HTML for a single flat (ungrouped) packet row
-  function buildFlatRowHtml(p) {
+  function buildFlatRowHtml(p, entryIdx = -1) {
     const decoded = getParsedDecoded(p) || {};
     const pathHops = getParsedPath(p) || [];
     const region = p.observer_id ? (observerMap.get(p.observer_id)?.iata || '') : '';
@@ -1178,7 +1178,7 @@
     const hashBytes = ((parseInt(p.raw_hex?.slice(2, 4), 16) || 0) >> 6) + 1;
     const pathStr = renderPath(pathHops, p.observer_id);
     const detail = getDetailPreview(decoded);
-    return `<tr data-id="${p.id}" data-hash="${p.hash || ''}" data-action="select-hash" data-value="${p.hash || p.id}" tabindex="0" role="row" class="${selectedId === p.id ? 'selected' : ''}">
+    return `<tr data-id="${p.id}" data-hash="${p.hash || ''}" data-action="select-hash" data-value="${p.hash || p.id}" data-entry-idx="${entryIdx}" tabindex="0" role="row" class="${selectedId === p.id ? 'selected' : ''}">
         <td></td><td class="col-region">${region ? `<span class="badge-region">${region}</span>` : '—'}</td>
         <td class="col-time">${renderTimestampCell(p.timestamp)}</td>
         <td class="mono col-hash">${truncate(p.hash || String(p.id), 8)}</td>
@@ -1239,6 +1239,7 @@
   }
 
   function renderVisibleRows() {
+    const _rvr_t0 = performance.now();
     const tbody = document.getElementById('pktBody');
     if (!tbody || !_displayPackets.length) return;
 
@@ -1302,7 +1303,13 @@
     const endIdx = Math.min(_displayPackets.length, lastEntry + VSCROLL_BUFFER);
 
     // Skip DOM rebuild if visible range hasn't changed
-    if (startIdx === _lastVisibleStart && endIdx === _lastVisibleEnd) return;
+    if (startIdx === _lastVisibleStart && endIdx === _lastVisibleEnd) {
+      if (window.__PERF_LOG_RENDER) console.log('[perf] renderVisibleRows: skip (no change) %.2fms', performance.now() - _rvr_t0);
+      return;
+    }
+
+    const prevStart = _lastVisibleStart;
+    const prevEnd = _lastVisibleEnd;
     _lastVisibleStart = startIdx;
     _lastVisibleEnd = endIdx;
 
@@ -1313,14 +1320,51 @@
     topSpacer.firstChild.style.height = topPad + 'px';
     bottomSpacer.firstChild.style.height = bottomPad + 'px';
 
-    // LAZY ROW GENERATION: only build HTML for the visible slice (#422)
     const builder = _displayGrouped ? buildGroupRowHtml : buildFlatRowHtml;
-    const visibleSlice = _displayPackets.slice(startIdx, endIdx);
-    const visibleHtml = visibleSlice.map(p => builder(p)).join('');
-    tbody.innerHTML = '';
-    tbody.appendChild(topSpacer);
-    tbody.insertAdjacentHTML('beforeend', visibleHtml);
-    tbody.appendChild(bottomSpacer);
+    const hasOverlap = prevStart !== -1 && startIdx < prevEnd && endIdx > prevStart;
+
+    if (!hasOverlap) {
+      // Full rebuild: initial render or large scroll jump past buffer
+      const visibleHtml = _displayPackets.slice(startIdx, endIdx)
+        .map((p, i) => builder(p, startIdx + i)).join('');
+      tbody.innerHTML = '';
+      tbody.appendChild(topSpacer);
+      tbody.insertAdjacentHTML('beforeend', visibleHtml);
+      tbody.appendChild(bottomSpacer);
+      if (window.__PERF_LOG_RENDER) console.log('[perf] renderVisibleRows: full rebuild %d entries, %.2fms', endIdx - startIdx, performance.now() - _rvr_t0);
+      return;
+    }
+
+    // Incremental update: remove rows that scrolled out at the top (positional)
+    const headRowCount = offsets[Math.min(startIdx, prevEnd)] - offsets[prevStart];
+    for (let r = 0; r < headRowCount; r++) {
+      const row = topSpacer.nextElementSibling;
+      if (row && row !== bottomSpacer) row.remove();
+    }
+    // Remove rows that scrolled out at the bottom (positional)
+    const tailFrom = Math.max(endIdx, prevStart);
+    const tailRowCount = offsets[prevEnd] - offsets[tailFrom];
+    for (let r = 0; r < tailRowCount; r++) {
+      const row = bottomSpacer.previousElementSibling;
+      if (row && row !== topSpacer) row.remove();
+    }
+    // Prepend rows that scrolled into view at the top
+    if (startIdx < prevStart) {
+      let html = '';
+      for (let i = startIdx; i < Math.min(prevStart, endIdx); i++) {
+        html += builder(_displayPackets[i], i);
+      }
+      topSpacer.insertAdjacentHTML('afterend', html);
+    }
+    // Append rows that scrolled into view at the bottom
+    if (endIdx > prevEnd) {
+      let html = '';
+      for (let i = Math.max(prevEnd, startIdx); i < endIdx; i++) {
+        html += builder(_displayPackets[i], i);
+      }
+      bottomSpacer.insertAdjacentHTML('beforebegin', html);
+    }
+    if (window.__PERF_LOG_RENDER) console.log('[perf] renderVisibleRows: incremental head=%d tail=%d, %.2fms', headRowCount, tailRowCount, performance.now() - _rvr_t0);
   }
 
   // Attach/detach scroll listener for virtual scrolling
