@@ -1781,6 +1781,7 @@ func (db *DB) GetObserverMetrics(observerID, since, until string) ([]MetricsSamp
 type MetricsSummaryRow struct {
 	ObserverID    string     `json:"observer_id"`
 	ObserverName  *string    `json:"observer_name"`
+	IATA          string     `json:"iata,omitempty"`
 	CurrentNF     *float64   `json:"current_noise_floor"`
 	AvgNF         *float64   `json:"avg_noise_floor_24h"`
 	MaxNF         *float64   `json:"max_noise_floor_24h"`
@@ -1800,7 +1801,7 @@ func (db *DB) GetMetricsSummary(since string) ([]MetricsSummaryRow, error) {
 			FROM observer_metrics
 			WHERE timestamp >= ?
 		)
-		SELECT m.observer_id, o.name,
+		SELECT m.observer_id, o.name, COALESCE(o.iata, '') as iata,
 			r.noise_floor as current_nf,
 			AVG(m.noise_floor) as avg_nf,
 			MAX(m.noise_floor) as max_nf,
@@ -1822,7 +1823,7 @@ func (db *DB) GetMetricsSummary(since string) ([]MetricsSummaryRow, error) {
 	var result []MetricsSummaryRow
 	for rows.Next() {
 		var s MetricsSummaryRow
-		if err := rows.Scan(&s.ObserverID, &s.ObserverName, &s.CurrentNF, &s.AvgNF, &s.MaxNF, &s.CurrentBattMv, &s.SampleCount); err != nil {
+		if err := rows.Scan(&s.ObserverID, &s.ObserverName, &s.IATA, &s.CurrentNF, &s.AvgNF, &s.MaxNF, &s.CurrentBattMv, &s.SampleCount); err != nil {
 			return nil, err
 		}
 		result = append(result, s)

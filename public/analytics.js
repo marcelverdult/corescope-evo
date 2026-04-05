@@ -2700,7 +2700,7 @@ function destroy() { _analyticsData = {}; _channelData = null; if (_ngState && _
       // Compute window string for summary endpoint
       const windowMap = { '1h':'1h', '3h':'3h', '6h':'6h', '12h':'12h', '24h':'24h', '3d':'3d', '7d':'7d', '30d':'30d' };
       const window = windowMap[_rfHealthState.range] || '24h';
-      const summaryData = await api('/observers/metrics/summary?window=' + window);
+      const summaryData = await api('/observers/metrics/summary?window=' + window + (RegionFilter.regionQueryString() || ''));
       const observers = summaryData.observers || [];
 
       // Filter to observers with sufficient sparkline data (≥2 non-null noise_floor values)

@@ -2193,6 +2193,7 @@ func (s *Server) handleMetricsSummary(w http.ResponseWriter, r *http.Request) {
 	if window == "" {
 		window = "24h"
 	}
+	region := r.URL.Query().Get("region")
 
 	// Parse window duration
 	dur, err := parseWindowDuration(window)
@@ -2209,6 +2210,17 @@ func (s *Server) handleMetricsSummary(w http.ResponseWriter, r *http.Request) {
 	}
 	if summary == nil {
 		summary = []MetricsSummaryRow{}
+	}
+
+	// Filter by region if specified
+	if region != "" {
+		filtered := make([]MetricsSummaryRow, 0)
+		for _, row := range summary {
+			if strings.EqualFold(row.IATA, region) {
+				filtered = append(filtered, row)
+			}
+		}
+		summary = filtered
 	}
 
 	writeJSON(w, map[string]interface{}{
