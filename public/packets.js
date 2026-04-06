@@ -37,6 +37,22 @@
   let _packetSortColumn = null;
   let _packetSortDirection = 'desc';
   let showHexHashes = localStorage.getItem('meshcore-hex-hashes') === 'true';
+  var _pendingUrlRegion = null;
+
+  var DEFAULT_TIME_WINDOW = 15;
+
+  function buildPacketsQuery(timeWindowMin, regionParam) {
+    var parts = [];
+    if (timeWindowMin && timeWindowMin !== DEFAULT_TIME_WINDOW) parts.push('timeWindow=' + timeWindowMin);
+    if (regionParam) parts.push('region=' + encodeURIComponent(regionParam));
+    return parts.length ? '?' + parts.join('&') : '';
+  }
+  window.buildPacketsQuery = buildPacketsQuery;
+
+  function updatePacketsUrl() {
+    history.replaceState(null, '', '#/packets' + buildPacketsQuery(savedTimeWindowMin, RegionFilter.getRegionParam()));
+  }
+
   let filtersBuilt = false;
   let _renderTimer = null;
   function scheduleRender() {
@@ -316,6 +332,17 @@
         filters.node = routeParam;
       }
     }
+
+    // Read URL params (router strips query from routeParam; read from location.hash)
+    var _initUrlParams = getHashParams();
+    var _urlTimeWindow = Number(_initUrlParams.get('timeWindow'));
+    if (Number.isFinite(_urlTimeWindow) && _urlTimeWindow > 0) {
+      savedTimeWindowMin = _urlTimeWindow;
+      localStorage.setItem('meshcore-time-window', String(_urlTimeWindow));
+    }
+    var _urlRegion = _initUrlParams.get('region');
+    if (_urlRegion) _pendingUrlRegion = _urlRegion;
+
     app.innerHTML = `<div class="split-layout detail-collapsed">
       <div class="panel-left" id="pktLeft" aria-live="polite" aria-relevant="additions removals"></div>
       <div class="panel-right empty" id="pktRight" aria-live="polite">
@@ -758,7 +785,11 @@
 
     // Init shared RegionFilter component
     RegionFilter.init(document.getElementById('packetsRegionFilter'), { dropdown: true });
-    RegionFilter.onChange(function() { loadPackets(); });
+    if (_pendingUrlRegion) {
+      RegionFilter.setSelected(_pendingUrlRegion.split(',').filter(Boolean));
+      _pendingUrlRegion = null;
+    }
+    RegionFilter.onChange(function() { updatePacketsUrl(); loadPackets(); });
 
     // --- Packet Filter Language ---
     (function() {
@@ -908,6 +939,7 @@
       savedTimeWindowMin = Number(fTimeWindow.value);
       if (!Number.isFinite(savedTimeWindowMin) || savedTimeWindowMin <= 0) savedTimeWindowMin = 15;
       localStorage.setItem('meshcore-time-window', fTimeWindow.value);
+      updatePacketsUrl();
       loadPackets();
     });
 

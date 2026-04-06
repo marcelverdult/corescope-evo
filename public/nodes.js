@@ -78,6 +78,18 @@
     { key: 'sensor', label: 'Sensors' },
   ];
 
+  function buildNodesQuery(tab, searchStr) {
+    var parts = [];
+    if (tab && tab !== 'all') parts.push('tab=' + encodeURIComponent(tab));
+    if (searchStr) parts.push('search=' + encodeURIComponent(searchStr));
+    return parts.length ? '?' + parts.join('&') : '';
+  }
+  window.buildNodesQuery = buildNodesQuery;
+
+  function updateNodesUrl() {
+    history.replaceState(null, '', '#/nodes' + buildNodesQuery(activeTab, search));
+  }
+
   function renderNodeTimestampHtml(isoString) {
     if (typeof formatTimestampWithTooltip !== 'function' || typeof getTimestampMode !== 'function') {
       return escapeHtml(typeof timeAgo === 'function' ? timeAgo(isoString) : '—');
@@ -329,6 +341,15 @@
       return;
     }
 
+    // Reset list-view state to defaults, then override from URL params
+    activeTab = 'all';
+    search = '';
+    const _listUrlParams = getHashParams();
+    const _urlTab = _listUrlParams.get('tab');
+    const _urlSearch = _listUrlParams.get('search');
+    if (_urlTab && TABS.some(function(t) { return t.key === _urlTab; })) activeTab = _urlTab;
+    if (_urlSearch) search = _urlSearch;
+
     app.innerHTML = `<div class="nodes-page">
       <div class="nodes-topbar">
         <input type="text" class="nodes-search" id="nodeSearch" placeholder="Search nodes by name…" aria-label="Search nodes by name">
@@ -344,8 +365,14 @@
     RegionFilter.init(document.getElementById('nodesRegionFilter'));
     regionChangeHandler = RegionFilter.onChange(function () { _allNodes = null; loadNodes(); });
 
+    if (search) {
+      var _si = document.getElementById('nodeSearch');
+      if (_si) _si.value = search;
+    }
+
     document.getElementById('nodeSearch').addEventListener('input', debounce(e => {
       search = e.target.value;
+      updateNodesUrl();
       loadNodes();
     }, 250));
 
@@ -899,7 +926,7 @@
     const nodeTabs = document.getElementById('nodeTabs');
     initTabBar(nodeTabs);
     el.querySelectorAll('.node-tab').forEach(btn => {
-      btn.addEventListener('click', () => { activeTab = btn.dataset.tab; loadNodes(); });
+      btn.addEventListener('click', () => { activeTab = btn.dataset.tab; updateNodesUrl(); loadNodes(); });
     });
 
     // Filter changes
