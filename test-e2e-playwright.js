@@ -1475,6 +1475,8 @@ async function run() {
   // ─── Neighbor section tests ───────────────────────────────────────────────
 
   await test('Node detail: neighbors section exists with correct columns', async () => {
+    // Full-screen node view (with #node-neighbors) is mobile-only since #676 fix.
+    await page.setViewportSize({ width: 390, height: 844 });
     // Navigate to a node detail page (use the first node in the list)
     await page.goto(BASE + '/#/nodes');
     await page.waitForSelector('#nodesBody tr[data-key]', { timeout: 10000 });
@@ -1505,6 +1507,7 @@ async function run() {
       const text = await page.$eval('#fullNeighborsContent', el => el.textContent);
       assert(text.includes('No neighbor data') || text.includes('Could not load'), 'Should show empty or error state');
     }
+    await page.setViewportSize({ width: 1280, height: 800 });
   });
 
 
@@ -1656,6 +1659,33 @@ async function run() {
     await page.waitForTimeout(300);
     const url = page.url();
     assert(url.includes('tab=room'), `URL should contain tab=room after click, got: ${url}`);
+  });
+
+  // Test: clicking a node on desktop updates URL hash (#676)
+  await test('Desktop: clicking a node updates URL to #/nodes/{pubkey}', async () => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(BASE + '#/nodes', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#nodesBody tr[data-key]', { timeout: 10000 });
+    const pubkey = await page.$eval('#nodesBody tr[data-key]', el => el.dataset.key);
+    await page.click('#nodesBody tr[data-key]');
+    await page.waitForTimeout(300);
+    const url = page.url();
+    assert(url.includes(encodeURIComponent(pubkey)), `URL should contain pubkey after click, got: ${url}`);
+    assert(!url.includes('node-fullscreen') || await page.$('#nodesRight:not(.empty)'), 'Split panel should be visible on desktop');
+  });
+
+  // Test: loading #/nodes/{pubkey} on desktop shows split panel (#676)
+  await test('Desktop: deep link #/nodes/{pubkey} opens split panel, not full-screen', async () => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(BASE + '#/nodes', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#nodesBody tr[data-key]', { timeout: 10000 });
+    const pubkey = await page.$eval('#nodesBody tr[data-key]', el => el.dataset.key);
+    await page.goto(BASE + '#/nodes/' + encodeURIComponent(pubkey), { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(500);
+    const hasSplitPanel = await page.$('#nodesRight:not(.empty)');
+    const hasFullScreen = await page.$('.node-fullscreen');
+    assert(hasSplitPanel, 'Split panel should be open on desktop deep link');
+    assert(!hasFullScreen, 'Full-screen view should NOT appear on desktop deep link');
   });
 
   // Test: packets timeWindow deep link
