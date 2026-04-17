@@ -111,6 +111,14 @@ func main() {
 	// Resolve DB path
 	resolvedDB := cfg.ResolveDBPath(configDir)
 	log.Printf("[config] port=%d db=%s public=%s", cfg.Port, resolvedDB, publicDir)
+	if len(cfg.NodeBlacklist) > 0 {
+		log.Printf("[config] nodeBlacklist: %d node(s) will be hidden from API", len(cfg.NodeBlacklist))
+		for _, pk := range cfg.NodeBlacklist {
+			if trimmed := strings.ToLower(strings.TrimSpace(pk)); trimmed != "" {
+				log.Printf("[config]   blacklisted: %s", trimmed)
+			}
+		}
+	}
 
 	// Open database
 	database, err := OpenDB(resolvedDB)
