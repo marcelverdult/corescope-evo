@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/meshcore-analyzer/packetpath"
 	_ "modernc.org/sqlite"
 )
 
@@ -941,11 +942,22 @@ type MQTTPacketMessage struct {
 }
 
 // BuildPacketData constructs a PacketData from a decoded packet and MQTT message.
+// path_json is derived directly from raw_hex header bytes (not decoded.Path.Hops)
+// to guarantee the stored path always matches the raw bytes. This matters for
+// TRACE packets where decoded.Path.Hops is overwritten with payload hops (#886).
 func BuildPacketData(msg *MQTTPacketMessage, decoded *DecodedPacket, observerID, region string) *PacketData {
 	now := time.Now().UTC().Format(time.RFC3339)
 	pathJSON := "[]"
-	if len(decoded.Path.Hops) > 0 {
-		b, _ := json.Marshal(decoded.Path.Hops)
+	// For TRACE packets, path_json must be the payload-decoded route hops
+	// (decoded.Path.Hops), NOT the raw_hex header bytes which are SNR values.
+	// For all other packet types, derive path from raw_hex (#886).
+	if !packetpath.PathBytesAreHops(byte(decoded.Header.PayloadType)) {
+		if len(decoded.Path.Hops) > 0 {
+			b, _ := json.Marshal(decoded.Path.Hops)
+			pathJSON = string(b)
+		}
+	} else if hops, err := packetpath.DecodePathFromRawHex(msg.Raw); err == nil && len(hops) > 0 {
+		b, _ := json.Marshal(hops)
 		pathJSON = string(b)
 	}
 
