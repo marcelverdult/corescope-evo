@@ -224,26 +224,7 @@ async function run() {
   // Test 5: Node detail loads (reuses nodes page from test 2)
   await test('Node detail loads', async () => {
     await page.waitForSelector('table tbody tr');
-<<<<<<< fix/geobuilder-lng-wrap
     await page.click('table tbody tr');
-=======
-    // Use a stable selector + retry-on-detach pattern. Querying a row handle
-    // and clicking it later races with WebSocket-driven table re-renders that
-    // detach the original element. Click via a fresh selector each time and
-    // retry on the "not attached" error.
-    let lastErr;
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        await page.click('table tbody tr:first-child', { timeout: 2000 });
-        lastErr = null;
-        break;
-      } catch (err) {
-        lastErr = err;
-        await page.waitForTimeout(200);
-      }
-    }
-    if (lastErr) throw lastErr;
->>>>>>> master
     // Wait for detail pane to appear
     await page.waitForSelector('.node-detail');
     const html = await page.content();
@@ -676,12 +657,8 @@ async function run() {
     await page.waitForSelector('#ngCanvas', { timeout: 8000 });
     const hasCanvas = await page.$('#ngCanvas');
     assert(hasCanvas, 'Neighbor Graph tab should have a canvas element');
-    // Stats render asynchronously after canvas mount — wait for them to populate
-    // before counting, otherwise we race the hydration and read 0 cards.
-    await page.waitForFunction(
-      () => document.querySelectorAll('#ngStats .stat-card').length >= 3,
-      { timeout: 8000 },
-    );
+    // Stats are populated after the async API call — wait for at least one card before counting
+    await page.waitForSelector('#ngStats .stat-card', { timeout: 8000 });
     const hasStats = await page.$$eval('#ngStats .stat-card', els => els.length);
     assert(hasStats >= 3, `Neighbor Graph stats should have >=3 cards, got ${hasStats}`);
     // Verify filters exist
