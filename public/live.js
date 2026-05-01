@@ -23,6 +23,8 @@
   let matrixMode = localStorage.getItem('live-matrix-mode') === 'true';
   let matrixRain = localStorage.getItem('live-matrix-rain') === 'true';
   let colorByHash = localStorage.getItem('meshcore-color-packets-by-hash') !== 'false';
+  /** Current theme string for hash-color functions. */
+  function _liveTheme() { return document.documentElement.dataset.theme || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); }
   let nodeFilterKeys = (localStorage.getItem('live-node-filter') || '').split(',').map(s => s.trim()).filter(Boolean);
   let nodeFilterTotal = 0;
   let nodeFilterShown = 0;
@@ -2704,13 +2706,14 @@
     const mainOpacity = overrideOpacity ?? 0.8;
     const isDashed = overrideOpacity != null;
 
-    // Hash-derived color for fill + contrail (when toggle ON and not ghost/dashed line)
+    // Hash-derived color for fill + contrail + outline (when toggle ON and not ghost/dashed line)
     var hashFill = '#fff';
+    var hashOutline = color;
     var contrailColor = color;
     if (colorByHash && hash && !isDashed && window.HashColor) {
-      var theme = (document.documentElement.dataset.theme || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
-      var hsl = HashColor.hashToHsl(hash, theme);
+      var hsl = HashColor.hashToHsl(hash, _liveTheme());
       hashFill = hsl;
+      hashOutline = HashColor.hashToOutline(hash, _liveTheme());
       contrailColor = hsl;
     }
 
@@ -2719,12 +2722,13 @@
     }).addTo(pathsLayer);
 
     const line = L.polyline([from], {
-      color: color, weight: isDashed ? 1.5 : 2, opacity: mainOpacity, lineCap: 'round',
+      color: (colorByHash && hash && !isDashed && window.HashColor) ? hashFill : color,
+      weight: isDashed ? 1.5 : 2, opacity: mainOpacity, lineCap: 'round',
       dashArray: isDashed ? '4 6' : null
     }).addTo(pathsLayer);
 
     const dot = L.circleMarker(from, {
-      radius: 3.5, fillColor: hashFill, fillOpacity: 1, color: color, weight: 1.5
+      radius: 3.5, fillColor: hashFill, fillOpacity: 1, color: hashOutline, weight: 1.5
     }).addTo(animLayer);
 
     let lastStep = performance.now();
@@ -2856,6 +2860,10 @@
     item.setAttribute('tabindex', '0');
     item.setAttribute('role', 'button');
     item.style.cursor = 'pointer';
+    // Hash-color stripe for feed items (mirrors packets table border-left)
+    if (colorByHash && pkt.hash && window.HashColor) {
+      item.style.borderLeft = '4px solid ' + HashColor.hashToHsl(pkt.hash, _liveTheme());
+    }
     // Channel color highlighting for GRP_TXT packets (#271)
     var _cs = _getChannelStyle(pkt);
     if (_cs) item.style.cssText += _cs;
@@ -2939,6 +2947,10 @@
     item.setAttribute('role', 'button');
     if (hash) item.setAttribute('data-hash', hash);
     item.style.cursor = 'pointer';
+    // Hash-color stripe for feed items (mirrors packets table border-left)
+    if (colorByHash && hash && window.HashColor) {
+      item.style.borderLeft = '4px solid ' + HashColor.hashToHsl(hash, _liveTheme());
+    }
     // Channel color highlighting for GRP_TXT packets (#271)
     var _chanStyle = _getChannelStyle(pkt);
     if (_chanStyle) item.style.cssText += _chanStyle;
