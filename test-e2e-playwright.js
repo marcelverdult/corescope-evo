@@ -2141,6 +2141,76 @@ async function run() {
     assert(isFullScreen, 'Details button should open full-screen node view');
   });
 
+  // === Hash color toggle E2E tests (#946) ===
+
+  await test('Color-by-hash toggle present on Live page, defaults ON', async () => {
+    await page.goto(BASE + '#/live', { waitUntil: 'domcontentloaded' });
+    // Wait until live.js has initialized the toggle (checked = true by default)
+    await page.waitForFunction(() => {
+      const el = document.getElementById('liveColorHashToggle');
+      return el && el.checked === true;
+    }, { timeout: 10000 });
+    const checked = await page.$eval('#liveColorHashToggle', el => el.checked);
+    assert(checked, 'Color by hash toggle should default to ON');
+  });
+
+  await test('Color-by-hash toggle persists across reload', async () => {
+    await page.goto(BASE + '#/live', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#liveColorHashToggle', { timeout: 10000 });
+    // Uncheck toggle
+    await page.click('#liveColorHashToggle');
+    const unchecked = await page.$eval('#liveColorHashToggle', el => !el.checked);
+    assert(unchecked, 'Toggle should be OFF after click');
+    // Reload
+    await page.goto(BASE + '#/live', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#liveColorHashToggle', { timeout: 10000 });
+    const afterReload = await page.$eval('#liveColorHashToggle', el => !el.checked);
+    assert(afterReload, 'Toggle OFF state should persist after reload');
+    // Reset to ON for other tests
+    await page.click('#liveColorHashToggle');
+  });
+
+  await test('Packets table rows have border-left stripe when toggle ON', async () => {
+    await page.evaluate(() => localStorage.setItem('meshcore-color-packets-by-hash', 'true'));
+    // Hard reload to re-init page handler with the new toggle state.
+    // page.goto with same hash URL is a no-op for re-rendering.
+    await page.goto(BASE + '#/packets', { waitUntil: 'domcontentloaded' });
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('table tbody tr[data-hash]', { timeout: 15000 });
+    // Wait for hash stripe to be applied (inline style set during render).
+    // Assert specifically 4px (per spec §2.10) so we don't false-pass on the
+    // 3px channel-color highlight which is independent of this toggle.
+    const hasStripe = await page.waitForFunction(() => {
+      const row = document.querySelector('table tbody tr[data-hash]');
+      return row && (row.getAttribute('style') || '').includes('border-left:4px');
+    }, { timeout: 5000 }).then(() => true).catch(() => false);
+    assert(hasStripe, 'At least one <tr> should have hash-color border-left:4px stripe when toggle ON');
+  });
+
+  await test('Packets table rows have NO border-left stripe when toggle OFF', async () => {
+    await page.evaluate(() => {
+      localStorage.setItem('meshcore-color-packets-by-hash', 'false');
+    });
+    // Hard reload (page.goto with same hash URL no-ops — must reload to re-init
+    // the page handler and re-render rows with the new toggle state).
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('table tbody tr[data-hash]', { timeout: 15000 });
+    await page.waitForTimeout(500);
+    const noStripe = await page.evaluate(() => {
+      const rows = document.querySelectorAll('table tbody tr[data-hash]');
+      for (const r of rows) {
+        // Hash stripe is 4px (per spec §2.10). Channel-color highlight uses
+        // 3px and is independent of the hash-color toggle. Only assert no
+        // 4px hash stripe is present.
+        if ((r.getAttribute('style') || '').includes('border-left:4px')) return false;
+      }
+      return true;
+    });
+    assert(noStripe, 'No <tr> should have hash-color border-left:4px stripe when toggle OFF');
+    // Reset
+    await page.evaluate(() => localStorage.setItem('meshcore-color-packets-by-hash', 'true'));
+  });
+
   await browser.close();
 
   // Summary
