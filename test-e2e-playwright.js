@@ -224,6 +224,9 @@ async function run() {
   // Test 5: Node detail loads (reuses nodes page from test 2)
   await test('Node detail loads', async () => {
     await page.waitForSelector('table tbody tr');
+<<<<<<< fix/geobuilder-lng-wrap
+    await page.click('table tbody tr');
+=======
     // Use a stable selector + retry-on-detach pattern. Querying a row handle
     // and clicking it later races with WebSocket-driven table re-renders that
     // detach the original element. Click via a fresh selector each time and
@@ -240,6 +243,7 @@ async function run() {
       }
     }
     if (lastErr) throw lastErr;
+>>>>>>> master
     // Wait for detail pane to appear
     await page.waitForSelector('.node-detail');
     const html = await page.content();
@@ -252,17 +256,14 @@ async function run() {
   await test('Node side panel Details link navigates', async () => {
     await page.goto(`${BASE}/#/nodes`, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('table tbody tr');
-    // Click first row to open side panel
-    const firstRow = await page.$('table tbody tr');
-    assert(firstRow, 'No node rows found');
-    await firstRow.click();
+    await page.click('table tbody tr');
     await page.waitForSelector('.node-detail');
     // Find the Details link in the side panel
-    const detailsLink = await page.$('#nodesRight a.btn-primary[href^="#/nodes/"]');
-    assert(detailsLink, 'Details link not found in side panel');
-    const href = await detailsLink.getAttribute('href');
+    await page.waitForSelector('#nodesRight a.btn-primary[href^="#/nodes/"]');
+    const href = await page.$eval('#nodesRight a.btn-primary[href^="#/nodes/"]', el => el.getAttribute('href'));
+    assert(href, 'Details link not found in side panel');
     // Click the Details link — this should navigate to the full detail page
-    await detailsLink.click();
+    await page.click('#nodesRight a.btn-primary[href^="#/nodes/"]');
     // Wait for navigation — the full detail page has sections like neighbors/packets
     await page.waitForFunction((expectedHash) => {
       return location.hash === expectedHash;
