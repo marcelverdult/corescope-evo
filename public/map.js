@@ -388,6 +388,14 @@
   }
 
   function drawPacketRoute(hopKeys, origin) {
+    // Defensive: origin must be an object with pubkey/lat/lon/name. A bare
+    // string slips through both branches at lines below and silently no-ops
+    // the originator marker (caused PR #950's bug). Coerce string → object
+    // and warn so callers get a clear signal.
+    if (typeof origin === 'string') {
+      console.warn('drawPacketRoute: origin should be an object {pubkey,lat,lon,name}, got string. Coercing.');
+      origin = { pubkey: origin };
+    }
     // Hide default markers so only the route is visible
     if (markerLayer) map.removeLayer(markerLayer);
     if (clusterGroup) map.removeLayer(clusterGroup);
@@ -572,7 +580,11 @@
         delete window._pendingPathInspectorRoute;
         if (pending.path && pending.path.length > 0) {
           if (window.routeLayer) window.routeLayer.clearLayers();
-          drawPacketRoute(pending.path.slice(1), pending.path[0]);
+          // Pass full path as hopKeys; null origin (origin is already the first
+          // hop). slice(1) + path[0] string was wrong — drawPacketRoute expects
+          // origin to be an OBJECT with pubkey/lat/lon, and stripping the head
+          // hid the originating node from the route polyline.
+          drawPacketRoute(pending.path, null);
         }
       }
 
@@ -1107,7 +1119,7 @@
         var idx = parseInt(btn.dataset.idx);
         var cand = data.candidates[idx];
         if (routeLayer) routeLayer.clearLayers();
-        drawPacketRoute(cand.path.slice(1), cand.path[0]);
+        drawPacketRoute(cand.path, null);
       });
     });
     // Expand evidence on row click.
