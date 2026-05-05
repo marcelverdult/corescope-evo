@@ -791,9 +791,22 @@ fieldset.mc-section legend.mc-label { padding: 0; }
 .flex-between { display: flex; align-items: center; justify-content: space-between; }
 
 /* === Channels Page === */
-.ch-layout { display: flex; height: 100%; overflow: hidden; }
+/* #1057: Fluid layout. .ch-layout is a container query root so the channels
+   page can stack sidebar above main when the *available* layout width is
+   narrow (independent of the global viewport — handles cases where the
+   nav/side-pane consumes width). Sidebar uses clamp() for fluid sizing
+   between a usable min (~220px) and a comfortable max (~320px) on wide
+   screens; .ch-main keeps flex:1 so it absorbs remaining width including
+   ultrawide. */
+.ch-layout {
+  display: flex; height: 100%; overflow: hidden;
+  container-type: inline-size;
+  container-name: chlayout;
+}
 .ch-sidebar {
-  width: 280px; min-width: 280px; background: var(--card-bg);
+  width: clamp(220px, 22vw, 320px);
+  min-width: 220px;
+  background: var(--card-bg);
   border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden;
 }
 .ch-sidebar-header {
@@ -1269,11 +1282,27 @@ button.ch-item:hover .ch-icon-btn { opacity: 1; }
 /* === Responsive — Tablet (≤900px) === */
 @media (max-width: 900px) {
   .panel-right { width: 320px; min-width: 320px; }
-  .ch-sidebar { width: 220px; min-width: 220px; }
   .nav-stats { display: none; }
   .brand-text { font-size: 14px; }
   .nav-link { padding: 14px 8px; font-size: 13px; }
   .map-controls { width: 180px; font-size: 12px; }
+}
+
+/* #1057: Container query — stack the channels layout when the channels
+   page itself is narrow (e.g. on tablets, or when a side panel consumes
+   width). Below ~700px of *container* inline size, sidebar drops to full
+   width and stacks above the message area instead of squeezing it. */
+@container chlayout (max-width: 700px) {
+  .ch-layout { flex-direction: column; }
+  .ch-sidebar {
+    width: 100%; min-width: 0;
+    max-height: 40%;
+    overflow-y: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+  .ch-sidebar-resize { display: none; }
+  .ch-main { width: 100%; }
 }
 
 /* === Nav Priority+ — applies at ALL desktop widths (Issue #1055) ===
@@ -1336,19 +1365,24 @@ button.ch-item:hover .ch-icon-btn { opacity: 1; }
   .panel-left { padding: 6px; flex: 1; min-height: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .panel-right { display: none; }
 
-  /* Channels: Discord-style full screen toggle */
-  .ch-layout { flex-direction: row; position: relative; }
-  .ch-sidebar { 
-    width: 100%; min-width: 0; max-height: none; height: 100%; 
-    border-right: none; position: absolute; top: 0; left: 0; bottom: 0;
-    z-index: 2; background: var(--card-bg);
+  /* Channels: stack sidebar above message area on narrow viewports.
+     #1057 follow-up: container query alone was being overridden here by
+     the previous Discord-overlay rule (flex-direction:row + absolute
+     positioning), so the layout failed to stack at 480px. Use a plain
+     stacking layout that the E2E test recognizes (sidebar.bottom <=
+     main.top). */
+  .ch-layout { flex-direction: column; position: relative; }
+  .ch-sidebar {
+    width: 100%; min-width: 0; max-height: 40%; height: auto;
+    overflow-y: auto;
+    border-right: none; border-bottom: 1px solid var(--border);
+    background: var(--card-bg);
   }
-  .ch-main { 
-    width: 100%; position: absolute; top: 0; left: 0; bottom: 0;
-    transform: translateX(100%); transition: transform .2s ease;
-    z-index: 3; background: var(--content-bg);
+  .ch-sidebar-resize { display: none; }
+  .ch-main {
+    width: 100%; flex: 1; min-height: 0;
+    background: var(--content-bg);
   }
-  .ch-layout.ch-show-main .ch-main { transform: translateX(0); }
   .ch-back-btn { display: flex; }
   .ch-main-header { display: flex; align-items: center; gap: 8px; }
 
