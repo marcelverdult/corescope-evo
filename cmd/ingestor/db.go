@@ -101,7 +101,8 @@ func applySchema(db *sql.DB) error {
 			first_seen TEXT,
 			advert_count INTEGER DEFAULT 0,
 			battery_mv INTEGER,
-			temperature_c REAL
+			temperature_c REAL,
+			foreign_advert INTEGER DEFAULT 0
 		);
 
 		CREATE TABLE IF NOT EXISTS observers (
@@ -135,7 +136,8 @@ func applySchema(db *sql.DB) error {
 			first_seen TEXT,
 			advert_count INTEGER DEFAULT 0,
 			battery_mv INTEGER,
-			temperature_c REAL
+			temperature_c REAL,
+			foreign_advert INTEGER DEFAULT 0
 		);
 
 		CREATE INDEX IF NOT EXISTS idx_inactive_nodes_last_seen ON inactive_nodes(last_seen);
@@ -463,6 +465,25 @@ func applySchema(db *sql.DB) error {
 		db.Exec(`INSERT INTO _migrations (name) VALUES ('cleanup_legacy_null_hash_ts')`)
 	}
 
+	// Migration: foreign_advert column on nodes/inactive_nodes (#730)
+	// Marks nodes whose ADVERT GPS lies outside the configured geofilter polygon.
+	// Default 0; set to 1 by the ingestor when GeoFilter is configured and
+	// PassesFilter() returns false. Allows operators to surface bridged/leaked
+	// adverts without silently dropping them.
+	row = db.QueryRow("SELECT 1 FROM _migrations WHERE name = 'foreign_advert_v1'")
+	if row.Scan(&migDone) != nil {
+		log.Println("[migration] Adding foreign_advert column to nodes/inactive_nodes...")
+		if _, err := db.Exec(`ALTER TABLE nodes ADD COLUMN foreign_advert INTEGER DEFAULT 0`); err != nil {
+			log.Printf("[migration] nodes.foreign_advert: %v (may already exist)", err)
+		}
+		if _, err := db.Exec(`ALTER TABLE inactive_nodes ADD COLUMN foreign_advert INTEGER DEFAULT 0`); err != nil {
+			log.Printf("[migration] inactive_nodes.foreign_advert: %v (may already exist)", err)
+		}
+		db.Exec(`CREATE INDEX IF NOT EXISTS idx_nodes_foreign_advert ON nodes(foreign_advert) WHERE foreign_advert = 1`)
+		db.Exec(`INSERT INTO _migrations (name) VALUES ('foreign_advert_v1')`)
+		log.Println("[migration] foreign_advert column added")
+	}
+
 	return nil
 }
 
@@ -673,6 +694,21 @@ func (s *Store) UpsertNode(pubKey, name, role string, lat, lon *float64, lastSee
 // IncrementAdvertCount increments advert_count for a node by public key.
 func (s *Store) IncrementAdvertCount(pubKey string) error {
 	_, err := s.stmtIncrementAdvertCount.Exec(pubKey)
+	return err
+}
+
+// MarkNodeForeign sets foreign_advert=1 on the node row identified by pubKey.
+// Used when an ADVERT arrives whose GPS lies outside the configured geofilter
+// polygon (#730). Idempotent — safe to call repeatedly. No-op if pubKey is
+// empty.
+func (s *Store) MarkNodeForeign(pubKey string) error {
+	if pubKey == "" {
+		return nil
+	}
+	_, err := s.db.Exec(`UPDATE nodes SET foreign_advert = 1 WHERE public_key = ?`, pubKey)
+	if err != nil {
+		s.Stats.WriteErrors.Add(1)
+	}
 	return err
 }
 
@@ -1106,6 +1142,7 @@ type PacketData struct {
 	DecodedJSON    string
 	ChannelHash    string // grouping key for channel queries (#762)
 	Region         string // observer region: payload > topic > source config (#788)
+	Foreign        bool   // true when ADVERT GPS lies outside configured geofilter (#730)
 }
 
 // nilIfEmpty returns nil for empty strings (for nullable DB columns).
