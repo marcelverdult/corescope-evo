@@ -1959,9 +1959,28 @@ tr[data-hops]:hover { background: rgba(59,130,246,0.1); }
 .analytics-stat-label { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); margin-bottom: 2px; }
 .analytics-stat-value { font-size: 20px; font-weight: 700; }
 .analytics-stat-desc { font-size: 10px; color: var(--text-muted); margin-top: 2px; font-style: italic; }
-.analytics-charts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
-.analytics-chart-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 6px; padding: 12px; }
+.analytics-charts {
+  /* #1058 — fluid + auto-stacking layout. The grid sizes from its own
+     available width (NOT the viewport), so a narrow side-pane on a wide
+     screen still stacks. `auto-fit` collapses empty tracks; `minmax()`
+     guarantees a minimum readable column width before wrapping. The
+     `container-type: inline-size` opts in to container queries so
+     descendants (or future tweaks) can size against this element's
+     own width rather than the viewport. Uses #1054 spacing tokens. */
+  container-type: inline-size;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+}
+.analytics-chart-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 6px; padding: var(--space-sm); min-width: 0; }
 .analytics-chart-card.full { grid-column: 1 / -1; }
+/* Constrain chart media inside the card (svg/canvas at any depth). The
+   `.analytics-chart-card svg, .analytics-chart-card canvas` descendant
+   selector is robust to wrapper elements (legends, tooltips, axis
+   groups) being added between the card and the chart media. */
+.analytics-chart-card svg,
+.analytics-chart-card canvas { max-width: 100%; height: auto; display: block; }
 .analytics-chart-card h4 { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); margin-bottom: 4px; }
 .analytics-chart-desc { font-size: 10px; color: var(--text-muted); margin-bottom: 8px; font-style: italic; }
 .analytics-heatmap { display: grid; grid-template-columns: 40px repeat(24, 1fr); gap: 2px; }
@@ -1974,7 +1993,7 @@ tr[data-hops]:hover { background: rgba(59,130,246,0.1); }
 .analytics-peer-table th { text-align: left; padding: 6px 8px; border-bottom: 2px solid var(--border); color: var(--text-muted); font-size: 11px; text-transform: uppercase; }
 .analytics-peer-table td { padding: 6px 8px; border-bottom: 1px solid var(--border); }
 .analytics-peer-table tr:hover td { background: var(--card-bg); }
-@media (max-width: 768px) { .analytics-stats { grid-template-columns: repeat(2, 1fr); } .analytics-charts { grid-template-columns: 1fr; } }
+@media (max-width: 768px) { .analytics-stats { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 480px) { .analytics-stats { grid-template-columns: 1fr; } }
 
 /* Claimed (My Mesh) node rows */
