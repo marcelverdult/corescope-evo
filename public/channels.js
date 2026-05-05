@@ -646,6 +646,9 @@
         <div class="modal ch-modal" role="document">
           <button type="button" class="modal-close ch-modal-close" id="chModalClose" data-action="ch-modal-close" aria-label="Close">✕</button>
           <h3 id="chModalTitle">Add Channel</h3>
+          <div class="ch-modal-callout" role="note">
+            ⚠️ Channels are saved to <strong>THIS browser only</strong>. They won't appear on other devices or browsers, and clearing browser data will remove them.
+          </div>
 
           <section class="ch-modal-section" aria-labelledby="chSecGenTitle">
             <h4 id="chSecGenTitle" class="ch-modal-section-title">Generate PSK Channel</h4>
@@ -681,15 +684,19 @@
             <div class="ch-modal-row ch-hashtag-row">
               <span class="ch-hashtag-prefix" aria-hidden="true">#</span>
               <input type="text" id="chHashtagName" class="ch-modal-input"
-                     placeholder="LongFast"
+                     placeholder="meshcore"
                      aria-label="Hashtag channel name (without #)" spellcheck="false" autocomplete="off">
               <button type="button" id="chHashtagBtn" class="btn-primary">Monitor</button>
             </div>
-            <div class="ch-modal-warn">⚠ Case-sensitive — <code>#LongFast</code> ≠ <code>#longfast</code></div>
+            <div class="ch-modal-warn">⚠ Case-sensitive — <code>#meshcore</code> ≠ <code>#MeshCore</code></div>
           </section>
 
+          <section id="chShareSection" class="ch-modal-section" hidden aria-labelledby="chShareHeading">
+            <h4 id="chShareHeading" class="ch-modal-section-title">Share Channel</h4>
+            <div id="chShareOutput" class="ch-share-output" aria-live="polite"></div>
+          </section>
           <div class="ch-modal-footer">
-            🔒 Keys stay in your browser. CoreScope is a passive observer — it monitors and decrypts traffic but cannot transmit over RF. Clear browser data to remove stored keys.
+            🔒 Keys stay in your browser — CoreScope is a passive observer that monitors and decrypts traffic but cannot transmit over RF. Use ✕ to remove individual channels.
           </div>
         </div>
       </div>
@@ -735,6 +742,10 @@
       modalEl.setAttribute('hidden', '');
       var err = document.getElementById('chPskError');
       if (err) { err.style.display = 'none'; err.textContent = ''; }
+      var shareOut = document.getElementById('chShareOutput');
+      if (shareOut) { shareOut.innerHTML = ''; }
+      var shareSec = document.getElementById('chShareSection');
+      if (shareSec) { shareSec.hidden = true; }
     }
     var addBtn = document.getElementById('chAddChannelBtn');
     if (addBtn) addBtn.addEventListener('click', openAddModal);
@@ -859,10 +870,11 @@
 
     // Event delegation for channel selection (touch-friendly)
     var chListEl = document.getElementById('chList');
-    // Keyboard accessibility for the role="button" remove span (Enter/Space).
+    // Keyboard accessibility for the role="button" remove/share spans
+    // (Enter/Space). Single .closest() call with a combined selector.
     chListEl.addEventListener('keydown', function (e) {
       if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
-      var rb = e.target.closest && e.target.closest('[data-remove-channel]');
+      var rb = e.target.closest && e.target.closest('[data-remove-channel],[data-share-channel]');
       if (!rb) return;
       e.preventDefault();
       e.stopPropagation();
@@ -870,6 +882,47 @@
       rb.click();
     });
     chListEl.addEventListener('click', (e) => {
+      // Share/reshare: open the Add Channel modal and render QR + URL
+      // for the existing key (no re-generation).
+      const shareBtn = e.target.closest('[data-share-channel]');
+      if (shareBtn) {
+        e.stopPropagation();
+        var shareHash = shareBtn.getAttribute('data-share-channel');
+        if (!shareHash) return;
+        var sCh = channels.find(function (c) { return c.hash === shareHash; });
+        var sName = shareHash.startsWith('user:')
+          ? shareHash.substring(5)
+          : (sCh && sCh.name) || shareHash;
+        var keys = ChannelDecrypt.getStoredKeys();
+        var keyHex = keys[sName];
+        if (typeof openAddModal === 'function') openAddModal();
+        var sec = document.getElementById('chShareSection');
+        var out = document.getElementById('chShareOutput');
+        if (!sec || !out) return;
+        sec.hidden = false;
+        out.innerHTML = '';
+        if (!keyHex) {
+          out.textContent = 'No stored key found for "' + sName + '" — cannot share.';
+          return;
+        }
+        var heading = document.createElement('div');
+        heading.className = 'ch-share-heading';
+        heading.textContent = 'Share "' + sName + '"';
+        out.appendChild(heading);
+        var holder = document.createElement('div');
+        out.appendChild(holder);
+        if (window.ChannelQR && typeof window.ChannelQR.generate === 'function') {
+          window.ChannelQR.generate(sName, keyHex, holder);
+        } else {
+          // Fallback: copyable hex + meshcore:// URL.
+          var url = 'meshcore://channel/add?name=' + encodeURIComponent(sName) +
+                    '&secret=' + keyHex;
+          holder.innerHTML =
+            '<div>Key: <code>' + escapeHtml(keyHex) + '</code></div>' +
+            '<div>URL: <code>' + escapeHtml(url) + '</code></div>';
+        }
+        return;
+      }
       // M4: Remove channel button
       const removeBtn = e.target.closest('[data-remove-channel]');
       if (removeBtn) {
@@ -883,7 +936,7 @@
         var chName = channelHash.startsWith('user:')
           ? channelHash.substring(5)
           : (ch && ch.name) || channelHash;
-        if (!confirm('Remove channel "' + chName + '"? This will clear saved keys and cached messages.')) return;
+        if (!confirm('Remove channel "' + chName + '"?\n\nThis will permanently remove the key from this browser and clear cached messages. You will need to re-enter the key to decrypt this channel again.')) return;
         ChannelDecrypt.removeKey(chName);
         if (channelHash.startsWith('user:')) {
           // Pure user-added channel — drop from the list entirely.
@@ -1277,15 +1330,20 @@
     const name = (isUserAdded && ch.userLabel) ? ch.userLabel : baseName;
     const color = isEncrypted && !isUserAdded ? 'var(--text-muted, #6b7280)' : getChannelColor(ch.hash);
     const time = ch.lastActivityMs ? formatSecondsAgo(Math.floor((Date.now() - ch.lastActivityMs) / 1000)) : '';
-    const preview = isUserAdded
-      ? (ch.lastSender && ch.lastMessage
-          ? `${ch.lastSender}: ${truncate(ch.lastMessage, 28)}`
-          : `${ch.messageCount || 0} messages (your key)`)
-      : isEncrypted
-        ? `0x${formatHashHex(ch.hash)} · ${ch.messageCount || 0} packets`
-        : ch.lastSender && ch.lastMessage
-          ? `${ch.lastSender}: ${truncate(ch.lastMessage, 28)}`
-          : `${ch.messageCount || 0} messages`;
+    // Preview: show last sender+message when we have one. Otherwise show
+    // nothing rather than "0 messages" — the count is misleading for
+    // user-added (PSK) channels where messageCount only reflects
+    // server-known activity, not actually-decrypted messages.
+    let preview;
+    if (ch.lastSender && ch.lastMessage) {
+      preview = `${ch.lastSender}: ${truncate(ch.lastMessage, 28)}`;
+    } else if (isEncrypted && !isUserAdded) {
+      preview = `0x${formatHashHex(ch.hash)}`;
+    } else if (typeof ch.messageCount === 'number' && ch.messageCount > 0) {
+      preview = `${ch.messageCount} messages`;
+    } else {
+      preview = '';
+    }
     const sel = selectedHash === ch.hash ? ' selected' : '';
     const encClass = isUserAdded
       ? ' ch-user-added'
@@ -1299,7 +1357,24 @@
     // nested <button> is invalid HTML5 and the parser orphans everything
     // after it. Use <span role="button">; keydown handler on #chList
     // (Enter/Space) keeps it keyboard-accessible.
-    const removeBtn = isUserAdded ? ' <span class="ch-remove-btn" role="button" tabindex="0" data-remove-channel="' + escapeHtml(ch.hash) + '" title="Remove channel and clear saved key" aria-label="Remove ' + escapeHtml(name) + '">✕</span>' : '';
+    // Icon button factory — used for the per-row remove/share controls.
+    // Both share the .ch-icon-btn base class (touch target, opacity); a
+    // modifier class (.ch-remove-btn / .ch-share-btn) supplies size + color.
+    function iconBtn(modClass, dataAttr, hash, name, glyph, title, ariaVerb, extraAttrs) {
+      return ' <span class="ch-icon-btn ' + modClass + '" role="button" tabindex="0"'
+        + ' ' + dataAttr + '="' + escapeHtml(hash) + '"'
+        + (extraAttrs || '')
+        + ' title="' + title + '"'
+        + ' aria-label="' + ariaVerb + ' ' + escapeHtml(name) + '">' + glyph + '</span>';
+    }
+    const removeBtn = isUserAdded
+      ? iconBtn('ch-remove-btn', 'data-remove-channel', ch.hash, name, '✕',
+                'Remove channel and clear saved key', 'Remove', '')
+      : '';
+    const shareBtn = isUserAdded
+      ? iconBtn('ch-share-btn', 'data-share-channel', ch.hash, name, '⤴',
+                'Share channel key (QR + URL)', 'Share', ' aria-haspopup="dialog"')
+      : '';
     const userBadge = isUserAdded ? ' <span class="ch-user-badge" title="You added this key" aria-label="Your key">🔑</span>' : '';
     const unreadBadge = (ch.unread && ch.unread > 0)
       ? ' <span class="ch-unread-badge" data-unread-channel="' + escapeHtml(ch.hash) + '" title="' + ch.unread + ' new" aria-label="' + ch.unread + ' unread">' + (ch.unread > 99 ? '99+' : ch.unread) + '</span>'
@@ -1311,7 +1386,7 @@
         <div class="ch-item-top">
           <span class="ch-item-name">${escapeHtml(name)}</span>${userBadge}${unreadBadge}
           <span class="ch-color-dot" data-channel="${escapeHtml(ch.hash)}"${dotStyle} title="Change channel color" aria-label="Change color for ${escapeHtml(name)}"></span>${chColor ? '<span class="ch-color-clear" data-channel="' + escapeHtml(ch.hash) + '" title="Clear color" aria-label="Clear color for ' + escapeHtml(name) + '">✕</span>' : ''}
-          <span class="ch-item-time" data-channel-hash="${ch.hash}">${time}</span>${removeBtn}
+          <span class="ch-item-time" data-channel-hash="${ch.hash}">${time}</span>${shareBtn}${removeBtn}
         </div>
         <div class="ch-item-preview">${escapeHtml(preview)}</div>
       </div>
@@ -1337,7 +1412,7 @@
     const sections = [];
     sections.push(
       `<div class="ch-section ch-section-mychannels" data-section="mychannels">
-        <div class="ch-section-header">My Channels</div>
+        <div class="ch-section-header">My Channels <span class="ch-section-locality" title="Saved only in this browser on this device">🖥️ (this browser)</span></div>
         ${mine.length ? mine.map(renderChannelRow).join('') : '<div class="ch-section-empty">No channels yet — click [+ Add Channel] to add one.</div>'}
       </div>`
     );
