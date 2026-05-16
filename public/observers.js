@@ -9,6 +9,8 @@
   let regionChangeHandler = null;
   let sortState = { col: null, dir: 'asc' };
 
+  var STATS_OPEN_KEY = 'meshcore-obs-stats-open';
+
   function loadSortState() {
     try {
       var s = localStorage.getItem('meshcore-obs-sort');
@@ -76,11 +78,29 @@
           <a href="#/compare" class="btn-icon" title="Compare observers" aria-label="Compare observers" style="text-decoration:none">🔍</a>
           <button class="btn-icon" data-action="obs-refresh" title="Refresh" aria-label="Refresh observers">🔄</button>
         </div>
+        <div class="obs-stats-panel" id="obsStatsPanel">
+          <div class="obs-stats-header" data-action="toggle-stats">
+            <strong>📊 Observer Statistics</strong>
+            <span class="obs-stats-toggle">▶</span>
+          </div>
+          <div class="obs-stats-body" id="obsStatsBody" style="max-height:0px">
+            <div class="obs-stats-grid" id="obsStatsGrid"></div>
+          </div>
+        </div>
         <div id="obsRegionFilter" class="region-filter-container"></div>
         <div id="obsContent"><div class="text-center text-muted" style="padding:40px">Loading…</div></div>
       </div>`;
     RegionFilter.init(document.getElementById('obsRegionFilter'));
     regionChangeHandler = RegionFilter.onChange(function () { render(); });
+    // Restore stats panel open/close state
+    try {
+      if (localStorage.getItem(STATS_OPEN_KEY) === '1') {
+        var body = document.getElementById('obsStatsBody');
+        var tog = app.querySelector('.obs-stats-toggle');
+        if (body) body.style.maxHeight = '2000px';
+        if (tog) tog.textContent = '▼';
+      }
+    } catch (e) {}
     loadObservers();
     // Event delegation for data-action buttons
     app.addEventListener('click', function (e) {
@@ -95,6 +115,14 @@
       }
       var btn = e.target.closest('[data-action]');
       if (btn && btn.dataset.action === 'obs-refresh') loadObservers();
+      if (btn && btn.dataset.action === 'toggle-stats') {
+        var statsBody = document.getElementById('obsStatsBody');
+        var statsTog = btn.querySelector('.obs-stats-toggle');
+        var isOpen = statsBody.style.maxHeight !== '0px';
+        statsBody.style.maxHeight = isOpen ? '0px' : '2000px';
+        statsTog.textContent = isOpen ? '▶' : '▼';
+        try { localStorage.setItem(STATS_OPEN_KEY, isOpen ? '0' : '1'); } catch (e) {}
+      }
       var row = e.target.closest('tr[data-action="navigate"]');
       if (row) {
         // #1056 AC#4: at narrow widths, open detail in slide-over instead of
@@ -193,6 +221,43 @@
     return `<span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap"><span style="display:inline-block;width:60px;height:12px;background:var(--border);border-radius:3px;overflow:hidden;vertical-align:middle"><span style="display:block;height:100%;width:${pct}%;background:linear-gradient(90deg,#3b82f6,#60a5fa);border-radius:3px"></span></span><span style="font-size:11px">${count}/hr</span></span>`;
   }
 
+  function renderStatsGrid(data) {
+    var grid = document.getElementById('obsStatsGrid');
+    if (!grid) return;
+
+    function statBlock(title, items) {
+      var rows = items.length
+        ? items.map(function (item, i) {
+            return `<li><span class="obs-stat-rank">${i + 1}</span><span class="obs-stat-name" title="${item.title || item.name}">${item.name}</span><span class="obs-stat-val">${item.val}</span></li>`;
+          }).join('')
+        : '<li><span class="text-muted" style="font-size:11px">No data</span></li>';
+      return `<div class="obs-stat-block"><div class="obs-stat-block-title">${title}</div><ol class="obs-stat-list">${rows}</ol></div>`;
+    }
+
+    var byPackets = data.slice().sort(function (a, b) { return (b.packet_count || 0) - (a.packet_count || 0); }).slice(0, 5)
+      .map(function (o) { return { name: o.name || o.id, val: (o.packet_count || 0).toLocaleString() }; });
+
+    var byPktsHr = data.slice().sort(function (a, b) { return (b.packetsLastHour || 0) - (a.packetsLastHour || 0); }).slice(0, 5)
+      .map(function (o) { return { name: o.name || o.id, val: (o.packetsLastHour || 0) + '/hr' }; });
+
+    var byUptime = data.slice().sort(function (a, b) {
+      var ua = a.first_seen ? Date.now() - new Date(a.first_seen).getTime() : 0;
+      var ub = b.first_seen ? Date.now() - new Date(b.first_seen).getTime() : 0;
+      return ub - ua;
+    }).slice(0, 5).map(function (o) { return { name: o.name || o.id, val: uptimeStr(o.first_seen) }; });
+
+    var regionMap = {};
+    data.forEach(function (o) { if (o.iata) regionMap[o.iata] = (regionMap[o.iata] || 0) + 1; });
+    var byRegion = Object.entries(regionMap).sort(function (a, b) { return b[1] - a[1]; }).slice(0, 5)
+      .map(function (entry) { return { name: `<span class="badge-region">${entry[0]}</span>`, title: entry[0], val: entry[1] + (entry[1] === 1 ? ' observer' : ' observers') }; });
+
+    grid.innerHTML =
+      statBlock('Top 5 · Total Packets', byPackets) +
+      statBlock('Top 5 · Packets / Hour', byPktsHr) +
+      statBlock('Top 5 · Uptime', byUptime) +
+      statBlock('Top Regions', byRegion);
+  }
+
   function render() {
     const el = document.getElementById('obsContent');
     if (!el) return;
@@ -202,6 +267,8 @@
     const filtered = selectedRegions
       ? observers.filter(o => o.iata && selectedRegions.includes(o.iata))
       : observers;
+
+    renderStatsGrid(filtered);
 
     if (filtered.length === 0) {
       el.innerHTML = '<div class="text-center text-muted" style="padding:40px">No observers found.</div>';
