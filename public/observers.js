@@ -7,8 +7,68 @@
   let wsHandler = null;
   let refreshTimer = null;
   let regionChangeHandler = null;
+  let sortState = { col: null, dir: 'asc' };
+
+  function loadSortState() {
+    try {
+      var s = localStorage.getItem('meshcore-obs-sort');
+      if (s) sortState = JSON.parse(s);
+    } catch (e) {}
+  }
+
+  function saveSortState() {
+    try { localStorage.setItem('meshcore-obs-sort', JSON.stringify(sortState)); } catch (e) {}
+  }
+
+  function applySortState(arr) {
+    if (!sortState.col) return arr;
+    return arr.slice().sort(function (a, b) {
+      var va, vb;
+      switch (sortState.col) {
+        case 'status': {
+          var order = { 'health-green': 0, 'health-yellow': 1, 'health-red': 2 };
+          va = order[healthStatus(a.last_seen).cls] ?? 3;
+          vb = order[healthStatus(b.last_seen).cls] ?? 3;
+          break;
+        }
+        case 'name':
+          va = (a.name || a.id || '').toLowerCase();
+          vb = (b.name || b.id || '').toLowerCase();
+          break;
+        case 'region':
+          va = (a.iata || '').toLowerCase();
+          vb = (b.iata || '').toLowerCase();
+          break;
+        case 'last_seen':
+          va = a.last_seen ? new Date(a.last_seen).getTime() : 0;
+          vb = b.last_seen ? new Date(b.last_seen).getTime() : 0;
+          break;
+        case 'last_packet':
+          va = a.last_packet_at ? new Date(a.last_packet_at).getTime() : 0;
+          vb = b.last_packet_at ? new Date(b.last_packet_at).getTime() : 0;
+          break;
+        case 'packets':
+          va = a.packet_count || 0;
+          vb = b.packet_count || 0;
+          break;
+        case 'packets_hr':
+          va = a.packetsLastHour || 0;
+          vb = b.packetsLastHour || 0;
+          break;
+        case 'uptime':
+          va = a.first_seen ? Date.now() - new Date(a.first_seen).getTime() : 0;
+          vb = b.first_seen ? Date.now() - new Date(b.first_seen).getTime() : 0;
+          break;
+        default:
+          return 0;
+      }
+      var cmp = va < vb ? -1 : va > vb ? 1 : 0;
+      return sortState.dir === 'asc' ? cmp : -cmp;
+    });
+  }
 
   function init(app) {
+    loadSortState();
     app.innerHTML = `
       <div class="observers-page">
         <div class="page-header">
@@ -24,6 +84,15 @@
     loadObservers();
     // Event delegation for data-action buttons
     app.addEventListener('click', function (e) {
+      var th = e.target.closest('th[data-sort-col]');
+      if (th) {
+        var col = th.dataset.sortCol;
+        sortState.dir = sortState.col === col && sortState.dir === 'asc' ? 'desc' : 'asc';
+        sortState.col = col;
+        saveSortState();
+        render();
+        return;
+      }
       var btn = e.target.closest('[data-action]');
       if (btn && btn.dataset.action === 'obs-refresh') loadObservers();
       var row = e.target.closest('tr[data-action="navigate"]');
@@ -146,6 +215,14 @@
     const stale = filtered.filter(o => healthStatus(o.last_seen).cls === 'health-yellow').length;
     const offline = filtered.filter(o => healthStatus(o.last_seen).cls === 'health-red').length;
 
+    const sorted = applySortState(filtered);
+
+    function sortTh(label, col, prio) {
+      var active = sortState.col === col;
+      var arrow = active ? (sortState.dir === 'asc' ? '▲' : '▼') : '⇅';
+      return `<th scope="col" data-priority="${prio}" class="sortable-col${active ? ' sort-active' : ''}" data-sort-col="${col}">${label}<span class="sort-arrow">${arrow}</span></th>`;
+    }
+
     el.innerHTML = `
       <div class="obs-summary">
         <span class="obs-stat"><span class="health-dot health-green">●</span> ${online} Online</span>
@@ -156,10 +233,10 @@
       <div class="obs-table-scroll table-fluid-wrap"><table class="data-table obs-table" id="obsTable">
         <caption class="sr-only">Observer status and statistics</caption>
         <thead><tr>
-          <th scope="col" data-priority="1">Status</th><th scope="col" data-priority="1">Name</th><th scope="col" data-priority="3">Region</th><th scope="col" data-priority="2">Last Status</th><th scope="col" data-priority="2">Last Packet</th>
-          <th scope="col" data-priority="3">Packet Health</th><th scope="col" data-priority="4">Total Packets</th><th scope="col" data-priority="3">Packets/Hour</th><th scope="col" data-priority="4">Clock Offset</th><th scope="col" data-priority="4">Uptime</th>
+          ${sortTh('Status','status',1)}${sortTh('Name','name',1)}${sortTh('Region','region',3)}${sortTh('Last Status','last_seen',2)}${sortTh('Last Packet','last_packet',2)}
+          <th scope="col" data-priority="3">Packet Health</th>${sortTh('Total Packets','packets',4)}${sortTh('Packets/Hour','packets_hr',3)}<th scope="col" data-priority="4">Clock Offset</th>${sortTh('Uptime','uptime',4)}
         </tr></thead>
-        <tbody>${filtered.map(o => {
+        <tbody>${sorted.map(o => {
           const h = healthStatus(o.last_seen);
           const shape = h.cls === 'health-green' ? '●' : h.cls === 'health-yellow' ? '▲' : '✕';
           return `<tr style="cursor:pointer" tabindex="0" role="row" data-action="navigate" data-value="#/observers/${encodeURIComponent(o.id)}" onclick="location.hash='#/observers/${encodeURIComponent(o.id)}'">
