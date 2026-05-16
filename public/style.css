@@ -503,8 +503,10 @@ input[type="week"] {
      after cropping to the wordmark+nodes region in the navbar viewBox.
        /* Pinned to match the SVG intrinsic width (#1141 followup: viewBox
      widened to 150 10 970 280 to fit CORE/SCOPE wordmark; intrinsic
-     width 125 keeps the text legible at the same ~36px height). */
-  width: 125px;
+     width 125 keeps the text legible at the same ~36px height).
+     #corescope-evo: viewBox widened to 1210 + intrinsic width bumped
+     to 156 to fit the "-EVO" wordmark suffix. */
+  width: 156px;
   max-height: 36px;
   /* The logo is inlined into the DOM (PR #1137) so it inherits page
      CSS variables; theme via --logo-text / --logo-accent / etc. defined
