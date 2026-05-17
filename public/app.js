@@ -851,6 +851,7 @@ registerPage('tools-landing', {
         '<div class="tools-menu">' +
           '<a href="#/tools/path-inspector" class="tools-card"><h3>🔍 Path Inspector</h3><p>Resolve prefix paths to candidate full-pubkey routes with confidence scoring.</p></a>' +
           '<a href="#/tools/trace/" class="tools-card"><h3>📡 Trace Viewer</h3><p>View detailed packet traces by hash.</p></a>' +
+          '<a href="#/mc-keygen" class="tools-card"><h3>🔑 MC-Keygen</h3><p>Generate MeshCore key pairs in your browser — WASM/WebGPU accelerated, keys never leave your device.</p></a>' +
         '</div>' +
       '</div>';
   },
@@ -938,7 +939,7 @@ function navigate() {
 
   // Update nav active state
   document.querySelectorAll('.nav-link[data-route]').forEach(el => {
-    el.classList.toggle('active', el.dataset.route === basePage || (el.dataset.route === 'tools' && (basePage === 'traces' || basePage === 'path-inspector' || basePage === 'tools-landing')));
+    el.classList.toggle('active', el.dataset.route === basePage || (el.dataset.route === 'tools' && (basePage === 'traces' || basePage === 'path-inspector' || basePage === 'tools-landing' || basePage === 'mc-keygen')));
   });
   // Update "More" button to show active state if a low-priority page is selected
   var moreBtn = document.getElementById('navMoreBtn');
