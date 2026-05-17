@@ -414,3 +414,38 @@ func TestDistIndex_RemoveLastTxNoSwap(t *testing.T) {
 		t.Errorf("txA should keep 2 hops, got %d", got)
 	}
 }
+
+// TestQueryPackets_LimitOffsetClamp verifies an absurd limit is capped at
+// maxQueryLimit and a negative offset is clamped to 0 (rather than panicking
+// when the page is sliced). Covers both QueryPackets and QueryGroupedPackets.
+func TestQueryPackets_LimitOffsetClamp(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	seedTestData(t, db)
+
+	store := NewPacketStore(db, nil)
+	if err := store.Load(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Absurd limit must not produce a page larger than the cap.
+	huge := store.QueryPackets(PacketQuery{Limit: 10_000_000, Order: "DESC"})
+	if len(huge.Packets) > maxQueryLimit {
+		t.Errorf("QueryPackets: page %d exceeds cap %d", len(huge.Packets), maxQueryLimit)
+	}
+
+	// Negative offset must be treated as 0, not panic when slicing the page.
+	neg := store.QueryPackets(PacketQuery{Limit: 50, Offset: -5, Order: "DESC"})
+	base := store.QueryPackets(PacketQuery{Limit: 50, Offset: 0, Order: "DESC"})
+	if len(neg.Packets) != len(base.Packets) {
+		t.Errorf("negative offset not clamped: got %d packets, offset 0 gives %d",
+			len(neg.Packets), len(base.Packets))
+	}
+
+	// Same clamps on the grouped path.
+	gHuge := store.QueryGroupedPackets(PacketQuery{Limit: 10_000_000, Order: "DESC"})
+	if len(gHuge.Packets) > maxQueryLimit {
+		t.Errorf("QueryGroupedPackets: page %d exceeds cap %d", len(gHuge.Packets), maxQueryLimit)
+	}
+	store.QueryGroupedPackets(PacketQuery{Limit: 50, Offset: -5, Order: "DESC"}) // must not panic
+}
