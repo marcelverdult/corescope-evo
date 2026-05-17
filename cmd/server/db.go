@@ -27,6 +27,35 @@ type DB struct {
 	channelsCacheKey string
 	channelsCacheRes []map[string]interface{}
 	channelsCacheExp time.Time
+
+	// Prepared statements for the hottest repeated single-row lookups
+	// (review item #5). Prepared lazily on first use; nil means "fall back
+	// to conn.QueryRow". stmtMu guards (re)assignment.
+	stmtMu               sync.Mutex
+	resolvedPathByObsPrepared bool
+	resolvedPathByObsStmt     *sql.Stmt
+}
+
+// resolvedPathByObsStatement returns a cached prepared statement for the
+// single-row resolved_path-by-observation-id lookup, preparing it once on
+// first use. Returns nil when preparation fails (caller falls back to
+// conn.QueryRow), so a missing resolved_path column degrades gracefully.
+func (db *DB) resolvedPathByObsStatement() *sql.Stmt {
+	db.stmtMu.Lock()
+	defer db.stmtMu.Unlock()
+	if db.resolvedPathByObsPrepared {
+		return db.resolvedPathByObsStmt
+	}
+	db.resolvedPathByObsPrepared = true
+	if db.conn == nil {
+		return nil
+	}
+	stmt, err := db.conn.Prepare(`SELECT resolved_path FROM observations WHERE id = ?`)
+	if err != nil {
+		return nil
+	}
+	db.resolvedPathByObsStmt = stmt
+	return stmt
 }
 
 // OpenDB opens a read-only SQLite connection with WAL mode.
@@ -48,6 +77,13 @@ func OpenDB(path string) (*DB, error) {
 }
 
 func (db *DB) Close() error {
+	// Release prepared statements before closing the connection.
+	db.stmtMu.Lock()
+	if db.resolvedPathByObsStmt != nil {
+		db.resolvedPathByObsStmt.Close()
+		db.resolvedPathByObsStmt = nil
+	}
+	db.stmtMu.Unlock()
 	// Checkpoint WAL before closing to release lock cleanly for new processes
 	if _, err := db.conn.Exec("PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
 		log.Printf("[db] WAL checkpoint error: %v", err)
@@ -354,25 +390,57 @@ func (db *DB) GetDBSizeStatsTyped() SqliteStats {
 	return result
 }
 
+// roleCountRoles is the fixed set of roles surfaced by the role-count helpers.
+var roleCountRoles = []string{"repeater", "room", "companion", "sensor"}
+
 // GetRoleCounts returns count per role (7-day active, matching Node.js /api/stats).
+// Uses a single GROUP BY query instead of one COUNT(*) per role (review item #5).
 func (db *DB) GetRoleCounts() map[string]int {
 	sevenDaysAgo := time.Now().Add(-7 * 24 * time.Hour).Format(time.RFC3339)
 	counts := map[string]int{}
-	for _, role := range []string{"repeater", "room", "companion", "sensor"} {
+	for _, role := range roleCountRoles {
+		counts[role+"s"] = 0
+	}
+	rows, err := db.conn.Query(
+		"SELECT role, COUNT(*) FROM nodes WHERE last_seen > ? GROUP BY role", sevenDaysAgo)
+	if err != nil {
+		return counts
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var role string
 		var c int
-		db.conn.QueryRow("SELECT COUNT(*) FROM nodes WHERE role = ? AND last_seen > ?", role, sevenDaysAgo).Scan(&c)
-		counts[role+"s"] = c
+		if err := rows.Scan(&role, &c); err != nil {
+			continue
+		}
+		if _, ok := counts[role+"s"]; ok {
+			counts[role+"s"] = c
+		}
 	}
 	return counts
 }
 
 // GetAllRoleCounts returns count per role (all nodes, no time filter — matching Node.js /api/nodes).
+// Uses a single GROUP BY query instead of one COUNT(*) per role (review item #5).
 func (db *DB) GetAllRoleCounts() map[string]int {
 	counts := map[string]int{}
-	for _, role := range []string{"repeater", "room", "companion", "sensor"} {
+	for _, role := range roleCountRoles {
+		counts[role+"s"] = 0
+	}
+	rows, err := db.conn.Query("SELECT role, COUNT(*) FROM nodes GROUP BY role")
+	if err != nil {
+		return counts
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var role string
 		var c int
-		db.conn.QueryRow("SELECT COUNT(*) FROM nodes WHERE role = ?", role).Scan(&c)
-		counts[role+"s"] = c
+		if err := rows.Scan(&role, &c); err != nil {
+			continue
+		}
+		if _, ok := counts[role+"s"]; ok {
+			counts[role+"s"] = c
+		}
 	}
 	return counts
 }
@@ -392,6 +460,13 @@ type PacketQuery struct {
 	Channel  string // channel_hash filter (#812). Plain names like "#test"/"public" or "enc_<HEX>" for encrypted
 	Order               string // ASC or DESC
 	ExpandObservations  bool   // when true, include observation sub-maps in txToMap output
+
+	// regionObserversResolved, when non-nil, holds the observer-ID set for
+	// Region pre-resolved by the caller BEFORE acquiring s.mu. filterPackets
+	// uses it instead of calling resolveRegionObservers (which runs SQL on a
+	// cache miss) while a read lock is held. SQL path in db.go ignores it.
+	regionObserversResolved    map[string]bool
+	regionObserversResolvedSet bool
 }
 
 // PacketResult wraps paginated packet list.
