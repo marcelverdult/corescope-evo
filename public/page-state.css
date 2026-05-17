@@ -18,6 +18,14 @@
 
 .ps-error .ps-icon { color: var(--status-red); opacity: 0.9; }
 
+/* Compact modifier — tight-space contexts (narrow panes, small overlays). */
+.ps-compact {
+  gap: 8px;
+  padding: clamp(12px, 3vw, 24px) 16px;
+  min-height: 72px;
+}
+.ps-compact .ps-icon { font-size: 24px; }
+
 .ps-spinner {
   width: 28px; height: 28px;
   border: 3px solid var(--border);
