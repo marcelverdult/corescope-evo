@@ -61,6 +61,10 @@
           va = a.first_seen ? Date.now() - new Date(a.first_seen).getTime() : 0;
           vb = b.first_seen ? Date.now() - new Date(b.first_seen).getTime() : 0;
           break;
+        case 'sf':
+          va = a.radio ? parseInt(a.radio.split(',')[2]) || 0 : 0;
+          vb = b.radio ? parseInt(b.radio.split(',')[2]) || 0 : 0;
+          break;
         default:
           return 0;
       }
@@ -300,7 +304,7 @@
       <div class="obs-table-scroll table-fluid-wrap"><table class="data-table obs-table" id="obsTable">
         <caption class="sr-only">Observer status and statistics</caption>
         <thead><tr>
-          ${sortTh('Status','status',1)}${sortTh('Name','name',1)}${sortTh('Region','region',3)}${sortTh('Last Status','last_seen',2)}${sortTh('Last Packet','last_packet',2)}
+          ${sortTh('Status','status',1)}${sortTh('Name','name',1)}${sortTh('SF','sf',2)}${sortTh('Region','region',3)}${sortTh('Last Status','last_seen',2)}${sortTh('Last Packet','last_packet',2)}
           <th scope="col" data-priority="3">Packet Health</th>${sortTh('Total Packets','packets',4)}${sortTh('Packets/Hour','packets_hr',3)}<th scope="col" data-priority="4">Clock Offset</th>${sortTh('Uptime','uptime',4)}
         </tr></thead>
         <tbody>${sorted.map(o => {
@@ -309,6 +313,7 @@
           return `<tr style="cursor:pointer" tabindex="0" role="row" data-action="navigate" data-value="#/observers/${encodeURIComponent(o.id)}" onclick="location.hash='#/observers/${encodeURIComponent(o.id)}'">
             <td><span class="health-dot ${h.cls}" title="${h.label}">${shape}</span> ${h.label}</td>
             <td class="mono">${o.name || o.id}</td>
+            <td>${o.radio ? 'SF' + (o.radio.split(',')[2] || '?') : '<span class="text-muted">—</span>'}</td>
             <td>${o.iata ? `<span class="badge-region">${o.iata}</span>` : '—'}</td>
             <td>${timeAgo(o.last_seen)}</td>
             <td>${o.last_packet_at ? timeAgo(o.last_packet_at) : '<span class="text-muted">—</span>'}</td>
