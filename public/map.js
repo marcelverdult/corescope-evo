@@ -109,6 +109,7 @@
     container.innerHTML = `
       <div id="map-wrap" style="position:relative;width:100%;height:100%;display:flex;">
         <div id="leaflet-map" style="flex:1 1 0%;height:100%;"></div>
+        <div id="mapLoadError" style="display:none;position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:1000;"></div>
         <div class="map-side-pane" id="mapSidePane">
           <div class="pane-toggle" id="mapPaneToggle" title="Path Inspector">◀</div>
           <div class="pane-content">
@@ -560,6 +561,7 @@
   }
 
   async function loadNodes() {
+    var loadErrEl = document.getElementById('mapLoadError');
     try {
       // Load regions from config + observed IATAs
       try { REGION_NAMES = await api('/config/regions', { ttl: 3600 }); } catch {}
@@ -625,8 +627,17 @@
 
       // Don't fitBounds on initial load — respect the Bay Area default or saved view
       // Only fitBounds on subsequent data refreshes if user hasn't manually panned
+
+      // Clear any error overlay from a previous failed load.
+      if (loadErrEl) { loadErrEl.style.display = 'none'; loadErrEl.innerHTML = ''; }
     } catch (e) {
       console.error('Map load error:', e);
+      // Surface a visible, retryable error — loadNodes() re-fetches and re-renders
+      // without re-running init() (which would re-create the Leaflet map).
+      if (loadErrEl) {
+        loadErrEl.style.display = '';
+        PageState.error(loadErrEl, e, loadNodes);
+      }
     } finally {
       // Always signal data-loaded — even on error — so E2E tests can proceed.
       // Otherwise an api() failure leaves the test waiting forever.
@@ -1131,9 +1142,9 @@
     var prefixes = raw.trim().split(/[\s,]+/).filter(function (s) { return s.length > 0; }).map(function (s) { return s.toLowerCase(); });
     var err = (window.PathInspector && window.PathInspector.validatePrefixes) ? window.PathInspector.validatePrefixes(prefixes) : null;
     if (!err && prefixes.length === 0) err = 'Enter at least one prefix.';
-    if (err) { errDiv.textContent = err; return; }
+    if (err) { errDiv.innerHTML = PageState.errorText(err); return; }
 
-    resultsDiv.innerHTML = '<p style="font-size:12px;">Loading...</p>';
+    resultsDiv.innerHTML = PageState.loading('Loading paths…');
     fetch('/api/paths/inspect', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1145,12 +1156,12 @@
         return r.json();
       })
       .then(function (data) { renderMapPiResults(data, resultsDiv); })
-      .catch(function (e) { resultsDiv.innerHTML = ''; errDiv.textContent = e.message; });
+      .catch(function (e) { resultsDiv.innerHTML = ''; errDiv.innerHTML = PageState.errorText(e.message); });
   }
 
   function renderMapPiResults(data, div) {
     if (!data.candidates || data.candidates.length === 0) {
-      div.innerHTML = '<p style="font-size:12px;color:var(--text-muted);">No candidates found.</p>';
+      div.innerHTML = PageState.empty({ title: 'No candidates found' });
       return;
     }
     var html = '<table class="path-inspector-table" style="font-size:11px;width:100%;"><thead><tr><th>#</th><th>Score</th><th>Path</th><th></th></tr></thead><tbody>';
