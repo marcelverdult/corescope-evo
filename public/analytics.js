@@ -128,7 +128,7 @@
           </div>
         </div>
         <div id="analyticsContent" class="analytics-content" aria-live="polite">
-          <div class="text-center text-muted" style="padding:40px">Loading analytics…</div>
+          ${PageState.loading('Loading analytics…')}
         </div>
       </div>`;
 
@@ -242,8 +242,7 @@
       _analyticsData = { hashData, rfData, topoData, chanData, collisionData };
       renderTab(_currentTab);
     } catch (e) {
-      document.getElementById('analyticsContent').innerHTML =
-        `<div class="text-muted" role="alert" aria-live="polite" style="padding:40px">Failed to load: ${e.message}</div>`;
+      PageState.error(document.getElementById('analyticsContent'), e, loadAnalytics);
     }
   }
 
@@ -1359,7 +1358,7 @@
       <div class="analytics-card" id="inconsistentHashSection">
         <div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0">⚠️ Inconsistent Hash Sizes</h3><a href="#/analytics?tab=collisions" style="font-size:11px;color:var(--text-muted)">↑ top</a></div>
         <p class="text-muted" style="margin:4px 0 8px;font-size:0.8em">Repeaters and room servers sending adverts with varying hash sizes in the last 7 days. Originally caused by a <a href="https://github.com/meshcore-dev/MeshCore/commit/fcfdc5f" target="_blank" style="color:var(--accent)">firmware bug</a> where automatic adverts ignored the configured multibyte path setting, fixed in <a href="https://github.com/meshcore-dev/MeshCore/releases/tag/repeater-v1.14.1" target="_blank" style="color:var(--accent)">repeater v1.14.1</a>. Companion nodes are excluded.</p>
-        <div id="inconsistentHashList"><div class="text-muted" style="padding:8px"><span class="spinner"></span> Loading…</div></div>
+        <div id="inconsistentHashList">${PageState.loading('Loading hash size data…')}</div>
       </div>
 
       <div class="analytics-card" id="hashMatrixSection">
@@ -1380,7 +1379,7 @@
 
       <div class="analytics-card" id="collisionRiskSection">
         <div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0" id="collisionRiskTitle">💥 Collision Risk</h3><a href="#/analytics?tab=collisions" style="font-size:11px;color:var(--text-muted)">↑ top</a></div>
-        <div id="collisionList"><div class="text-muted" style="padding:8px">Loading…</div></div>
+        <div id="collisionList">${PageState.loading('Loading collision risk…')}</div>
       </div>
     `;
     // Use pre-computed collision data from server (no more /nodes?limit=2000 fetch)
@@ -1601,7 +1600,7 @@
 
   function renderHashMatrixFromServer(sizeData, bytes) {
     const el = document.getElementById('hashMatrix');
-    if (!sizeData) { el.innerHTML = '<div class="text-muted">No data</div>'; return; }
+    if (!sizeData) { el.innerHTML = PageState.empty({ title: 'No data' }); return; }
     const stats = sizeData.stats || {};
     const totalNodes = stats.total_nodes || 0;
 
@@ -1722,7 +1721,7 @@
 
   function renderCollisionsFromServer(sizeData, bytes) {
     const el = document.getElementById('collisionList');
-    if (!sizeData) { el.innerHTML = '<div class="text-muted">No data</div>'; return; }
+    if (!sizeData) { el.innerHTML = PageState.empty({ title: 'No data' }); return; }
     const collisions = sizeData.collisions || [];
 
     if (!collisions.length) {
@@ -1782,14 +1781,14 @@
     </div>`;
   }
     async function renderSubpaths(el) {
-    el.innerHTML = '<div class="text-center text-muted" style="padding:40px">Analyzing route patterns…</div>';
+    el.innerHTML = PageState.loading('Analyzing route patterns…');
     try {
       const rq = RegionFilter.regionQueryString();
       const bulk = await api('/analytics/subpaths-bulk?groups=2-2:50,3-3:30,4-4:20,5-8:15' + rq, { ttl: CLIENT_TTL.analyticsRF });
       const [d2, d3, d4, d5] = bulk.results;
 
       function renderTable(data, title) {
-        if (!data.subpaths.length) return `<h4>${title}</h4><div class="text-muted">No data</div>`;
+        if (!data.subpaths.length) return `<h4>${title}</h4>${PageState.empty({ title: 'No data' })}`;
         const maxCount = data.subpaths[0]?.count || 1;
         return `<h4>${title}</h4>
           <p class="text-muted" style="margin:4px 0 8px">From ${data.totalPaths.toLocaleString()} paths with 2+ hops</p>
@@ -1835,7 +1834,7 @@
             <div id="sp-long">${renderTable(d5, 'Long chains (5+ hops)')}</div>
           </div>
           <div class="subpath-detail collapsed" id="subpathDetail">
-            <div class="text-muted" style="padding:40px;text-align:center">Select a route to view details</div>
+            ${PageState.empty({ title: 'Select a route to view details' })}
           </div>
         </div>`;
 
@@ -1867,19 +1866,19 @@
       toggle.addEventListener('change', applyCollisionFilter);
       applyCollisionFilter();
     } catch (e) {
-      el.innerHTML = `<div class="text-muted">Error loading subpath data: ${e.message}</div>`;
+      PageState.error(el, e, function () { renderSubpaths(el); });
     }
   }
 
   async function loadSubpathDetail(hopsStr) {
     const panel = document.getElementById('subpathDetail');
     panel.classList.remove('collapsed');
-    panel.innerHTML = '<div class="text-center text-muted" style="padding:40px">Loading…</div>';
+    panel.innerHTML = PageState.loading('Loading…');
     try {
       const data = await api('/analytics/subpath-detail?hops=' + encodeURIComponent(hopsStr), { ttl: CLIENT_TTL.analyticsRF });
       renderSubpathDetail(panel, data);
     } catch (e) {
-      panel.innerHTML = `<div class="text-muted">Error: ${e.message}</div>`;
+      PageState.error(panel, e, function () { loadSubpathDetail(hopsStr); });
     }
   }
 
@@ -1982,7 +1981,7 @@
   }
 
   async function renderNodesTab(el) {
-    el.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-muted)">Loading node analytics…</div>';
+    el.innerHTML = PageState.loading('Loading node analytics…');
     try {
       const rq = RegionFilter.regionQueryString();
       const [nodesResp, bulkHealth] = await Promise.all([
@@ -2138,7 +2137,7 @@
           </table>
         </div>`;
     } catch (e) {
-      el.innerHTML = `<div style="padding:40px;text-align:center;color:#ff6b6b">Failed to load node analytics: ${esc(e.message)}</div>`;
+      PageState.error(el, e, function () { renderNodesTab(el); });
     }
   }
 
@@ -2228,7 +2227,7 @@
         });
       });
     } catch (e) {
-      el.innerHTML = `<div style="padding:40px;text-align:center;color:#ff6b6b">Failed to load distance analytics: ${esc(e.message)}</div>`;
+      PageState.error(el, e, function () { renderDistanceTab(el); });
     }
   }
 
@@ -2303,7 +2302,7 @@ function destroy() { _stopRolesRefresh(); _analyticsData = {}; _channelData = nu
     try {
       graphData = await api('/analytics/neighbor-graph' + sep + (sep ? '&' : '?') + 'min_count=1&min_score=0', { ttl: CLIENT_TTL.analyticsRF });
     } catch (e) {
-      el.innerHTML = `<div class="analytics-card"><p class="text-muted">Failed to load neighbor graph: ${esc(e.message)}</p></div>`;
+      PageState.error(el, e, function () { renderNeighborGraphTab(el); });
       return;
     }
 
@@ -2416,7 +2415,7 @@ function destroy() { _stopRolesRefresh(); _analyticsData = {}; _channelData = nu
     if (!listEl) return;
     var nodes = st.nodes, edges = st.edges;
     if (nodes.length === 0) {
-      listEl.innerHTML = '<p class="text-muted">No nodes to display.</p>';
+      listEl.innerHTML = PageState.empty({ title: 'No nodes to display' });
       return;
     }
     // Build adjacency for text list
@@ -2715,7 +2714,7 @@ function destroy() { _stopRolesRefresh(); _analyticsData = {}; _channelData = nu
 
   // --- Prefix Tool ---
   async function renderPrefixTool(el) {
-    el.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-muted)">Loading prefix data…</div>';
+    el.innerHTML = PageState.loading('Loading prefix data…');
 
     const rq = RegionFilter.regionQueryString();
     const regionLabel = rq ? (new URLSearchParams(rq.slice(1)).get('region') || '') : '';
@@ -2724,7 +2723,7 @@ function destroy() { _stopRolesRefresh(); _analyticsData = {}; _channelData = nu
     try {
       nodesResp = await api('/nodes?limit=10000&sortBy=lastSeen' + rq, { ttl: CLIENT_TTL.nodeList });
     } catch (e) {
-      el.innerHTML = `<div class="text-muted" role="alert" style="padding:40px">Failed to load: ${esc(e.message)}</div>`;
+      PageState.error(el, e, function () { renderPrefixTool(el); });
       return;
     }
 
@@ -2741,7 +2740,7 @@ function destroy() { _stopRolesRefresh(); _analyticsData = {}; _channelData = nu
     const nodes = allNodes.filter(n => n.role === 'repeater');
 
     if (nodes.length === 0) {
-      el.innerHTML = `<div class="analytics-card"><p class="text-muted">No repeaters in the network yet. Any prefix is available!</p></div>`;
+      el.innerHTML = PageState.empty({ title: 'No repeaters in the network yet', hint: 'Any prefix is available!' });
       return;
     }
 
@@ -3069,7 +3068,7 @@ function destroy() { _stopRolesRefresh(); _analyticsData = {}; _channelData = nu
         </div>
         <div class="rf-health-split">
           <div id="rfHealthGrid" class="rf-health-grid">
-            <div class="text-muted" style="padding:20px">Loading RF metrics…</div>
+            ${PageState.loading('Loading RF metrics…')}
           </div>
           <div id="rfHealthDetail" class="rf-health-detail rf-panel-empty">
             <span>Select an observer to view details</span>
@@ -3124,7 +3123,7 @@ function destroy() { _stopRolesRefresh(); _analyticsData = {}; _channelData = nu
       });
 
       if (!filteredObservers.length) {
-        grid.innerHTML = '<div class="text-muted" style="padding:20px">No RF metrics data available yet. Metrics are collected from observer status messages every ~5 minutes.</div>';
+        grid.innerHTML = PageState.empty({ title: 'No RF metrics data available yet', hint: 'Metrics are collected from observer status messages every ~5 minutes.' });
         return;
       }
 
@@ -3192,7 +3191,7 @@ function destroy() { _stopRolesRefresh(); _analyticsData = {}; _channelData = nu
         }
       }
     } catch (e) {
-      grid.innerHTML = `<div class="text-muted" style="padding:20px">Failed to load RF health data: ${esc(e.message)}</div>`;
+      PageState.error(grid, e, function () { loadRFHealthData(el); });
     }
   }
 
@@ -3238,7 +3237,7 @@ function destroy() { _stopRolesRefresh(); _analyticsData = {}; _channelData = nu
 
   async function loadRFHealthDetail(observerId, container) {
     container.classList.remove('rf-panel-empty');
-    container.innerHTML = '<div class="text-muted" style="padding:10px">Loading detail…</div>';
+    container.innerHTML = PageState.loading('Loading detail…');
 
     const { since, until } = rfHealthTimeRangeToParams(_rfHealthState.range, _rfHealthState.customFrom, _rfHealthState.customTo);
     // Choose resolution based on time range
@@ -3253,7 +3252,7 @@ function destroy() { _stopRolesRefresh(); _analyticsData = {}; _channelData = nu
       const name = data.observer_name || observerId.substring(0, 8);
 
       if (!metrics.length) {
-        container.innerHTML = `<div class="text-muted" style="padding:10px">No metrics data for ${esc(name)} in selected time range.</div>`;
+        container.innerHTML = PageState.empty({ title: 'No metrics data for ' + name + ' in selected time range' });
         return;
       }
 
@@ -3341,7 +3340,7 @@ function destroy() { _stopRolesRefresh(); _analyticsData = {}; _channelData = nu
         }
       }
     } catch (e) {
-      container.innerHTML = `<div class="text-muted" style="padding:10px">Failed to load detail: ${esc(e.message)}</div>`;
+      PageState.error(container, e, function () { loadRFHealthDetail(observerId, container); });
     }
   }
 
@@ -3670,11 +3669,11 @@ function destroy() { _stopRolesRefresh(); _analyticsData = {}; _channelData = nu
 
   // #690 — Clock Health fleet view (M3)
   async function renderClockHealthTab(el) {
-    el.innerHTML = '<div class="text-center text-muted" style="padding:40px">Loading clock health data…</div>';
+    el.innerHTML = PageState.loading('Loading clock health data…');
     try {
       var data = await (await fetch('/api/nodes/clock-skew')).json();
       if (!Array.isArray(data) || !data.length) {
-        el.innerHTML = '<div class="text-center text-muted" style="padding:40px">No clock skew data available. Nodes need recent adverts for clock analysis.</div>';
+        el.innerHTML = PageState.empty({ title: 'No clock skew data available', hint: 'Nodes need recent adverts for clock analysis.' });
         return;
       }
 
@@ -3771,7 +3770,7 @@ function destroy() { _stopRolesRefresh(); _analyticsData = {}; _channelData = nu
 
       render();
     } catch (err) {
-      el.innerHTML = '<div class="text-center" style="color:var(--status-red);padding:40px">Failed to load clock health data: ' + esc(String(err)) + '</div>';
+      PageState.error(el, err, function () { renderClockHealthTab(el); });
     }
   }
 
@@ -3780,7 +3779,7 @@ function destroy() { _stopRolesRefresh(); _analyticsData = {}; _channelData = nu
   // Auto-refreshes every 60s while the Roles tab is active (matches the
   // behavior of the former standalone roles-page.js).
   async function renderRolesTab(el) {
-    el.innerHTML = '<div class="text-center text-muted" style="padding:40px">Loading roles…</div>';
+    el.innerHTML = PageState.loading('Loading roles…');
     await _renderRolesTabBody(el);
     // (Re)start the 60s auto-refresh.
     _stopRolesRefresh();
@@ -3799,7 +3798,7 @@ function destroy() { _stopRolesRefresh(); _analyticsData = {}; _channelData = nu
       var roles = (data && data.roles) || [];
       var total = (data && data.totalNodes) || 0;
       if (!roles.length) {
-        el.innerHTML = '<div class="text-center text-muted" style="padding:40px">No roles to show.</div>';
+        el.innerHTML = PageState.empty({ title: 'No roles to show' });
         return;
       }
       var maxCount = roles.reduce(function (m, r) { return Math.max(m, r.nodeCount || 0); }, 0) || 1;
@@ -3847,7 +3846,7 @@ function destroy() { _stopRolesRefresh(); _analyticsData = {}; _channelData = nu
           '<tbody>' + rows + '</tbody>' +
         '</table>';
     } catch (err) {
-      el.innerHTML = '<div class="text-center" style="color:var(--status-red);padding:40px">Failed to load roles: ' + esc(String(err.message || err)) + '</div>';
+      PageState.error(el, err, function () { _renderRolesTabBody(el); });
     }
   }
 
