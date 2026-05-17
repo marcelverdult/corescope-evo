@@ -1821,7 +1821,7 @@
     if (__selCh && __selCh.unread) { __selCh.unread = 0; }
     history.replaceState(null, '', `#/channels/${encodeURIComponent(hash)}`);
     // On narrow layouts switch to message view (sidebar hides, main fills screen).
-    var __layout = app.querySelector('.ch-layout');
+    var __layout = document.querySelector('.ch-layout');
     if (__layout && __layout.getBoundingClientRect().width <= 700) {
       __layout.classList.add('ch-viewing');
     }
@@ -1915,7 +1915,9 @@
         var kh = storedKeys[kn];
         var kb = ChannelDecrypt.hexToBytes(kh);
         var hb = await ChannelDecrypt.computeChannelHash(kb);
-        if (String(hb) === String(hash) || String(ch.hash) === String(hb)) {
+        // #815: `#`-named channels are keyed by name, not by hash byte —
+        // match the stored-key name directly against the channel hash/name.
+        if (kn === hash || kn === ch.name || String(hb) === String(hash) || String(ch.hash) === String(hb)) {
           await decryptAndRender(kh, hb, kn);
           return;
         }
