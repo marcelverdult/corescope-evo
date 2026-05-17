@@ -10,20 +10,27 @@
     });
   }
 
+  // Append ' ps-compact' to a base class when opts.compact is truthy.
+  function compactCls(base, opts) {
+    return base + (opts && opts.compact ? ' ps-compact' : '');
+  }
+
   // Loading: spinner + message. Returns an HTML string.
-  function loading(message) {
-    return '<div class="ps" role="status" aria-live="polite">' +
+  // opts (optional): { compact } — compact:true renders a tight-space variant.
+  function loading(message, opts) {
+    return '<div class="' + compactCls('ps', opts) + '" role="status" aria-live="polite">' +
       '<div class="ps-spinner" aria-hidden="true"></div>' +
       '<div class="ps-title">' + esc(message || 'Loading…') + '</div>' +
       '</div>';
   }
 
   // Empty: icon + title + optional hint. Returns an HTML string.
+  // opts.compact:true renders a tight-space variant.
   function empty(opts) {
     opts = opts || {};
     var icon = opts.icon ? '<div class="ps-icon" aria-hidden="true">' + esc(opts.icon) + '</div>' : '';
     var hint = opts.hint ? '<div class="ps-hint">' + esc(opts.hint) + '</div>' : '';
-    return '<div class="ps" role="status" aria-live="polite">' +
+    return '<div class="' + compactCls('ps', opts) + '" role="status" aria-live="polite">' +
       icon +
       '<div class="ps-title">' + esc(opts.title || 'Nothing here yet') + '</div>' +
       hint +
@@ -56,8 +63,9 @@
   }
 
   // Static error string (no retry) — for table cells and embedded fragments.
-  function errorText(message) {
-    return '<div class="ps ps-error" role="alert">' +
+  // opts.compact:true renders a tight-space variant.
+  function errorText(message, opts) {
+    return '<div class="' + compactCls('ps ps-error', opts) + '" role="alert">' +
       '<div class="ps-icon" aria-hidden="true">⚠</div>' +
       '<div class="ps-title">' + esc(message || 'Something went wrong') + '</div>' +
       '</div>';
@@ -71,12 +79,13 @@
 
   // Render an error state into a container element. If onRetry is a function,
   // a Retry button is rendered and wired to it.
-  function error(container, err, onRetry) {
+  // opts.compact:true renders a tight-space variant.
+  function error(container, err, onRetry, opts) {
     if (!container) return;
     var message = (err && err.message) ? err.message
       : (typeof err === 'string' ? err : 'Something went wrong');
     var hasRetry = typeof onRetry === 'function';
-    container.innerHTML = '<div class="ps ps-error" role="alert">' +
+    container.innerHTML = '<div class="' + compactCls('ps ps-error', opts) + '" role="alert">' +
       '<div class="ps-icon" aria-hidden="true">⚠</div>' +
       '<div class="ps-title">' + esc(message) + '</div>' +
       (hasRetry ? '<button type="button" class="ps-retry">Retry</button>' : '') +

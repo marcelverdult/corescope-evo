@@ -98,5 +98,27 @@ test('error() renders a retry button and wires the handler', () => {
   assert.strictEqual(clicked, 1);
 });
 
+test('compact:true adds ps-compact to builders; omitting it does not', () => {
+  assert.ok(PS.loading('x', { compact: true }).includes('ps-compact'));
+  assert.ok(!PS.loading('x').includes('ps-compact'));
+  assert.ok(PS.empty({ title: 'x', compact: true }).includes('ps-compact'));
+  assert.ok(!PS.empty({ title: 'x' }).includes('ps-compact'));
+  assert.ok(PS.errorText('x', { compact: true }).includes('ps-compact'));
+  assert.ok(!PS.errorText('x').includes('ps-compact'));
+});
+
+test('error() with compact:true renders ps-compact on the .ps div', () => {
+  let html = '';
+  const container = {
+    set innerHTML(v) { html = v; },
+    get innerHTML() { return html; },
+    querySelector() { return null; }
+  };
+  PS.error(container, new Error('boom'), null, { compact: true });
+  assert.ok(html.includes('class="ps ps-error ps-compact"'));
+  PS.error(container, new Error('boom'));
+  assert.ok(!html.includes('ps-compact'));
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);
