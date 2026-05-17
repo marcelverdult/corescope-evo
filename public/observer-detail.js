@@ -1,12 +1,15 @@
 /* === CoreScope — observer-detail.js === */
 'use strict';
 (function () {
-  const PAYLOAD_LABELS = { 0: 'Request', 1: 'Response', 2: 'Direct Msg', 3: 'ACK', 4: 'Advert', 5: 'Channel Msg', 7: 'Anon Req', 8: 'Path', 9: 'Trace', 11: 'Control' };
-  const CHART_COLORS = ['#4a9eff', '#ff6b6b', '#51cf66', '#fcc419', '#cc5de8', '#20c997', '#ff922b', '#845ef7', '#f06595', '#339af0'];
+  // PAYLOAD_LABELS / CHART_COLORS are shared — see chart-constants.js (loaded first).
+  const PAYLOAD_LABELS = window.PAYLOAD_LABELS;
+  const CHART_COLORS = window.CHART_COLORS;
 
   let charts = [];
   let currentDays = 7;
   let currentId = null;
+  let boundApp = null;
+  let appKeydownHandler = null;
 
   function destroyCharts() {
     charts.forEach(c => { try { c.destroy(); } catch {} });
@@ -58,11 +61,28 @@
       loadDetail();
     });
 
+    // #209 — Keyboard accessibility for recent packet rows. Bound ONCE here
+    // via delegation on the persistent #app element; previously renderRecentPackets()
+    // re-added a listener to #obsRecentPackets on every loadDetail() (leak fix).
+    if (boundApp && appKeydownHandler) boundApp.removeEventListener('keydown', appKeydownHandler);
+    appKeydownHandler = function (e) {
+      var row = e.target.closest('tr[data-action="navigate"]');
+      if (!row) return;
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      e.preventDefault();
+      location.hash = row.dataset.value;
+    };
+    boundApp = app;
+    app.addEventListener('keydown', appKeydownHandler);
+
     loadDetail();
   }
 
   function destroy() {
     destroyCharts();
+    if (boundApp && appKeydownHandler) boundApp.removeEventListener('keydown', appKeydownHandler);
+    boundApp = null;
+    appKeydownHandler = null;
     currentId = null;
   }
 
@@ -340,15 +360,8 @@
         </tr>`;
       }).join('')}</tbody>
     </table>`;
-
-    // #209 — Keyboard accessibility for recent packet rows
-    el.addEventListener('keydown', function (e) {
-      var row = e.target.closest('tr[data-action="navigate"]');
-      if (!row) return;
-      if (e.key !== 'Enter' && e.key !== ' ') return;
-      e.preventDefault();
-      location.hash = row.dataset.value;
-    });
+    // Keyboard accessibility is handled by the delegated #app keydown listener
+    // bound once in init() — no per-render listener here (leak fix).
   }
 
   registerPage('observer-detail', { init, destroy });

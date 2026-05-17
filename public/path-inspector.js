@@ -192,8 +192,11 @@
     }
   }
 
+  // Delegates to canonical window.escapeAttr (packet-helpers.js); inline
+  // fallback covers isolated unit-test sandboxes that load this file alone.
   function escapeAttr(s) {
-    return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+    if (typeof window !== 'undefined' && window.escapeAttr) return window.escapeAttr(s);
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
   }
 
   // Delegates to canonical window.escapeHtml (packet-helpers.js); inline

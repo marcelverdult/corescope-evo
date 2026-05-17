@@ -200,10 +200,27 @@
   /** Initialize filter in a container, fetch regions, render, return promise.
    *  Options: { dropdown: true } to force dropdown mode regardless of region count */
   async function initFilter(container, opts) {
+    // Clean up a prior container's outside-click listener. If the previous
+    // page was swapped out via innerHTML without render() re-running, the
+    // document-level listener it installed would otherwise leak.
+    if (_container && _container !== container && _container._regionCleanup) {
+      _container._regionCleanup();
+      _container._regionCleanup = null;
+    }
     _container = container;
     if (opts && opts.dropdown) container._forceDropdown = true;
     await fetchRegions();
     render(container);
+  }
+
+  /** Tear down the active filter — removes the dropdown outside-click listener.
+   *  Call from a page's destroy() when the filter container is being discarded. */
+  function teardown() {
+    if (_container && _container._regionCleanup) {
+      _container._regionCleanup();
+      _container._regionCleanup = null;
+    }
+    _container = null;
   }
 
   /** Override selected regions (e.g. from URL param). Persists to localStorage and re-renders. */
@@ -223,6 +240,7 @@
     onChange: onChange,
     offChange: offChange,
     fetchRegions: fetchRegions,
-    setSelected: setSelected
+    setSelected: setSelected,
+    teardown: teardown
   };
 })();

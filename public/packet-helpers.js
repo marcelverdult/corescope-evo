@@ -24,6 +24,20 @@ window.escapeHtml = function escapeHtml(s) {
     .replace(/'/g, '&#39;');
 };
 
+/**
+ * Canonical attribute-escape helper. Escapes the characters that can break
+ * out of a double-quoted HTML attribute value. Page modules delegate to this
+ * instead of re-implementing it (issue #387).
+ */
+window.escapeAttr = function escapeAttr(s) {
+  if (s == null) return '';
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+};
+
 window.getParsedPath = function getParsedPath(p) {
   if (p._parsedPath !== undefined) return p._parsedPath || [];
   var raw = p.path_json;

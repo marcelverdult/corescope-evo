@@ -77,7 +77,8 @@ if (typeof window !== 'undefined') {
 }
 
 (function () {
-  var PAYLOAD_LABELS = { 0: 'Request', 1: 'Response', 2: 'Direct Msg', 3: 'ACK', 4: 'Advert', 5: 'Channel Msg', 7: 'Anon Req', 8: 'Path', 9: 'Trace', 11: 'Control' };
+  // PAYLOAD_LABELS is shared — see chart-constants.js (loaded first).
+  var PAYLOAD_LABELS = window.PAYLOAD_LABELS;
   var MAX_PACKETS = 10000;
   var observers = [];
   var selA = null;
@@ -87,6 +88,9 @@ if (typeof window !== 'undefined') {
   var packetsB = [];
   var currentView = 'summary';
   var routeFilter = 'all';
+  var boundApp = null;
+  var appKeydownHandler = null;
+  var appClickHandler = null;
 
   function init(app, routeParam) {
     // Parse preselected observers from URL: #/compare?a=ID1&b=ID2
@@ -109,19 +113,55 @@ if (typeof window !== 'undefined') {
       '<div id="compareContent"></div>' +
     '</div>';
 
+    // Dedupe guard: tear down any stale listeners from a prior init() that
+    // didn't get a matching destroy() (leak fix).
+    if (boundApp && appKeydownHandler) boundApp.removeEventListener('keydown', appKeydownHandler);
+    if (boundApp && appClickHandler) boundApp.removeEventListener('click', appClickHandler);
+
     // #209 — Keyboard accessibility for compare table rows
-    app.addEventListener('keydown', function (e) {
+    appKeydownHandler = function (e) {
       var row = e.target.closest('tr[data-action="navigate"]');
       if (!row) return;
       if (e.key !== 'Enter' && e.key !== ' ') return;
       e.preventDefault();
       location.hash = row.dataset.value;
-    });
+    };
+    // Single delegated click listener for compare tab / summary-card switching.
+    // Bound ONCE here; previously renderComparison() added a fresh handler to
+    // the persistent #compareContent on every comparison run (leak fix).
+    appClickHandler = function (e) {
+      var content = document.getElementById('compareContent');
+      if (!content || !comparisonResult) return;
+      var btn = e.target.closest('[data-cview]');
+      if (btn && content.contains(btn)) {
+        currentView = btn.dataset.cview;
+        content.querySelectorAll('.tab-btn').forEach(function (b) { b.classList.remove('active'); });
+        btn.classList.add('active');
+        renderDetail();
+        return;
+      }
+      var card = e.target.closest('[data-view]');
+      if (card && content.contains(card)) {
+        currentView = card.dataset.view;
+        content.querySelectorAll('.tab-btn').forEach(function (b) {
+          b.classList.toggle('active', b.dataset.cview === currentView);
+        });
+        renderDetail();
+      }
+    };
+    boundApp = app;
+    app.addEventListener('keydown', appKeydownHandler);
+    app.addEventListener('click', appClickHandler);
 
     loadObservers();
   }
 
   function destroy() {
+    if (boundApp && appKeydownHandler) boundApp.removeEventListener('keydown', appKeydownHandler);
+    if (boundApp && appClickHandler) boundApp.removeEventListener('click', appClickHandler);
+    boundApp = null;
+    appKeydownHandler = null;
+    appClickHandler = null;
     observers = [];
     selA = null;
     selB = null;
@@ -335,26 +375,8 @@ if (typeof window !== 'undefined') {
         '<div id="compareDetail"></div>' +
       '</div>';
 
-    // Bind tab clicks
-    content.addEventListener('click', function handler(e) {
-      var btn = e.target.closest('[data-cview]');
-      if (btn) {
-        currentView = btn.dataset.cview;
-        content.querySelectorAll('.tab-btn').forEach(function (b) { b.classList.remove('active'); });
-        btn.classList.add('active');
-        renderDetail();
-        return;
-      }
-      // Clickable summary cards
-      var card = e.target.closest('[data-view]');
-      if (card) {
-        currentView = card.dataset.view;
-        content.querySelectorAll('.tab-btn').forEach(function (b) {
-          b.classList.toggle('active', b.dataset.cview === currentView);
-        });
-        renderDetail();
-      }
-    });
+    // Tab / summary-card clicks are handled by the single delegated #app
+    // click listener bound once in init() — no per-render listener here (leak fix).
 
     renderDetail();
   }

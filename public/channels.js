@@ -14,13 +14,30 @@
   let observerSfByName = {};
   let messageRequestId = 0;
   let _serverChannelKeys = null;
+  let _serverChannelKeysAt = 0;
+  var _serverKeysCacheTTL = 5 * 60 * 1000; // 5 minutes (mirrors _nodeCacheTTL)
 
   function getServerChannelKeys() {
-    if (_serverChannelKeys !== null) return Promise.resolve(_serverChannelKeys);
+    // Only serve a cached value if it was a real, fresh success. A transient
+    // fetch error / non-OK response used to be cached as {} forever, which
+    // permanently hid server-known PSKs until a full page reload.
+    if (_serverChannelKeys !== null && (Date.now() - _serverChannelKeysAt < _serverKeysCacheTTL)) {
+      return Promise.resolve(_serverChannelKeys);
+    }
     return fetch('/api/config/channel-keys')
-      .then(function (r) { return r.ok ? r.json() : {}; })
-      .then(function (keys) { _serverChannelKeys = keys || {}; return _serverChannelKeys; })
-      .catch(function () { _serverChannelKeys = {}; return {}; });
+      .then(function (r) {
+        if (!r.ok) throw new Error('channel-keys fetch failed: ' + r.status);
+        return r.json();
+      })
+      .then(function (keys) {
+        _serverChannelKeys = keys || {};
+        _serverChannelKeysAt = Date.now();
+        return _serverChannelKeys;
+      })
+      .catch(function () {
+        // Do NOT cache the failure — leave _serverChannelKeys so a later call retries.
+        return _serverChannelKeys || {};
+      });
   }
   var _nodeCacheTTL = 5 * 60 * 1000; // 5 minutes
 
@@ -1153,7 +1170,8 @@
       if (action === 'ch-close-node') closeNodeDetail();
     });
 
-    document.getElementById('chBackBtn').addEventListener('click', function () {
+    var chBackBtn = document.getElementById('chBackBtn');
+    if (chBackBtn) chBackBtn.addEventListener('click', function () {
       var layout = app.querySelector('.ch-layout');
       if (layout) layout.classList.remove('ch-viewing');
       selectedHash = null;

@@ -1,14 +1,19 @@
 /* === CoreScope — node-analytics.js === */
 'use strict';
 (function () {
-  const PAYLOAD_LABELS = { 0: 'Request', 1: 'Response', 2: 'Direct Msg', 3: 'ACK', 4: 'Advert', 5: 'Channel Msg', 7: 'Anon Req', 8: 'Path', 9: 'Trace', 11: 'Control' };
-  const CHART_COLORS = ['#4a9eff', '#ff6b6b', '#51cf66', '#fcc419', '#cc5de8', '#20c997', '#ff922b', '#845ef7', '#f06595', '#339af0'];
+  // PAYLOAD_LABELS / CHART_COLORS are shared — see chart-constants.js (loaded first).
+  const PAYLOAD_LABELS = window.PAYLOAD_LABELS;
+  const CHART_COLORS = window.CHART_COLORS;
   const GRADE_COLORS = { A: '#51cf66', 'A-': '#51cf66', 'B+': '#339af0', B: '#339af0', C: '#fcc419', D: '#ff6b6b' };
   const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   let charts = [];
   let currentDays = 7;
   let currentPubkey = null;
+  // Monotonic token: incremented on every loadAnalytics() so a slow async
+  // sub-load (e.g. loadBatteryChart) can detect it resolved after a newer
+  // load started and skip pushing a stale chart against the new DOM.
+  let loadJobToken = 0;
 
   function destroyCharts() {
     charts.forEach(c => { try { c.destroy(); } catch {} });
@@ -33,6 +38,7 @@
   async function loadAnalytics(container, pubkey, days) {
     currentPubkey = pubkey;
     currentDays = days;
+    const myToken = ++loadJobToken;
     destroyCharts();
     chartDefaults();
 
@@ -165,7 +171,7 @@
     buildObserverChart(data);
     buildHopChart(data);
     buildHeatmap(data);
-    loadBatteryChart(pubkey, currentDays);
+    loadBatteryChart(pubkey, currentDays, myToken);
   }
 
   function buildActivityChart(data) {
@@ -279,32 +285,41 @@
       if (h.count > maxCount) maxCount = h.count;
     });
 
+    // Build the whole grid as one string, then assign once. Previously this
+    // used `innerHTML +=` inside a 7×24 = 168-iteration loop, reparsing the
+    // entire grid on every iteration (O(n²)).
+    let html = '<div class="analytics-heatmap-label"></div>';
     // Header row
-    grid.innerHTML = '<div class="analytics-heatmap-label"></div>';
     for (let h = 0; h < 24; h++) {
-      grid.innerHTML += `<div class="analytics-heatmap-label" style="justify-content:center;font-size:9px">${h}</div>`;
+      html += `<div class="analytics-heatmap-label" style="justify-content:center;font-size:9px">${h}</div>`;
     }
     // Day rows
     for (let d = 0; d < 7; d++) {
-      grid.innerHTML += `<div class="analytics-heatmap-label">${DAY_NAMES[d]}</div>`;
+      html += `<div class="analytics-heatmap-label">${DAY_NAMES[d]}</div>`;
       for (let h = 0; h < 24; h++) {
         const count = lookup[d + '-' + h] || 0;
         const intensity = count / maxCount;
         const bg = count === 0 ? 'var(--card-bg)' : `rgba(74,158,255,${0.15 + intensity * 0.85})`;
-        grid.innerHTML += `<div class="analytics-heatmap-cell" style="background:${bg}" title="${DAY_NAMES[d]} ${h}:00 — ${count} packets"></div>`;
+        html += `<div class="analytics-heatmap-cell" style="background:${bg}" title="${DAY_NAMES[d]} ${h}:00 — ${count} packets"></div>`;
       }
     }
+    grid.innerHTML = html;
   }
 
-  async function loadBatteryChart(pubkey, days) {
+  async function loadBatteryChart(pubkey, days, jobToken) {
     let data;
     try {
       data = await api('/nodes/' + encodeURIComponent(pubkey) + '/battery?days=' + days);
     } catch (e) {
+      // Drop a result that resolved after a newer loadAnalytics() superseded us.
+      if (jobToken !== loadJobToken) return;
       const empty = document.getElementById('batteryEmpty');
       if (empty) { empty.style.display = 'block'; empty.textContent = 'Battery data unavailable: ' + e.message; }
       return;
     }
+    // Race guard: if a different time range was selected while this fetch was
+    // in flight, the DOM/charts[] now belong to that newer load — bail.
+    if (jobToken !== loadJobToken) return;
     const ctx = document.getElementById('batteryChart');
     const empty = document.getElementById('batteryEmpty');
     const badge = document.getElementById('batteryStatusBadge');
