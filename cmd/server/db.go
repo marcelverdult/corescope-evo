@@ -36,6 +36,15 @@ type DB struct {
 	resolvedPathByObsStmt     *sql.Stmt
 }
 
+// sqlPlaceholders returns a comma-separated list of n `?` SQL bind
+// placeholders — e.g. sqlPlaceholders(3) == "?,?,?". Returns "" for n <= 0.
+func sqlPlaceholders(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	return strings.TrimSuffix(strings.Repeat("?,", n), ",")
+}
+
 // resolvedPathByObsStatement returns a cached prepared statement for the
 // single-row resolved_path-by-observation-id lookup, preparing it once on
 // first use. Returns nil when preparation fails (caller falls back to
@@ -715,8 +724,7 @@ func (db *DB) buildTransmissionWhere(q PacketQuery) ([]string, []interface{}) {
 	}
 	if q.Observer != "" {
 		ids := strings.Split(q.Observer, ",")
-		placeholders := strings.Repeat("?,", len(ids))
-		placeholders = placeholders[:len(placeholders)-1]
+		placeholders := sqlPlaceholders(len(ids))
 		if db.isV3 {
 			where = append(where, "EXISTS (SELECT 1 FROM observations oi JOIN observers obi ON obi.rowid = oi.observer_idx WHERE oi.transmission_id = t.id AND obi.id IN ("+placeholders+"))")
 		} else {
@@ -826,10 +834,9 @@ func (db *DB) GetNodes(limit, offset int, role, search, before, lastHeard, sortB
 	if region != "" {
 		codes := normalizeRegionCodes(region)
 		if len(codes) > 0 {
-			placeholders := make([]string, len(codes))
+			placeholders := sqlPlaceholders(len(codes))
 			regionArgs := make([]interface{}, len(codes))
 			for i, c := range codes {
-				placeholders[i] = "?"
 				regionArgs[i] = c
 			}
 			joinCond := "obs.rowid = o.observer_idx"
@@ -843,7 +850,7 @@ func (db *DB) GetNodes(limit, offset int, role, search, before, lastHeard, sortB
 				JOIN observers obs ON %s
 				WHERE t.payload_type = 4
 				AND UPPER(TRIM(obs.iata)) IN (%s)
-			)`, joinCond, strings.Join(placeholders, ","))
+			)`, joinCond, placeholders)
 			where = append(where, subq)
 			args = append(args, regionArgs...)
 		}
@@ -1037,10 +1044,9 @@ func (db *DB) getObservationsForTransmissions(txIDs []int) map[int][]map[string]
 	}
 
 	// Build IN clause
-	placeholders := make([]string, len(txIDs))
+	placeholders := sqlPlaceholders(len(txIDs))
 	args := make([]interface{}, len(txIDs))
 	for i, id := range txIDs {
-		placeholders[i] = "?"
 		args[i] = id
 	}
 
@@ -1051,13 +1057,13 @@ func (db *DB) getObservationsForTransmissions(txIDs []int) map[int][]map[string]
 			FROM observations o
 			LEFT JOIN observers obs ON obs.rowid = o.observer_idx
 			WHERE o.transmission_id IN (%s)
-			ORDER BY o.timestamp DESC`, strings.Join(placeholders, ","))
+			ORDER BY o.timestamp DESC`, placeholders)
 	} else {
 		querySQL = fmt.Sprintf(`SELECT o.transmission_id, o.id, o.observer_id, o.observer_name,
 			o.direction, o.snr, o.rssi, o.path_json, o.timestamp AS obs_timestamp
 			FROM observations o
 			WHERE o.transmission_id IN (%s)
-			ORDER BY o.timestamp DESC`, strings.Join(placeholders, ","))
+			ORDER BY o.timestamp DESC`, placeholders)
 	}
 
 	rows, err := db.conn.Query(querySQL, args...)
@@ -1157,13 +1163,12 @@ func (db *DB) GetObserverIdsForRegion(regionParam string) ([]string, error) {
 	if len(codes) == 0 {
 		return nil, nil
 	}
-	placeholders := make([]string, len(codes))
+	placeholders := sqlPlaceholders(len(codes))
 	args := make([]interface{}, len(codes))
 	for i, c := range codes {
-		placeholders[i] = "?"
 		args[i] = c
 	}
-	rows, err := db.conn.Query(fmt.Sprintf("SELECT id FROM observers WHERE UPPER(TRIM(iata)) IN (%s)", strings.Join(placeholders, ",")), args...)
+	rows, err := db.conn.Query(fmt.Sprintf("SELECT id FROM observers WHERE UPPER(TRIM(iata)) IN (%s)", placeholders), args...)
 	if err != nil {
 		return nil, err
 	}
@@ -1347,12 +1352,10 @@ func (db *DB) GetChannels(region ...string) ([]map[string]interface{}, error) {
 	args := make([]interface{}, 0, len(regionCodes))
 
 	if len(regionCodes) > 0 {
-		placeholders := make([]string, len(regionCodes))
-		for i, code := range regionCodes {
-			placeholders[i] = "?"
+		for _, code := range regionCodes {
 			args = append(args, code)
 		}
-		regionPlaceholder := strings.Join(placeholders, ",")
+		regionPlaceholder := sqlPlaceholders(len(regionCodes))
 		if db.isV3 {
 			querySQL = fmt.Sprintf(`SELECT t.channel_hash,
 					COUNT(*) AS msg_count,
@@ -1470,12 +1473,10 @@ func (db *DB) GetEncryptedChannels(region ...string) ([]map[string]interface{}, 
 	args := make([]interface{}, 0, len(regionCodes))
 
 	if len(regionCodes) > 0 {
-		placeholders := make([]string, len(regionCodes))
-		for i, code := range regionCodes {
-			placeholders[i] = "?"
+		for _, code := range regionCodes {
 			args = append(args, code)
 		}
-		regionPlaceholder := strings.Join(placeholders, ",")
+		regionPlaceholder := sqlPlaceholders(len(regionCodes))
 		if db.isV3 {
 			querySQL = fmt.Sprintf(`SELECT t.channel_hash,
 					COUNT(*) AS msg_count,
@@ -1570,12 +1571,10 @@ func (db *DB) GetChannelMessages(channelHash string, limit, offset int, region .
 	regionArgs := make([]interface{}, 0, len(regionCodes))
 	regionPlaceholders := ""
 	if len(regionCodes) > 0 {
-		placeholders := make([]string, len(regionCodes))
-		for i, code := range regionCodes {
-			placeholders[i] = "?"
+		for _, code := range regionCodes {
 			regionArgs = append(regionArgs, code)
 		}
-		regionPlaceholders = strings.Join(placeholders, ",")
+		regionPlaceholders = sqlPlaceholders(len(regionCodes))
 	}
 
 	// regionFilter: a transmission is included only if at least one of its
@@ -1653,10 +1652,9 @@ func (db *DB) GetChannelMessages(channelHash string, limit, offset int, region .
 	// 3) Fetch observations for just this page of transmissions. We keep
 	//    the original "first observation wins" semantic for hops/snr/observer
 	//    by ordering observations by id ASC and breaking after first per tx.
-	idPlaceholders := make([]string, len(pageIDs))
+	idPlaceholders := sqlPlaceholders(len(pageIDs))
 	obsArgs := make([]interface{}, len(pageIDs))
 	for i, id := range pageIDs {
-		idPlaceholders[i] = "?"
 		obsArgs[i] = id
 	}
 	var obsSQL string
@@ -1666,14 +1664,14 @@ func (db *DB) GetChannelMessages(channelHash string, limit, offset int, region .
 			FROM observations o
 			JOIN transmissions t ON t.id = o.transmission_id
 			LEFT JOIN observers obs ON obs.rowid = o.observer_idx
-			WHERE t.id IN (` + strings.Join(idPlaceholders, ",") + `)
+			WHERE t.id IN (` + idPlaceholders + `)
 			ORDER BY o.id ASC`
 	} else {
 		obsSQL = `SELECT o.id, t.id, t.hash, t.decoded_json, t.first_seen,
 				o.observer_id, o.observer_name, o.snr, o.path_json
 			FROM observations o
 			JOIN transmissions t ON t.id = o.transmission_id
-			WHERE t.id IN (` + strings.Join(idPlaceholders, ",") + `)
+			WHERE t.id IN (` + idPlaceholders + `)
 			ORDER BY o.id ASC`
 	}
 
@@ -1874,13 +1872,12 @@ func (db *DB) GetNodeLocationsByKeys(keys []string) map[string]map[string]interf
 	if len(keys) == 0 {
 		return result
 	}
-	placeholders := make([]string, len(keys))
+	placeholders := sqlPlaceholders(len(keys))
 	args := make([]interface{}, len(keys))
 	for i, k := range keys {
-		placeholders[i] = "?"
 		args[i] = strings.ToLower(k)
 	}
-	query := "SELECT public_key, lat, lon, role FROM nodes WHERE LOWER(public_key) IN (" + strings.Join(placeholders, ",") + ")"
+	query := "SELECT public_key, lat, lon, role FROM nodes WHERE LOWER(public_key) IN (" + placeholders + ")"
 	rows, err := db.conn.Query(query, args...)
 	if err != nil {
 		return result
@@ -1915,13 +1912,11 @@ func (db *DB) QueryMultiNodePackets(pubkeys []string, limit, offset int, order, 
 	// Build IN(?, ?, ...) on the dedicated from_pubkey column (#1143):
 	// exact match, indexed lookup, no JSON substring scan.
 	var args []interface{}
-	placeholders := make([]string, 0, len(pubkeys))
 	for _, pk := range pubkeys {
 		resolved := db.resolveNodePubkey(pk)
 		args = append(args, resolved)
-		placeholders = append(placeholders, "?")
 	}
-	pkWhere := "t.from_pubkey IN (" + strings.Join(placeholders, ",") + ")"
+	pkWhere := "t.from_pubkey IN (" + sqlPlaceholders(len(pubkeys)) + ")"
 
 	var timeFilters []string
 	if since != "" {
