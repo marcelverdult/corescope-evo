@@ -26,6 +26,7 @@ node test-packet-filter-ux.js
 node test-packet-filter-time.js
 node test-aging.js
 node test-frontend-helpers.js
+node test-page-state.js
 node test-url-state.js
 node test-perf-go-runtime.js
 node test-hash-color.js
