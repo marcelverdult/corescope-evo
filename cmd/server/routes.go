@@ -45,6 +45,9 @@ type Server struct {
 	neighborMu    sync.Mutex
 	neighborGraph *NeighborGraph
 
+	// Channel PSK keys loaded at startup from rainbow file + config.
+	channelKeys map[string]string
+
 	// Router reference for OpenAPI spec generation
 	router *mux.Router
 }
@@ -120,6 +123,7 @@ func (s *Server) RegisterRoutes(r *mux.Router) {
 	r.HandleFunc("/api/config/theme", s.handleConfigTheme).Methods("GET")
 	r.HandleFunc("/api/config/map", s.handleConfigMap).Methods("GET")
 	r.HandleFunc("/api/config/geo-filter", s.handleConfigGeoFilter).Methods("GET")
+	r.HandleFunc("/api/config/channel-keys", s.handleConfigChannelKeys).Methods("GET")
 
 	// Readiness endpoint (gated on background init completion)
 	r.HandleFunc("/api/healthz", s.handleHealthz).Methods("GET")
@@ -448,6 +452,14 @@ func (s *Server) handleConfigGeoFilter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]interface{}{"polygon": gf.Polygon, "bufferKm": gf.BufferKm})
+}
+
+func (s *Server) handleConfigChannelKeys(w http.ResponseWriter, r *http.Request) {
+	keys := s.channelKeys
+	if keys == nil {
+		keys = map[string]string{}
+	}
+	writeJSON(w, keys)
 }
 
 // --- System Handlers ---
