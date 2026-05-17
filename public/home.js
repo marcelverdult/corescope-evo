@@ -88,7 +88,7 @@
         </div>
       </section>
 
-      ${hasNodes ? '<div class="my-nodes-grid" id="myNodesGrid"><div class="my-nodes-loading">Loading your nodes…</div></div>' : '<div class="my-nodes-grid" id="myNodesGrid"></div>'}
+      ${hasNodes ? '<div class="my-nodes-grid" id="myNodesGrid">' + PageState.loading('Loading your nodes…') + '</div>' : '<div class="my-nodes-grid" id="myNodesGrid"></div>'}
 
       ${!hasNodes ? `
         <div class="onboarding-prompt">
@@ -407,7 +407,7 @@
     const card = document.getElementById('homeHealth');
     const journey = document.getElementById('homeJourney');
     if (!card) return;
-    card.innerHTML = '<p style="color:var(--text-muted);padding:12px">Loading…</p>';
+    card.innerHTML = PageState.loading('Loading…');
     card.classList.add('visible');
     if (journey) journey.classList.remove('visible');
 
@@ -464,7 +464,7 @@
                 <span class="time">${timeAgo(p.timestamp || p.created_at)}</span>
                 <span class="snr">${p.snr != null ? Number(p.snr).toFixed(1) + ' dB' : ''}</span>
               </div>`;
-            }).join('') : '<p style="color:var(--text-muted);font-size:.85rem">No recent packets found for this node.</p>'}
+            }).join('') : PageState.empty({ title: 'No recent packets found for this node' })}
           </div>
         </div>
       `;
@@ -503,7 +503,7 @@
         });
       });
     } catch (e) {
-      card.innerHTML = '<p style="color:var(--status-red, #ef4444);padding:12px">Failed to load node health.</p>';
+      PageState.error(card, e, function () { loadHealth(pubkey); });
     }
   }
 
