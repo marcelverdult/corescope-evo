@@ -854,7 +854,7 @@ registerPage('tools-landing', {
         '<div class="tools-menu">' +
           '<a href="#/tools/path-inspector" class="tools-card"><h3>🔍 Path Inspector</h3><p>Resolve prefix paths to candidate full-pubkey routes with confidence scoring.</p></a>' +
           '<a href="#/tools/trace/" class="tools-card"><h3>📡 Trace Viewer</h3><p>View detailed packet traces by hash.</p></a>' +
-          '<a href="#/mc-keygen" class="tools-card"><h3>🔑 MC-Keygen</h3><p>Generate MeshCore key pairs in your browser — WASM/WebGPU accelerated, keys never leave your device.</p></a>' +
+          '<a href="#/mc-keygen" class="tools-card"><h3>🔑 MC-Keygen</h3><p>Generate custom MeshCore key pairs in your browser — keys never leave your device.</p></a>' +
         '</div>' +
       '</div>';
   },
