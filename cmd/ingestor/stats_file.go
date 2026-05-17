@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"log"
 	"os"
+	"sync"
 	"syscall"
 	"time"
 
@@ -165,10 +166,15 @@ func procIORate(prev, cur procIOSnapshot, stamp string) *PerfIOSample {
 // The stats file path is resolved via statsFilePath() once at writer-loop
 // start; the env var (CORESCOPE_INGESTOR_STATS) is only re-read on process
 // restart, not per tick.
-func StartStatsFileWriter(s *Store, interval time.Duration) {
+//
+// Returns a stop function that terminates the writer goroutine; callers that
+// don't need clean shutdown may ignore it.
+func StartStatsFileWriter(s *Store, interval time.Duration) (stop func()) {
 	if interval <= 0 {
 		interval = time.Second
 	}
+	done := make(chan struct{})
+	var stopOnce sync.Once
 	go func() {
 		t := time.NewTicker(interval)
 		defer t.Stop()
@@ -182,7 +188,12 @@ func StartStatsFileWriter(s *Store, interval time.Duration) {
 		// The buffer grows once and stays.
 		var buf bytes.Buffer
 		enc := json.NewEncoder(&buf)
-		for range t.C {
+		for {
+			select {
+			case <-done:
+				return
+			case <-t.C:
+			}
 			// Capture time.Now() ONCE per tick (Carmack must-fix #5).
 			// Both snapshot.SampledAt and procIO.SampledAt MUST share the
 			// same string so the freshness guard isn't validating one
@@ -224,4 +235,7 @@ func StartStatsFileWriter(s *Store, interval time.Duration) {
 			}
 		}
 	}()
+	return func() {
+		stopOnce.Do(func() { close(done) })
+	}
 }

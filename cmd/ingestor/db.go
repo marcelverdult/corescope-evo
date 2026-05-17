@@ -614,7 +614,8 @@ func (s *Store) prepareStatements() error {
 			radio = COALESCE(?, radio),
 			battery_mv = COALESCE(?, battery_mv),
 			uptime_secs = COALESCE(?, uptime_secs),
-			noise_floor = COALESCE(?, noise_floor)
+			noise_floor = COALESCE(?, noise_floor),
+			inactive = 0
 	`)
 	if err != nil {
 		return err
@@ -667,70 +668,101 @@ func (s *Store) InsertTransmission(data *PacketData) (bool, error) {
 	var txID int64
 	isNew := false
 
+	// Wrap the whole per-packet write sequence in a single transaction so the
+	// 4-5 statements commit once instead of each auto-committing its own WAL
+	// frame (serialized on MaxOpenConns=1). This is the dominant throughput fix.
+	tx, err := s.db.Begin()
+	if err != nil {
+		s.Stats.WriteErrors.Add(1)
+		return false, fmt.Errorf("begin transaction: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+
 	// Check for existing transmission
 	var existingID int64
 	var existingFirstSeen string
-	err := s.stmtGetTxByHash.QueryRow(hash).Scan(&existingID, &existingFirstSeen)
+	err = tx.Stmt(s.stmtGetTxByHash).QueryRow(hash).Scan(&existingID, &existingFirstSeen)
 	if err == nil {
 		// Existing transmission
 		txID = existingID
 		if now < existingFirstSeen {
-			_, _ = s.stmtUpdateTxFirstSeen.Exec(now, txID)
+			if _, uerr := tx.Stmt(s.stmtUpdateTxFirstSeen).Exec(now, txID); uerr != nil {
+				s.Stats.WriteErrors.Add(1)
+			}
 		}
 	} else {
 		// New transmission
 		isNew = true
-		result, err := s.stmtInsertTransmission.Exec(
+		result, ierr := tx.Stmt(s.stmtInsertTransmission).Exec(
 			data.RawHex, hash, now,
 			data.RouteType, data.PayloadType, data.PayloadVersion,
 			data.DecodedJSON, nilIfEmpty(data.ChannelHash),
 			nilIfEmpty(data.FromPubkey),
 		)
-		if err != nil {
+		if ierr != nil {
 			s.Stats.WriteErrors.Add(1)
-			return false, fmt.Errorf("insert transmission: %w", err)
+			return false, fmt.Errorf("insert transmission: %w", ierr)
 		}
 		txID, _ = result.LastInsertId()
-		s.Stats.TransmissionsInserted.Add(1)
-	}
-
-	if !isNew {
-		s.Stats.DuplicateTransmissions.Add(1)
 	}
 
 	// Resolve observer_idx and update last_seen
 	var observerIdx *int64
 	if data.ObserverID != "" {
 		var rowid int64
-		err := s.stmtGetObserverRowid.QueryRow(data.ObserverID).Scan(&rowid)
-		if err == nil {
+		oerr := tx.Stmt(s.stmtGetObserverRowid).QueryRow(data.ObserverID).Scan(&rowid)
+		if oerr == nil {
 			observerIdx = &rowid
 			// Update observer last_seen and last_packet_at on every packet to prevent
 			// low-traffic observers from appearing offline (#463)
-			_, _ = s.stmtUpdateObserverLastSeen.Exec(now, now, rowid)
+			if _, uerr := tx.Stmt(s.stmtUpdateObserverLastSeen).Exec(now, now, rowid); uerr != nil {
+				s.Stats.WriteErrors.Add(1)
+			}
 		}
 	}
 
 	// Insert observation
 	epochTs := time.Now().Unix()
-	if t, err := time.Parse(time.RFC3339, now); err == nil {
+	if t, perr := time.Parse(time.RFC3339, now); perr == nil {
 		epochTs = t.Unix()
 	}
 
-	_, err = s.stmtInsertObservation.Exec(
+	observationInserted := false
+	if _, oierr := tx.Stmt(s.stmtInsertObservation).Exec(
 		txID, observerIdx, data.Direction,
 		data.SNR, data.RSSI, data.Score,
 		data.PathJSON, epochTs, nilIfEmpty(data.RawHex),
-	)
-	if err != nil {
+	); oierr != nil {
 		s.Stats.WriteErrors.Add(1)
-		log.Printf("[db] observation insert (non-fatal): %v", err)
+		log.Printf("[db] observation insert (non-fatal): %v", oierr)
 	} else {
+		observationInserted = true
+	}
+
+	if err := tx.Commit(); err != nil {
+		s.Stats.WriteErrors.Add(1)
+		return false, fmt.Errorf("commit transaction: %w", err)
+	}
+	committed = true
+
+	// Update stats only after the transaction has durably committed so the
+	// counters reflect persisted rows, preserving prior insert semantics.
+	if isNew {
+		s.Stats.TransmissionsInserted.Add(1)
+	} else {
+		s.Stats.DuplicateTransmissions.Add(1)
+	}
+	if observationInserted {
 		s.Stats.ObservationsInserted.Add(1)
 	}
 
-	// Each prepared-stmt Exec auto-commits. Count one WAL commit per
-	// successful InsertTransmission so the perf page sees commit pressure.
+	// One transaction == one WAL commit per successful InsertTransmission so
+	// the perf page sees commit pressure.
 	s.Stats.WALCommits.Add(1)
 
 	return isNew, nil
@@ -848,8 +880,8 @@ func (s *Store) UpsertObserver(id, name, iata string, meta *ObserverMeta) error 
 	}
 	s.Stats.ObserverUpserts.Add(1)
 
-	// Reactivate if this observer was previously marked inactive
-	s.db.Exec(`UPDATE observers SET inactive = 0 WHERE id = ? AND inactive = 1`, id)
+	// Reactivation (inactive = 0) is folded into the ON CONFLICT DO UPDATE
+	// clause above, so no separate UPDATE is needed.
 	return nil
 }
 
@@ -1052,23 +1084,44 @@ func (s *Store) BackfillPathJSONAsync() {
 			if len(batch) == 0 {
 				break
 			}
+			// Wrap the whole batch in a single transaction so up to batchSize
+			// UPDATEs commit once instead of each auto-committing its own WAL
+			// frame (the table can hold ~500K NULL rows).
+			tx, err := s.db.Begin()
+			if err != nil {
+				log.Printf("[backfill] batch begin error: %v", err)
+				errored = true
+				break
+			}
+			batchUpdated := 0
+			batchOK := 0
 			for _, r := range batch {
-				hops, err := packetpath.DecodePathFromRawHex(r.rawHex)
-				if err != nil || len(hops) == 0 {
-					if _, execErr := s.db.Exec(`UPDATE observations SET path_json = '[]' WHERE id = ?`, r.id); execErr != nil {
+				hops, derr := packetpath.DecodePathFromRawHex(r.rawHex)
+				if derr != nil || len(hops) == 0 {
+					if _, execErr := tx.Exec(`UPDATE observations SET path_json = '[]' WHERE id = ?`, r.id); execErr != nil {
 						log.Printf("[backfill] write error (id=%d): %v", r.id, execErr)
 					} else {
-						s.Stats.IncBackfill("path_json")
+						batchOK++
 					}
 					continue
 				}
 				b, _ := json.Marshal(hops)
-				if _, execErr := s.db.Exec(`UPDATE observations SET path_json = ? WHERE id = ?`, string(b), r.id); execErr != nil {
+				if _, execErr := tx.Exec(`UPDATE observations SET path_json = ? WHERE id = ?`, string(b), r.id); execErr != nil {
 					log.Printf("[backfill] write error (id=%d): %v", r.id, execErr)
 				} else {
-					updated++
-					s.Stats.IncBackfill("path_json")
+					batchUpdated++
+					batchOK++
 				}
+			}
+			if err := tx.Commit(); err != nil {
+				log.Printf("[backfill] batch commit error: %v", err)
+				_ = tx.Rollback()
+				errored = true
+				break
+			}
+			updated += batchUpdated
+			for i := 0; i < batchOK; i++ {
+				s.Stats.IncBackfill("path_json")
 			}
 			batchNum++
 			if batchNum%50 == 0 {
