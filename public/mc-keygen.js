@@ -101,15 +101,14 @@ self.onmessage = async (event) => {
     async initialize() {
       if (this.initialized) return;
       let libraryUrl = null;
-      // The local vendored copy is tried FIRST: this page advertises "keys
-      // never leave your device", so a runtime 3rd-party CDN fetch is a
-      // supply-chain risk. CDNs are only a fallback if the local file fails.
+      // Local vendored @noble/ed25519 1.7.3 — RFC-8032 correct, 0-dependency,
+      // self-contained ESM. Loading it locally keeps key generation fully
+      // offline ("keys never leave your device") and avoids the unpinned
+      // `noble-ed25519@latest` CDN drift: that tag resolves to the ancient
+      // unscoped 1.2.6, whose module shape lacks the Point API validateKeypair
+      // needs, so every generated key failed validation.
       const libraryUrls = [
-        './noble-ed25519-offline-simple.js',
-        'https://unpkg.com/noble-ed25519@latest',
-        'https://cdn.jsdelivr.net/npm/noble-ed25519@latest',
-        'https://esm.sh/noble-ed25519@latest',
-        'https://cdn.skypack.dev/noble-ed25519'
+        './vendor/noble-ed25519.js'
       ];
       for (const url of libraryUrls) {
         try { nobleEd25519 = await import(url); libraryUrl = url; break; }
