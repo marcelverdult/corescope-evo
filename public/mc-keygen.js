@@ -475,11 +475,14 @@ self.onmessage = async (event) => {
         } else if (this.generationMode === 'js-fallback') {
           matched = await this._startJsFallback(prefix);
         } else {
-          try { matched = await this._startWorkerSearch(prefix); }
-          catch (e) {
-            await this._loadJsFallback('WASM search failed: ' + e.message);
-            matched = await this._startJsFallback(prefix);
-          }
+          // The WASM worker (wasm/pkg/meshcore_keygen) emits keypairs whose
+          // public key fails validateKeypair's derive-check, so it is not
+          // used. js/fallback-keygen.js derives the public key the same way
+          // validateKeypair does (Point.BASE.multiply of the clamped scalar),
+          // so it produces self-consistent keys. It is slower than the WASM
+          // path but correct; the GPU path remains available for speed.
+          await this._loadJsFallback('WASM keygen disabled: derive-check mismatch');
+          matched = await this._startJsFallback(prefix);
         }
 
         if (!matched) return null;
@@ -852,12 +855,13 @@ self.onmessage = async (event) => {
       resultEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
-    // Probe GPU availability (non-blocking)
-    generator.detectGpu().then(avail => {
-      if (!avail) return;
-      gpuRow.style.display = 'block';
-      gpuHint.textContent = 'GPU detected — loads a ~2 MB WebGPU module and autotunes on first use.';
-    }).catch(() => {});
+    // GPU acceleration is disabled: the WebGPU scanner (vendor/webgpu-ed25519.js)
+    // derives public keys that fail validateKeypair's derive-check, so a GPU run
+    // scans forever without ever yielding a valid key. The GPU row stays hidden
+    // and key generation always uses the correct CPU path. Re-enable by
+    // restoring the detectGpu()/gpuRow.style.display block here once the WebGPU
+    // module is fixed.
+    void gpuRow; void gpuToggle; void gpuHint;
 
     // Popup button — opens the SPA in a separate window; generation is independent
     $('kgn-popup-btn').addEventListener('click', () => {
