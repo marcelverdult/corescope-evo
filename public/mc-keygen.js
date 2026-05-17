@@ -79,6 +79,7 @@ self.onmessage = async (event) => {
       this.hashWorkers = [];
       this.maxHashWorkers = Math.min(6, navigator.hardwareConcurrency || 4);
       this._hashWorkerUrl = null;
+      this._gpuScript = null; // injected <script> for the WebGPU UMD bundle
     }
 
     // ------------------------------------------------------------------ perf
@@ -100,14 +101,17 @@ self.onmessage = async (event) => {
     async initialize() {
       if (this.initialized) return;
       let libraryUrl = null;
-      const cdnUrls = [
+      // The local vendored copy is tried FIRST: this page advertises "keys
+      // never leave your device", so a runtime 3rd-party CDN fetch is a
+      // supply-chain risk. CDNs are only a fallback if the local file fails.
+      const libraryUrls = [
+        './noble-ed25519-offline-simple.js',
         'https://unpkg.com/noble-ed25519@latest',
         'https://cdn.jsdelivr.net/npm/noble-ed25519@latest',
         'https://esm.sh/noble-ed25519@latest',
-        'https://cdn.skypack.dev/noble-ed25519',
-        './noble-ed25519-offline-simple.js'
+        'https://cdn.skypack.dev/noble-ed25519'
       ];
-      for (const url of cdnUrls) {
+      for (const url of libraryUrls) {
         try { nobleEd25519 = await import(url); libraryUrl = url; break; }
         catch (e) { /* try next */ }
       }
@@ -230,6 +234,7 @@ self.onmessage = async (event) => {
             s.onload = resolve;
             s.onerror = reject;
             document.head.appendChild(s);
+            this._gpuScript = s; // tracked so destroy() can remove it
           });
         }
         const { WebGpuEd25519Scanner } = globalThis.MeshCoreGpuModule;
@@ -505,11 +510,40 @@ self.onmessage = async (event) => {
       this._clearTimers();
     }
 
+    // Dispose the WebGPU scanner (GPUDevice/adapter) and remove the injected
+    // UMD <script>. Without this, the GPUDevice and the global module leak
+    // across SPA navigations away from the keygen page.
+    _disposeGpu() {
+      if (this.gpuScanner) {
+        try {
+          // Prefer an explicit teardown on the scanner if the vendor bundle
+          // provides one; otherwise destroy the underlying GPUDevice directly.
+          if (typeof this.gpuScanner.destroy === 'function') {
+            this.gpuScanner.destroy();
+          } else if (typeof this.gpuScanner.dispose === 'function') {
+            this.gpuScanner.dispose();
+          } else if (this.gpuScanner.device && typeof this.gpuScanner.device.destroy === 'function') {
+            this.gpuScanner.device.destroy();
+          }
+        } catch (e) { /* best-effort teardown */ }
+        this.gpuScanner = null;
+      }
+      this.gpuAvailable = false;
+      this.gpuChecked = false;
+      this.useGpu = false;
+      if (this._gpuScript) {
+        try { if (this._gpuScript.parentNode) this._gpuScript.parentNode.removeChild(this._gpuScript); }
+        catch (e) { /* ignore */ }
+        this._gpuScript = null;
+      }
+    }
+
     destroy() {
       this.stop();
       for (const w of this.workers) w.worker.terminate();
       this.workers = [];
       this._terminateHashWorkers();
+      this._disposeGpu();
       this.initialized = false;
     }
   }

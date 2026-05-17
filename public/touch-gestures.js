@@ -58,6 +58,9 @@
   // is a normal scroll, NOT a dismiss — we must not close the panel.
   var slideOverScroller = null;
   var slideOverStartScrollTop = 0;
+  // Cached at pointerdown: the slide-over panel we drag during the gesture.
+  // Avoids an unthrottled document.querySelector on every pointermove.
+  var slideOverPanel = null;
 
   function isNarrow() {
     return window.innerWidth <= NARROW_BP;
@@ -232,6 +235,12 @@
     // element actually scrolls becomes the discriminator source — this
     // guarantees production reads from the same element a test (or a future
     // refactor) writes to.
+    // Cache the panel ref now so onPointerMove doesn't re-query the DOM
+    // (unthrottled) on every move event.
+    slideOverPanel = (gestureContext === 'slide-over')
+      ? (so || document.querySelector('.slide-over-panel'))
+      : null;
+
     if (gestureContext === 'slide-over') {
       var candidates = [];
       if (so) candidates.push(so);
@@ -317,10 +326,10 @@
       if (e.cancelable) { try { e.preventDefault(); } catch (_) {} }
     } else if (gestureContext === 'slide-over' && axis === 'v') {
       if (dy > 0) {
-        // Drag panel down with the finger.
-        var so = findSlideOver(startTarget) || document.querySelector('.slide-over-panel');
-        if (so) {
-          so.style.transform = 'translateY(' + dy + 'px)';
+        // Drag panel down with the finger. Use the ref cached at pointerdown
+        // instead of re-querying the DOM on every move event.
+        if (slideOverPanel) {
+          slideOverPanel.style.transform = 'translateY(' + dy + 'px)';
         }
       }
       if (e.cancelable) { try { e.preventDefault(); } catch (_) {} }
@@ -356,8 +365,7 @@
           navigateRelative(-1);
         }
       } else if (gestureContext === 'slide-over' && axis === 'v') {
-        var so = findSlideOver(startTarget) || document.querySelector('.slide-over-panel');
-        if (so) so.style.transform = '';
+        if (slideOverPanel) slideOverPanel.style.transform = '';
         // Scroll-discriminator (PR #1185): if the user started mid-scroll,
         // never dismiss — onPointerMove should already have released, this
         // is a defense-in-depth guard.
@@ -379,8 +387,7 @@
       activeRow.classList.remove('row-swiping');
       activeRow = null;
     }
-    var so = findSlideOver(startTarget) || document.querySelector('.slide-over-panel');
-    if (so) so.style.transform = '';
+    if (slideOverPanel) slideOverPanel.style.transform = '';
     releasePointer();
   }
 
@@ -395,8 +402,7 @@
       activeRow.classList.remove('row-swiping');
       activeRow = null;
     }
-    var so = findSlideOver(startTarget) || document.querySelector('.slide-over-panel');
-    if (so) so.style.transform = '';
+    if (slideOverPanel) slideOverPanel.style.transform = '';
     releasePointer();
   }
 
@@ -414,6 +420,7 @@
     gestureContext = null;
     slideOverScroller = null;
     slideOverStartScrollTop = 0;
+    slideOverPanel = null;
   }
 
   // ── Row-overlay click delegation ──

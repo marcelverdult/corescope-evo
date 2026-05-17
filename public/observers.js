@@ -7,6 +7,9 @@
   let wsHandler = null;
   let refreshTimer = null;
   let regionChangeHandler = null;
+  let appClickHandler = null;
+  let appKeydownHandler = null;
+  let boundApp = null;
   let sortState = { col: null, dir: 'asc' };
 
   var STATS_OPEN_KEY = 'meshcore-obs-stats-open';
@@ -106,8 +109,14 @@
       }
     } catch (e) {}
     loadObservers();
-    // Event delegation for data-action buttons
-    app.addEventListener('click', function (e) {
+    // Dedupe guard: if a prior init() didn't get a matching destroy(), tear
+    // down the stale listeners before registering fresh ones (leak fix).
+    if (boundApp && appClickHandler) boundApp.removeEventListener('click', appClickHandler);
+    if (boundApp && appKeydownHandler) boundApp.removeEventListener('keydown', appKeydownHandler);
+    // Event delegation for data-action buttons. Handlers hoisted to stored
+    // refs + removed in destroy() so they don't stack on the persistent #app
+    // element across navigations (leak fix).
+    appClickHandler = function (e) {
       var th = e.target.closest('th[data-sort-col]');
       if (th) {
         var col = th.dataset.sortCol;
@@ -138,9 +147,9 @@
         }
         location.hash = row.dataset.value;
       }
-    });
+    };
     // #209 — Keyboard accessibility for observer rows
-    app.addEventListener('keydown', function (e) {
+    appKeydownHandler = function (e) {
       var row = e.target.closest('tr[data-action="navigate"]');
       if (!row) return;
       if (e.key !== 'Enter' && e.key !== ' ') return;
@@ -150,7 +159,10 @@
         return;
       }
       location.hash = row.dataset.value;
-    });
+    };
+    boundApp = app;
+    app.addEventListener('click', appClickHandler);
+    app.addEventListener('keydown', appKeydownHandler);
     // Auto-refresh every 30s
     refreshTimer = setInterval(loadObservers, 30000);
     wsHandler = debouncedOnWS(function (msgs) {
@@ -165,6 +177,14 @@
     refreshTimer = null;
     if (regionChangeHandler) RegionFilter.offChange(regionChangeHandler);
     regionChangeHandler = null;
+    // Remove the delegated #app listeners so they don't stack across navs.
+    if (boundApp) {
+      if (appClickHandler) boundApp.removeEventListener('click', appClickHandler);
+      if (appKeydownHandler) boundApp.removeEventListener('keydown', appKeydownHandler);
+    }
+    boundApp = null;
+    appClickHandler = null;
+    appKeydownHandler = null;
     observers = [];
     obsSkewMap = {};
   }

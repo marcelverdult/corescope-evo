@@ -166,12 +166,16 @@
   }
 
   function onOutsideClick(e) {
-    if (popoverEl && !popoverEl.contains(e.target)) {
+    // If the popover was removed by a page innerHTML swap without hidePopover()
+    // running, these document listeners would leak — tear down on detach.
+    if (!popoverEl || !popoverEl.isConnected) { hidePopover(); return; }
+    if (!popoverEl.contains(e.target)) {
       hidePopover();
     }
   }
 
   function onEscape(e) {
+    if (!popoverEl || !popoverEl.isConnected) { hidePopover(); return; }
     if (e.key === 'Escape') {
       hidePopover();
       e.stopPropagation();

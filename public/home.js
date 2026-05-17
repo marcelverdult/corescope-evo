@@ -532,8 +532,12 @@
     if (s == null) return '';
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
   }
-  function escapeAttr(s) { return String(s).replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
-  function timeSinceMs(d) { return Date.now() - d.getTime(); }
+  // Delegates to canonical window.escapeAttr (packet-helpers.js); inline
+  // fallback covers isolated unit-test sandboxes that load this file alone.
+  function escapeAttr(s) {
+    if (typeof window !== 'undefined' && window.escapeAttr) return window.escapeAttr(s);
+    return String(s == null ? '' : s).replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
 
   function checklist(homeCfg) {
     var html = '';

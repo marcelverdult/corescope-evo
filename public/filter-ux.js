@@ -109,7 +109,9 @@
     if (html != null) el.innerHTML = html;
     return el;
   }
+  // Delegates to canonical window.escapeHtml (packet-helpers.js).
   function _esc(s) {
+    if (typeof window !== 'undefined' && window.escapeHtml) return window.escapeHtml(s);
     return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });

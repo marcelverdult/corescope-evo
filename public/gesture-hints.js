@@ -182,6 +182,22 @@
     scheduleHints();
   }
 
+  // Teardown: clear the pending schedule timer (which keeps rescheduling
+  // itself via onRouteChange) and detach the hashchange listener.
+  function teardown() {
+    if (_scheduledTimer) { clearTimeout(_scheduledTimer); _scheduledTimer = null; }
+    if (_routeChangeBound) {
+      window.removeEventListener('hashchange', onRouteChange);
+      _routeChangeBound = false;
+    }
+    Object.keys(_shown).slice().forEach(function (id) {
+      var el = _shown[id];
+      if (el && el._gestureHintFadeTimer) clearTimeout(el._gestureHintFadeTimer);
+      if (el && el.parentNode) el.parentNode.removeChild(el);
+      delete _shown[id];
+    });
+  }
+
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init, { once: true });
   } else {
@@ -191,6 +207,7 @@
   window.GestureHints = {
     show: show,
     dismiss: dismiss,
+    teardown: teardown,
     reset: function () {
       clearAll();
       // Remove any visible.

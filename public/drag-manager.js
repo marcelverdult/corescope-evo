@@ -28,6 +28,11 @@
     if (!panel) return;
     var header = panel.querySelector('.panel-header');
     if (!header) return;
+    // Guard against double-registration: a re-rendered panel passed through
+    // register() again would stack a fresh set of 4 pointer listeners on its
+    // header every call. The dataset flag makes register() idempotent.
+    if (panel.dataset.dragRegistered) return;
+    panel.dataset.dragRegistered = '1';
     this._panels.push(panel);
     var self = this;
 
