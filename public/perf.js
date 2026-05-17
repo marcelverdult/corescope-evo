@@ -5,7 +5,7 @@
   let interval = null;
 
   async function render(app) {
-    app.innerHTML = '<div id="perfWrapper" style="padding:16px 24px;"><h2>⚡ Performance Dashboard</h2><div id="perfContent">Loading...</div></div>';
+    app.innerHTML = '<div id="perfWrapper" style="padding:16px 24px;"><h2>⚡ Performance Dashboard</h2><div id="perfContent">' + PageState.loading('Loading performance metrics…') + '</div></div>';
     await refresh();
   }
 
@@ -274,7 +274,7 @@
       });
       document.getElementById('perfRefresh')?.addEventListener('click', refresh);
     } catch (err) {
-      el.innerHTML = `<p style="color:red">Error: ${err.message}</p>`;
+      PageState.error(el, err, refresh);
     }
   }
 
