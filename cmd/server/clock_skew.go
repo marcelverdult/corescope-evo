@@ -196,9 +196,12 @@ func NewClockSkewEngine() *ClockSkewEngine {
 }
 
 // Recompute recalculates all clock skew data from the packet store.
-// Called periodically or on demand. Holds store RLock externally.
-// Uses read-copy-update: heavy computation runs outside the write lock,
-// then results are swapped in under a brief lock.
+//
+// The caller must NOT hold store.mu — Recompute acquires store.mu.RLock
+// itself, but ONLY for the cheap sample-collection phase. The heavy O(n²)
+// calibration/skew computation then runs with NO store lock held, so it never
+// blocks ingest writers (#10). Results are swapped in under a brief
+// engine-internal write lock.
 func (e *ClockSkewEngine) Recompute(store *PacketStore) {
 	// Fast path: check under read lock if recompute is needed.
 	e.mu.RLock()
@@ -208,8 +211,12 @@ func (e *ClockSkewEngine) Recompute(store *PacketStore) {
 		return
 	}
 
-	// Phase 1: Collect skew samples from ADVERT packets (store RLock held by caller).
+	// Phase 1: Collect skew samples from ADVERT packets. This is the ONLY
+	// phase that touches the store, so it is the only phase that holds the
+	// store RLock — kept short so ingest writers are barely delayed.
+	store.mu.RLock()
 	samples := collectSamples(store)
+	store.mu.RUnlock()
 
 	// Phase 2–3: Compute outside the write lock.
 	var newOffsets map[string]float64
@@ -455,16 +462,19 @@ func computeNodeSkew(samples []skewSample, obsOffsets map[string]float64) (txSke
 
 // GetNodeClockSkew returns the clock skew data for a specific node (acquires RLock).
 func (s *PacketStore) GetNodeClockSkew(pubkey string) *NodeClockSkew {
+	// Recompute BEFORE taking the store RLock — Recompute does its heavy
+	// O(n²) work with no store lock held (#10).
+	s.clockSkew.Recompute(s)
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.getNodeClockSkewLocked(pubkey)
 }
 
 // getNodeClockSkewLocked returns clock skew for a node.
-// Must be called with s.mu held (at least RLock).
+// Must be called with s.mu held (at least RLock). The caller is responsible
+// for invoking s.clockSkew.Recompute(s) (without the store lock held) before
+// taking the lock — getNodeClockSkewLocked only reads cached skew data.
 func (s *PacketStore) getNodeClockSkewLocked(pubkey string) *NodeClockSkew {
-	s.clockSkew.Recompute(s)
-
 	txs := s.byNode[pubkey]
 	if len(txs) == 0 {
 		return nil
@@ -697,6 +707,9 @@ func (s *PacketStore) getNodeClockSkewLocked(pubkey string) *NodeClockSkew {
 // GetFleetClockSkew returns clock skew data for all nodes that have skew data.
 // Must NOT be called with s.mu held.
 func (s *PacketStore) GetFleetClockSkew() []*NodeClockSkew {
+	// Recompute BEFORE taking the store RLock — the heavy compute must not
+	// run under the lock (#10).
+	s.clockSkew.Recompute(s)
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -729,10 +742,12 @@ func (s *PacketStore) GetFleetClockSkew() []*NodeClockSkew {
 
 // GetObserverCalibrations returns the current observer clock offsets.
 func (s *PacketStore) GetObserverCalibrations() []ObserverCalibration {
+	// Recompute BEFORE taking the store RLock — the heavy compute must not
+	// run under the lock (#10).
+	s.clockSkew.Recompute(s)
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-
-	s.clockSkew.Recompute(s)
 
 	s.clockSkew.mu.RLock()
 	defer s.clockSkew.mu.RUnlock()
