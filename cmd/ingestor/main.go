@@ -80,48 +80,78 @@ func main() {
 	vacuumPages := cfg.IncrementalVacuumPages()
 	store.RunIncrementalVacuum(vacuumPages)
 
+	// Shared done-channel: closed on shutdown so all retention/stats ticker
+	// goroutines exit cleanly instead of leaking (mirrors the watchdog's
+	// stop pattern).
+	tickerDone := make(chan struct{})
+
 	// Daily ticker for node retention
 	retentionTicker := time.NewTicker(1 * time.Hour)
 	go func() {
-		for range retentionTicker.C {
-			store.MoveStaleNodes(nodeDays)
-			store.RunIncrementalVacuum(vacuumPages)
+		for {
+			select {
+			case <-tickerDone:
+				return
+			case <-retentionTicker.C:
+				store.MoveStaleNodes(nodeDays)
+				store.RunIncrementalVacuum(vacuumPages)
+			}
 		}
 	}()
 
 	// Daily ticker for observer retention (every 24h, staggered 90s after startup)
 	observerRetentionTicker := time.NewTicker(24 * time.Hour)
 	go func() {
-		time.Sleep(90 * time.Second) // stagger after metrics prune
+		// Staggered first run; abort early if shutdown happens during the wait.
+		select {
+		case <-tickerDone:
+			return
+		case <-time.After(90 * time.Second): // stagger after metrics prune
+		}
 		store.RemoveStaleObservers(observerDays)
 		store.RunIncrementalVacuum(vacuumPages)
-		for range observerRetentionTicker.C {
-			store.RemoveStaleObservers(observerDays)
-			store.RunIncrementalVacuum(vacuumPages)
+		for {
+			select {
+			case <-tickerDone:
+				return
+			case <-observerRetentionTicker.C:
+				store.RemoveStaleObservers(observerDays)
+				store.RunIncrementalVacuum(vacuumPages)
+			}
 		}
 	}()
 
 	// Daily ticker for metrics retention (every 24h)
 	metricsRetentionTicker := time.NewTicker(24 * time.Hour)
 	go func() {
-		for range metricsRetentionTicker.C {
-			store.PruneOldMetrics(metricsDays)
-			store.PruneDroppedPackets(metricsDays)
-			store.RunIncrementalVacuum(vacuumPages)
+		for {
+			select {
+			case <-tickerDone:
+				return
+			case <-metricsRetentionTicker.C:
+				store.PruneOldMetrics(metricsDays)
+				store.PruneDroppedPackets(metricsDays)
+				store.RunIncrementalVacuum(vacuumPages)
+			}
 		}
 	}()
 
 	// Periodic stats logging (every 5 minutes)
 	statsTicker := time.NewTicker(5 * time.Minute)
 	go func() {
-		for range statsTicker.C {
-			store.LogStats()
+		for {
+			select {
+			case <-tickerDone:
+				return
+			case <-statsTicker.C:
+				store.LogStats()
+			}
 		}
 	}()
 
 	// Per-second stats file writer for the server's /api/perf/write-sources
 	// endpoint (#1120). Best-effort; never fatal.
-	StartStatsFileWriter(store, time.Second)
+	stopStatsFileWriter := StartStatsFileWriter(store, time.Second)
 
 	channelKeys := loadChannelKeys(cfg, *configPath)
 	if len(channelKeys) > 0 {
@@ -251,9 +281,12 @@ func main() {
 	<-sig
 
 	log.Println("Shutting down...")
+	close(tickerDone) // signal all retention/stats ticker goroutines to exit
 	retentionTicker.Stop()
+	observerRetentionTicker.Stop()
 	metricsRetentionTicker.Stop()
 	statsTicker.Stop()
+	stopStatsFileWriter()
 	stopWatchdog()
 	store.LogStats() // final stats on shutdown
 	for _, c := range clients {
