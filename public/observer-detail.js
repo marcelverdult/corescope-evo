@@ -53,7 +53,7 @@
             </select>
           </div>
         </div>
-        <div id="obsDetailContent"><div class="text-center text-muted" style="padding:40px">Loading…</div></div>
+        <div id="obsDetailContent">${PageState.loading('Loading observer…')}</div>
       </div>`;
 
     document.getElementById('obsDaysSelect').addEventListener('change', function (e) {
@@ -102,8 +102,7 @@
       });
       renderDetail(obs, analytics, obsSkew);
     } catch (e) {
-      document.getElementById('obsDetailContent').innerHTML =
-        '<div class="text-muted" style="padding:40px">Error: ' + e.message + '</div>';
+      PageState.error(document.getElementById('obsDetailContent'), e, loadDetail);
     }
   }
 
@@ -220,7 +219,7 @@
       </div>
       <div style="margin-top:20px">
         <h3 style="font-size:0.95em">Recent Packets</h3>
-        <div id="obsRecentPackets"><div class="text-muted">Loading…</div></div>
+        <div id="obsRecentPackets">${PageState.loading('Loading recent packets…')}</div>
       </div>`;
 
     // Render charts
