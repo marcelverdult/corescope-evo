@@ -855,12 +855,12 @@ self.onmessage = async (event) => {
       resultEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
-    // GPU acceleration is disabled: the WebGPU scanner (vendor/webgpu-ed25519.js)
-    // derives public keys that fail validateKeypair's derive-check, so a GPU run
-    // scans forever without ever yielding a valid key. The GPU row stays hidden
-    // and key generation always uses the correct CPU path. Re-enable by
-    // restoring the detectGpu()/gpuRow.style.display block here once the WebGPU
-    // module is fixed.
+    // GPU acceleration stays hidden. vendor/webgpu-ed25519.js is now the
+    // correct upstream build (jkingsman/meshcore-web-keygen — its earlier
+    // PRECOMP_WORDS table was corrupt), but the GPU scan still yields no
+    // valid keys in this integration: scanBatchMatches finds no candidates
+    // whose noble-derived public key matches the prefix. Re-enable by
+    // restoring the detectGpu()/gpuRow block once that is debugged.
     void gpuRow; void gpuToggle; void gpuHint;
 
     // Popup button — opens the SPA in a separate window; generation is independent
