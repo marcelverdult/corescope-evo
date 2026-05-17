@@ -88,7 +88,7 @@
         </div>
       </section>
 
-      ${hasNodes ? '<div class="my-nodes-grid" id="myNodesGrid">' + PageState.loading('Loading your nodes…') + '</div>' : '<div class="my-nodes-grid" id="myNodesGrid"></div>'}
+      ${hasNodes ? '<div class="my-nodes-grid" id="myNodesGrid"><div style="grid-column:1/-1">' + PageState.loading('Loading your nodes…') + '</div></div>' : '<div class="my-nodes-grid" id="myNodesGrid"></div>'}
 
       ${!hasNodes ? `
         <div class="onboarding-prompt">
