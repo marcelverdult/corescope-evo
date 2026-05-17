@@ -29,6 +29,23 @@ function test(name, fn) {
   }
 }
 
+// --- Resilient DOM-element mock ---
+// Wraps a hand-rolled element mock in a Proxy so that accessing any DOM
+// method the mock does not define returns a harmless no-op function instead
+// of `undefined` (which would throw "x is not a function" and abort every
+// remaining test, since tests share a process with no per-test isolation).
+function proxyEl(base) {
+  return new Proxy(base, {
+    get(target, prop, receiver) {
+      if (prop in target) return Reflect.get(target, prop, receiver);
+      if (typeof prop === 'symbol') return undefined;
+      // Undefined property accessed (commonly as a method call) — return a
+      // no-op function. It is callable, and falsy enough for value checks.
+      return function () { return undefined; };
+    },
+  });
+}
+
 // --- Build a browser-like sandbox ---
 function makeSandbox() {
   const ctx = {
@@ -1368,7 +1385,7 @@ console.log('\n=== nodes.js: WS handler runtime behavior ===');
     const domElements = {};
     function getEl(id) {
       if (!domElements[id]) {
-        domElements[id] = {
+        domElements[id] = proxyEl({
           id, innerHTML: '', textContent: '', value: '', scrollTop: 0,
           style: {}, dataset: {},
           classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
@@ -1376,7 +1393,7 @@ console.log('\n=== nodes.js: WS handler runtime behavior ===');
           querySelectorAll() { return []; },
           querySelector() { return null; },
           getAttribute() { return null; },
-        };
+        });
       }
       return domElements[id];
     }
@@ -2607,7 +2624,7 @@ console.log('\n=== channels.js: WS batch + region snapshot integration ===');
     const dom = {};
     function makeEl(id) {
       if (dom[id]) return dom[id];
-      dom[id] = {
+      dom[id] = proxyEl({
         id,
         innerHTML: '',
         textContent: '',
@@ -2626,7 +2643,7 @@ console.log('\n=== channels.js: WS batch + region snapshot integration ===');
         setAttribute() {},
         removeAttribute() {},
         focus() {},
-      };
+      });
       return dom[id];
     }
 
@@ -2731,7 +2748,7 @@ console.log('\n=== channels.js: WS batch + region snapshot integration ===');
     const dom = {};
     function makeEl(id) {
       if (dom[id]) return dom[id];
-      dom[id] = {
+      dom[id] = proxyEl({
         id,
         innerHTML: '',
         textContent: '',
@@ -2750,7 +2767,7 @@ console.log('\n=== channels.js: WS batch + region snapshot integration ===');
         setAttribute() {},
         removeAttribute() {},
         focus() {},
-      };
+      });
       return dom[id];
     }
     const headerText = { textContent: '' };
@@ -2826,7 +2843,7 @@ console.log('\n=== channels.js: WS batch + region snapshot integration ===');
     const dom = {};
     function makeEl(id) {
       if (dom[id]) return dom[id];
-      dom[id] = {
+      dom[id] = proxyEl({
         id,
         innerHTML: '',
         textContent: '',
@@ -2845,7 +2862,7 @@ console.log('\n=== channels.js: WS batch + region snapshot integration ===');
         setAttribute() {},
         removeAttribute() {},
         focus() {},
-      };
+      });
       return dom[id];
     }
     const headerText = { textContent: '' };
@@ -2924,7 +2941,7 @@ console.log('\n=== channels.js: encrypted channel without key shows lock message
     const dom = {};
     function makeEl(id) {
       if (dom[id]) return dom[id];
-      dom[id] = {
+      dom[id] = proxyEl({
         id,
         innerHTML: '',
         textContent: '',
@@ -2943,7 +2960,7 @@ console.log('\n=== channels.js: encrypted channel without key shows lock message
         setAttribute() {},
         removeAttribute() {},
         focus() {},
-      };
+      });
       return dom[id];
     }
     const headerText = { textContent: '' };
@@ -3033,7 +3050,7 @@ console.log('\n=== channels.js: encrypted channel without key shows lock message
     const dom = {};
     function makeEl(id) {
       if (dom[id]) return dom[id];
-      dom[id] = {
+      dom[id] = proxyEl({
         id, innerHTML: '', textContent: '', value: '',
         scrollTop: 0, scrollHeight: 100, clientHeight: 80,
         style: {}, dataset: {},
@@ -3042,7 +3059,7 @@ console.log('\n=== channels.js: encrypted channel without key shows lock message
         querySelector() { return null; }, querySelectorAll() { return []; },
         getBoundingClientRect() { return { left: 0, bottom: 0, width: 0 }; },
         setAttribute() {}, removeAttribute() {}, focus() {},
-      };
+      });
       return dom[id];
     }
     const headerText = { textContent: '' };
