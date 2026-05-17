@@ -96,7 +96,7 @@ The entrypoint sources this file before starting services. This works with any l
 Docker Compose files are maintained for backward compatibility but are no longer the recommended approach.
 
 ```bash
-curl -sL https://raw.githubusercontent.com/Kpa-clawbot/CoreScope/master/docker-compose.example.yml \
+curl -sL https://raw.githubusercontent.com/Kpa-clawbot/CoreScope/master/docker-compose.simple.yml \
   -o docker-compose.yml
 docker compose up -d
 ```
