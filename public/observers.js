@@ -95,7 +95,7 @@
           </div>
         </div>
         <div id="obsRegionFilter" class="region-filter-container"></div>
-        <div id="obsContent"><div class="text-center text-muted" style="padding:40px">Loading…</div></div>
+        <div id="obsContent">${PageState.loading('Loading observers…')}</div>
       </div>`;
     RegionFilter.init(document.getElementById('obsRegionFilter'));
     regionChangeHandler = RegionFilter.onChange(function () { render(); });
@@ -202,8 +202,7 @@
       });
       render();
     } catch (e) {
-      document.getElementById('obsContent').innerHTML =
-        `<div class="text-muted" role="alert" aria-live="polite" style="padding:40px">Error loading observers: ${e.message}</div>`;
+      PageState.error(document.getElementById('obsContent'), e, loadObservers);
     }
   }
 
