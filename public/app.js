@@ -805,12 +805,11 @@ window.pullReconnect = pullReconnect;
 window.setupPullToReconnect = setupPullToReconnect;
 window.connectWS = connectWS;
 
-/* Global escapeHtml — canonical implementation lives in packet-helpers.js
-   as window.escapeHtml. This thin delegator keeps the bare `escapeHtml`
-   name resolvable for app.js callers and isolated unit-test sandboxes that
-   load app.js without packet-helpers.js. */
+/* Global escapeHtml — self-contained. Must NOT delegate to window.escapeHtml:
+   this top-level declaration in a classic script IS window.escapeHtml, so a
+   delegating body would call itself and infinitely recurse. packet-helpers.js
+   defines an equivalent canonical escaper; both escape the same characters. */
 function escapeHtml(s) {
-  if (typeof window !== 'undefined' && window.escapeHtml) return window.escapeHtml(s);
   if (s == null) return '';
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
