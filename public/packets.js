@@ -1135,10 +1135,18 @@
 
   async function loadPackets() {
     try {
-      // Show a skeleton while the table body refreshes (subsequent loads —
-      // on first load the table is built only after the fetch resolves).
+      // Show a skeleton while the table body refreshes. On reloads/filter
+      // changes the table already exists, so seed #pktBody directly. On the
+      // first load the table is built only after the fetch resolves, so seed
+      // the page container (#pktLeft) with a loading state instead — this
+      // paints before the fetch resolves and renderLeft() replaces it.
       const _loadingBody = document.getElementById('pktBody');
-      if (_loadingBody) _loadingBody.innerHTML = PageState.skeleton({ rows: 8, cols: _getColCount(), table: true });
+      if (_loadingBody) {
+        _loadingBody.innerHTML = PageState.skeleton({ rows: 8, cols: _getColCount(), table: true });
+      } else {
+        const _loadingLeft = document.getElementById('pktLeft');
+        if (_loadingLeft) _loadingLeft.innerHTML = PageState.loading('Loading packets…');
+      }
       const selectedWindow = Number(document.getElementById('fTimeWindow')?.value);
       const windowMin = Number.isFinite(selectedWindow) ? selectedWindow : savedTimeWindowMin;
       const params = buildPacketsParams({
@@ -1343,11 +1351,6 @@
         <tbody id="pktBody"></tbody>
       </table></div>
     `;
-
-    // Seed the freshly-built table body with a loading skeleton; renderTableRows()
-    // (called below) replaces it with real rows once data is ready.
-    var _pktBodySkel = document.getElementById('pktBody');
-    if (_pktBodySkel) _pktBodySkel.innerHTML = PageState.skeleton({ rows: 8, cols: _getColCount(), table: true });
 
     // Init shared RegionFilter component
     RegionFilter.init(document.getElementById('packetsRegionFilter'), { dropdown: true });
