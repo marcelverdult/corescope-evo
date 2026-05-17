@@ -55,10 +55,6 @@ The root plan docs are **done or stale** and should be moved to `docs/archive/`:
   none reference the published `ghcr.io/...` image; `docker-compose.simple.yml`
   (per `deployment-simplification.md`) is missing. Add it; repoint compose files
   at the GHCR image.
-- **Customizer bugs** — nav-gradient repaint lags one pipeline tick on reload
-  (`customize-v2.js` early-boot block sets CSS vars but not the inline nav
-  gradient); color flash for server-driven themes; reset-preview doesn't restore
-  the inline nav gradient.
 - **Inconsistent page states** — loading/empty/error UI is ad-hoc; `perf.js` shows
   a bare "Loading…". Standardize.
 - **`/api/backup`** streams the whole SQLite file with no size guard or rate limit.
