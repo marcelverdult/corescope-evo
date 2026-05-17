@@ -1,5 +1,5 @@
 # CoreScope — simple deployment using pre-built image from GHCR
-# Usage: docker compose -f docker-compose.example.yml up -d
+# Usage: docker compose -f docker-compose.simple.yml up -d
 # Docs:  https://github.com/Kpa-clawbot/CoreScope/blob/master/DEPLOY.md
 
 services:
