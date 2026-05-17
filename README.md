@@ -203,12 +203,12 @@ corescope/
 │   │   ├── db.go            # SQLite persistence layer
 │   │   ├── decoder.go       # MeshCore packet decoder
 │   │   ├── websocket.go     # WebSocket broadcast
-│   │   └── *_test.go        # 327 test functions
+│   │   └── *_test.go        # 928 test functions
 │   └── ingestor/            # Go MQTT ingestor
 │       ├── main.go          # MQTT subscription + packet processing
 │       ├── decoder.go       # Packet decoder (shared logic)
 │       ├── db.go            # SQLite write path
-│       └── *_test.go        # 53 test functions
+│       └── *_test.go        # 328 test functions
 ├── proto/                   # Protobuf API definitions
 ├── public/                  # Vanilla JS frontend (no build step)
 │   ├── index.html           # SPA shell
@@ -235,7 +235,7 @@ corescope/
 
 ### Test Suite
 
-**380 Go tests** covering the backend, plus **150+ Node.js tests** for the frontend and legacy logic, plus **49 Playwright E2E tests** for browser validation.
+**1,288 Go test functions** covering the backend (server, ingestor, decrypt CLI, and internal packages), plus a **Node.js test suite** of 96 `test-*.js` files for the frontend and legacy logic, plus **117 Playwright E2E tests** for browser validation.
 
 ```bash
 # Go backend tests
