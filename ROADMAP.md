@@ -23,21 +23,19 @@ CoreScope-EVO is a **mature, production-deployed** MeshCore packet analyzer.
 The project is not "half-built" — the backlog below is gaps, polish, and debt,
 not missing core features.
 
-## Plan-doc status — archive these
+## Plan-doc status — archived
 
-The root plan docs are **done or stale** and should be moved to `docs/archive/`:
+The done/stale root plan docs have been moved to `docs/archive/`:
+`BUILD_PLAN.md` (stale — removed Node.js stack), `DEDUP-DESIGN.md` +
+`DEDUP-MIGRATION-PLAN.md` (normalized schema shipped), `NODE-ANALYTICS-PLAN.md`,
+`NEW_USER_SPEC.md`, `CUSTOMIZATION-PLAN.md`, `AUDIO-PLAN.md`, `AUDIO-WORKBENCH.md`,
+and `docs/go-migration.md` (Go migration complete). The audio percussion layer
+and Audio Workbench M2–M5 remain tracked under P2 below.
 
-| Doc | Status |
-|-----|--------|
-| `BUILD_PLAN.md` | STALE — describes the removed Node.js stack. Retire. |
-| `DEDUP-DESIGN.md`, `DEDUP-MIGRATION-PLAN.md` | DONE — normalized schema shipped. |
-| `NODE-ANALYTICS-PLAN.md` | DONE — `#/nodes/:pubkey/analytics` shipped. |
-| `NEW_USER_SPEC.md` | DONE — home page matches the spec. |
-| `CUSTOMIZATION-PLAN.md` | Phase 1–2 DONE; residual bugs → P1 below. |
-| `AUDIO-PLAN.md` | DONE except the percussion layer → P2 below. |
-| `AUDIO-WORKBENCH.md` | M1 done; M2–M5 → P2 below. |
-| `docs/specs/*` | All DONE except `deployment-simplification` (P1) and `rf-health-dashboard` (P2). |
-| `docs/go-migration.md` | STALE — says Go images unpublished; GHCR pipeline is live. Rewrite. |
+`docs/specs/*` are all done except `rf-health-dashboard` (P2) and the later
+milestones of `deployment-simplification` (env-var config, zero-config start,
+operator deployment guide — M2–M4; M1's GHCR images + `docker-compose.simple.yml`
+are done).
 
 ## Backlog
 
@@ -71,7 +69,6 @@ The root plan docs are **done or stale** and should be moved to `docs/archive/`:
 - **Test hygiene** — ~50 root `test-*.js` run in neither `test-all.sh` nor CI;
   49 use brittle `fs.readFileSync().includes()` source-grep assertions. Prune
   dead, convert brittle ones to behavioral, wire the curated remainder into CI.
-- **Remove dead code** — `geofilter-draft.js`, `audio-v1-constellation.js`.
 - **De-duplicate** the nav route lists hand-synced across `bottom-nav.js` /
   `nav-drawer.js`; the repeated SQL `IN`-clause builders (~8× in `db.go`).
 - **Docs** — rewrite `go-migration.md`, retire `BUILD_PLAN.md`, fix README test
