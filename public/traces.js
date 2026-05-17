@@ -68,7 +68,7 @@
         results.innerHTML = PageState.empty({
           icon: '📡',
           title: 'No observations found',
-          hint: 'Adjust your filters and try again'
+          hint: 'Try a different packet hash'
         });
         return;
       }
