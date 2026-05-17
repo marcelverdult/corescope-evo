@@ -19,6 +19,7 @@
   let affinityData = null;
   let userHasMoved = false;
   let controlsCollapsed = false;
+  let _mapThemeObs = null;  // theme MutationObserver — hoisted so destroy() can disconnect it
 
   // Safe escape — falls back to identity if app.js hasn't loaded yet
   const safeEsc = (typeof esc === 'function') ? esc : function (s) { return s; };
@@ -210,7 +211,8 @@
       attribution: '© OpenStreetMap © CartoDB',
       maxZoom: 19,
     }).addTo(map);
-    const _mapThemeObs = new MutationObserver(function () {
+    if (_mapThemeObs) _mapThemeObs.disconnect();
+    _mapThemeObs = new MutationObserver(function () {
       const dark = document.documentElement.getAttribute('data-theme') === 'dark' ||
         (document.documentElement.getAttribute('data-theme') !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
       tileLayer.setUrl(dark ? TILE_DARK : TILE_LIGHT);
@@ -1203,6 +1205,7 @@
   function destroy() {
     if (wsHandler) offWS(wsHandler);
     wsHandler = null;
+    if (_mapThemeObs) { _mapThemeObs.disconnect(); _mapThemeObs = null; }
     if (map) {
       map.remove();
       map = null;
