@@ -47,10 +47,6 @@ The root plan docs are **done or stale** and should be moved to `docs/archive/`:
   `?limit=10000000` builds that many maps — unbounded response size / memory.
 
 ### P1 — real gaps & honesty
-- **mc-keygen acceleration is dead.** GPU path broken + hidden; WASM worker broken
-  + disabled (still spun up, unused). Decide: fix properly, or remove the dead
-  WASM/GPU code and the misleading "WASM/WebGPU accelerated" copy on the tools
-  card (`app.js`). CPU keygen works.
 - **Docker `compose pull` path is broken.** All `docker-compose*.yml` use `build:`,
   none reference the published `ghcr.io/...` image; `docker-compose.simple.yml`
   (per `deployment-simplification.md`) is missing. Add it; repoint compose files
@@ -75,8 +71,7 @@ The root plan docs are **done or stale** and should be moved to `docs/archive/`:
 - **Test hygiene** — ~50 root `test-*.js` run in neither `test-all.sh` nor CI;
   49 use brittle `fs.readFileSync().includes()` source-grep assertions. Prune
   dead, convert brittle ones to behavioral, wire the curated remainder into CI.
-- **Remove dead code** — unused mc-keygen WASM workers, hidden GPU UI,
-  `geofilter-draft.js`, `audio-v1-constellation.js`.
+- **Remove dead code** — `geofilter-draft.js`, `audio-v1-constellation.js`.
 - **De-duplicate** the nav route lists hand-synced across `bottom-nav.js` /
   `nav-drawer.js`; the repeated SQL `IN`-clause builders (~8× in `db.go`).
 - **Docs** — rewrite `go-migration.md`, retire `BUILD_PLAN.md`, fix README test

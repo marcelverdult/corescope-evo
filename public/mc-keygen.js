@@ -4,43 +4,9 @@
 (function () {
   /* ---------------------------------------------------------------
    * MeshCoreKeyGenerator
-   * CPU path  : WASM workers (default, unchanged)
-   * GPU path  : blob hash-workers + WebGPU scanner (jkingsman/meshcore-web-keygen)
-   * Keys never leave the device.
+   * CPU vanity-key search using the vendored @noble/ed25519 library.
+   * Runs in the browser; keys never leave the device.
    * --------------------------------------------------------------- */
-
-  const ED25519_ORDER = 0x1000000000000000000000000000000014def9dea2f79cd65812631a5cf5d3edn;
-
-  // Inline blob-worker that generates SHA-512 scalar candidates for the GPU pipeline.
-  // Each invocation produces scalarWords (8 u32 per candidate) + suffixes (32 bytes each).
-  const HASH_WORKER_SCRIPT = `
-self.onmessage = async (event) => {
-  const { type, batchSize } = event.data;
-  if (type !== 'generate') return;
-  const scalarWords = new Uint32Array(batchSize * 8);
-  const suffixes   = new Uint8Array(batchSize * 32);
-  for (let i = 0; i < batchSize; i++) {
-    const seed   = crypto.getRandomValues(new Uint8Array(32));
-    const digest = new Uint8Array(await crypto.subtle.digest('SHA-512', seed));
-    const c0   = digest[0] & 248;
-    const c31  = (digest[31] & 63) | 64;
-    const wo   = i * 8;
-    scalarWords[wo]   = c0          | (digest[1]  << 8) | (digest[2]  << 16) | (digest[3]  << 24);
-    scalarWords[wo+1] = digest[4]   | (digest[5]  << 8) | (digest[6]  << 16) | (digest[7]  << 24);
-    scalarWords[wo+2] = digest[8]   | (digest[9]  << 8) | (digest[10] << 16) | (digest[11] << 24);
-    scalarWords[wo+3] = digest[12]  | (digest[13] << 8) | (digest[14] << 16) | (digest[15] << 24);
-    scalarWords[wo+4] = digest[16]  | (digest[17] << 8) | (digest[18] << 16) | (digest[19] << 24);
-    scalarWords[wo+5] = digest[20]  | (digest[21] << 8) | (digest[22] << 16) | (digest[23] << 24);
-    scalarWords[wo+6] = digest[24]  | (digest[25] << 8) | (digest[26] << 16) | (digest[27] << 24);
-    scalarWords[wo+7] = digest[28]  | (digest[29] << 8) | (digest[30] << 16) | (c31        << 24);
-    for (let b = 0; b < 32; b++) suffixes[i * 32 + b] = digest[32 + b];
-  }
-  self.postMessage(
-    { type: 'results', scalarWords: scalarWords.buffer, suffixes: suffixes.buffer },
-    [scalarWords.buffer, suffixes.buffer]
-  );
-};
-`;
 
   let nobleEd25519 = null;
 
@@ -54,339 +20,42 @@ self.onmessage = async (event) => {
       this.difficultyUpdateInterval = null;
       this.initialized = false;
       this.currentTargetPrefix = '';
-
-      // CPU (WASM) path state
-      this.workers = [];
-      this.numWorkers = navigator.hardwareConcurrency || 4;
       this.batchSize = 4096;
-      this.targetBatchMs = 20;
-      this.minBatchSize = 512;
-      this.maxBatchSize = 65536;
-      this.progressIntervalMs = 150;
-      this.currentJobId = 0;
-      this.activeSearch = null;
-      this.generationMode = 'wasm';
-      this.jsFallbackModule = null;
-      this.jsFallbackReason = null;
-      this.perfStats = this._emptyPerf();
-
-      // GPU path state
-      this.gpuAvailable = false;
-      this.gpuChecked = false;
-      this.gpuScanner = null;
-      this.useGpu = false;
-      this.gpuBatchSize = 131072;
-      this.hashWorkers = [];
-      this.maxHashWorkers = Math.min(6, navigator.hardwareConcurrency || 4);
-      this._hashWorkerUrl = null;
-      this._gpuScript = null; // injected <script> for the WebGPU UMD bundle
-    }
-
-    // ------------------------------------------------------------------ perf
-
-    _emptyPerf() {
-      return { messages: 0, batches: 0, wasmMs: 0, batchWallMs: 0, startedAt: 0, lastLogAt: 0 };
-    }
-    _resetPerf() { this.perfStats = this._emptyPerf(); this.perfStats.startedAt = performance.now(); }
-    _recordPerf(m) {
-      if (!m) return;
-      this.perfStats.messages += 1;
-      this.perfStats.batches = Math.max(this.perfStats.batches, m.batchCount || 0);
-      this.perfStats.wasmMs += m.wasmMs || 0;
-      this.perfStats.batchWallMs += m.batchWallMs || 0;
+      this.keygenModule = null;
     }
 
     // ------------------------------------------------------------------ init
 
     async initialize() {
       if (this.initialized) return;
-      let libraryUrl = null;
       // Local vendored @noble/ed25519 1.7.3 — RFC-8032 correct, 0-dependency,
       // self-contained ESM. Loading it locally keeps key generation fully
       // offline ("keys never leave your device") and avoids the unpinned
       // `noble-ed25519@latest` CDN drift: that tag resolves to the ancient
       // unscoped 1.2.6, whose module shape lacks the Point API validateKeypair
       // needs, so every generated key failed validation.
-      const libraryUrls = [
-        './vendor/noble-ed25519.js'
-      ];
-      for (const url of libraryUrls) {
-        try { nobleEd25519 = await import(url); libraryUrl = url; break; }
-        catch (e) { /* try next */ }
+      try {
+        nobleEd25519 = await import('./vendor/noble-ed25519.js');
+      } catch (e) {
+        throw new Error('Failed to load Ed25519 library.');
       }
-      if (!nobleEd25519) throw new Error('Failed to load Ed25519 library from all sources.');
-      this.libraryUrl = libraryUrl;
-
-      if (typeof WebAssembly === 'undefined') {
-        await this._loadJsFallback('WebAssembly not available');
-      } else {
-        try { await this._initWorkers(); }
-        catch (e) { await this._loadJsFallback('WASM worker init failed: ' + e.message); }
-      }
+      // js/fallback-keygen.js derives the public key the same way
+      // validateKeypair does (Point.BASE.multiply of the clamped scalar),
+      // so it produces self-consistent, RFC-8032-correct keys.
+      this.keygenModule = await import('./js/fallback-keygen.js');
       this.initialized = true;
     }
 
-    // ------------------------------------------------------------------ CPU / WASM path
+    // ------------------------------------------------------------------ search
 
-    async _initWorkers() {
-      if (this.workers.length > 0) return;
-      for (let i = 0; i < this.numWorkers; i++) {
-        const worker = new Worker('./wasm/worker.js', { type: 'module' });
-        const info = { id: i, worker, attemptedTotal: 0 };
-        worker.addEventListener('message', (e) => this._onWorkerMsg(info, e.data));
-        worker.addEventListener('error', (e) => this._onWorkerErr(info, e));
-        this.workers.push(info);
-      }
-      this.generationMode = 'wasm';
-    }
-
-    async _loadJsFallback(reason) {
-      if (!this.jsFallbackModule) {
-        this.jsFallbackModule = await import('./js/fallback-keygen.js');
-      }
-      this.generationMode = 'js-fallback';
-      this.jsFallbackReason = reason;
-    }
-
-    _stopWorkers() {
-      for (const w of this.workers) w.worker.postMessage({ type: 'stop' });
-    }
-
-    _onWorkerErr(info, err) {
-      if (this.activeSearch && !this.activeSearch.done) {
-        this.activeSearch.failures = (this.activeSearch.failures || 0) + 1;
-        if (this.activeSearch.failures >= this.workers.length) {
-          const s = this.activeSearch; s.done = true; this.activeSearch = null;
-          s.reject(new Error('All workers failed.'));
-        }
-      }
-    }
-
-    _onWorkerMsg(info, data) {
-      if (!this.activeSearch || data.jobId !== this.activeSearch.jobId) return;
-      if (data.metrics) this._recordPerf(data.metrics);
-      if (data.type === 'progress' || data.type === 'match') {
-        const newTotal = data.attemptedTotal ?? (info.attemptedTotal + (data.attemptedDelta || 0));
-        this.attempts += Math.max(0, newTotal - info.attemptedTotal);
-        info.attemptedTotal = newTotal;
-      }
-      if (data.type === 'match' && !this.activeSearch.done) {
-        this.activeSearch.done = true;
-        this.stopRequested = false;
-        this.isRunning = false;
-        this._stopWorkers();
-        const resolve = this.activeSearch.resolve;
-        this.activeSearch = null;
-        resolve(data.result);
-      }
-      if (data.type === 'stopped') {
-        this.activeSearch.stopped = (this.activeSearch.stopped || 0) + 1;
-        if (this.activeSearch.stopped >= this.workers.length && !this.activeSearch.done) {
-          const s = this.activeSearch; s.done = true; this.activeSearch = null;
-          this.stopRequested ? s.resolve(null) : s.reject(new Error('Search ended without a match.'));
-        }
-      }
-    }
-
-    _startWorkerSearch(prefix) {
-      if (!this.workers.length) return Promise.reject(new Error('No workers available.'));
-      this.currentJobId += 1;
-      for (const w of this.workers) w.attemptedTotal = 0;
-      this._resetPerf();
-      const jobId = this.currentJobId;
-      return new Promise((resolve, reject) => {
-        this.activeSearch = { jobId, done: false, stopped: 0, failures: 0, resolve, reject };
-        for (const w of this.workers) {
-          w.worker.postMessage({
-            type: 'start', jobId, targetPrefix: prefix,
-            batchSize: this.batchSize, adaptiveBatching: true,
-            targetBatchMs: this.targetBatchMs, minBatchSize: this.minBatchSize,
-            maxBatchSize: this.maxBatchSize, progressIntervalMs: this.progressIntervalMs
-          });
-        }
-      });
-    }
-
-    async _startJsFallback(prefix) {
-      await this._loadJsFallback(this.jsFallbackReason);
-      return this.jsFallbackModule.searchVanityKey({
+    async _search(prefix) {
+      return this.keygenModule.searchVanityKey({
         targetPrefix: prefix,
         batchSize: Math.max(64, Math.floor(this.batchSize / 2)),
         getNobleEd25519: () => nobleEd25519,
         shouldStop: () => this.stopRequested || !this.isRunning,
         onAttempted: (n) => { this.attempts += n; }
       });
-    }
-
-    // ------------------------------------------------------------------ GPU path
-
-    async detectGpu() {
-      if (this.gpuChecked) return this.gpuAvailable;
-      this.gpuChecked = true;
-      if (!navigator?.gpu) { this.gpuAvailable = false; return false; }
-      try {
-        // The bundle is a UMD IIFE — use script injection, not ES import()
-        if (!globalThis.MeshCoreGpuModule) {
-          await new Promise((resolve, reject) => {
-            const s = document.createElement('script');
-            s.src = new URL('./vendor/webgpu-ed25519.js', document.baseURI).href;
-            s.onload = resolve;
-            s.onerror = reject;
-            document.head.appendChild(s);
-            this._gpuScript = s; // tracked so destroy() can remove it
-          });
-        }
-        const { WebGpuEd25519Scanner } = globalThis.MeshCoreGpuModule;
-        const scanner = new WebGpuEd25519Scanner();
-        const ready = await scanner.initialize();
-        if (ready) {
-          this.gpuScanner = scanner;
-          this.gpuAvailable = true;
-          return true;
-        }
-      } catch (e) {
-        console.warn('[GPU] module load failed:', e);
-      }
-      this.gpuAvailable = false;
-      return false;
-    }
-
-    async enableGpu() {
-      const avail = await this.detectGpu();
-      if (!avail) return false;
-      await this.gpuScanner.autotuneWorkgroupSize(this.gpuBatchSize);
-      await this.gpuScanner.warmup();
-      this._initHashWorkers();
-      this.useGpu = true;
-      return true;
-    }
-
-    disableGpu() {
-      this.useGpu = false;
-    }
-
-    _initHashWorkers() {
-      if (this.hashWorkers.length > 0) return;
-      const blob = new Blob([HASH_WORKER_SCRIPT], { type: 'application/javascript' });
-      this._hashWorkerUrl = URL.createObjectURL(blob);
-      for (let i = 0; i < this.maxHashWorkers; i++) {
-        this.hashWorkers.push(new Worker(this._hashWorkerUrl));
-      }
-    }
-
-    _terminateHashWorkers() {
-      for (const w of this.hashWorkers) w.terminate();
-      this.hashWorkers = [];
-      if (this._hashWorkerUrl) { URL.revokeObjectURL(this._hashWorkerUrl); this._hashWorkerUrl = null; }
-    }
-
-    async _generateHashBatch() {
-      const activeWorkers = this.hashWorkers.slice(0, this.maxHashWorkers);
-      if (!activeWorkers.length) throw new Error('No hash workers');
-      const perWorker = Math.ceil(this.gpuBatchSize / activeWorkers.length);
-
-      const batches = await Promise.all(activeWorkers.map(worker =>
-        new Promise((resolve, reject) => {
-          const timeout = setTimeout(() => {
-            worker.removeEventListener('message', onMsg);
-            worker.removeEventListener('error', onErr);
-            reject(new Error('Hash worker timeout'));
-          }, 30000);
-          const onMsg = (e) => {
-            if (e.data.type !== 'results') return;
-            clearTimeout(timeout);
-            worker.removeEventListener('message', onMsg);
-            worker.removeEventListener('error', onErr);
-            resolve({ scalarWords: new Uint32Array(e.data.scalarWords), suffixes: new Uint8Array(e.data.suffixes) });
-          };
-          const onErr = (e) => {
-            clearTimeout(timeout);
-            worker.removeEventListener('message', onMsg);
-            worker.removeEventListener('error', onErr);
-            reject(e);
-          };
-          worker.addEventListener('message', onMsg);
-          worker.addEventListener('error', onErr);
-          worker.postMessage({ type: 'generate', batchSize: perWorker });
-        })
-      ));
-
-      const scalarWords = new Uint32Array(batches.reduce((s, b) => s + b.scalarWords.length, 0));
-      const suffixes   = new Uint8Array(batches.reduce((s, b) => s + b.suffixes.length, 0));
-      let wo = 0, so = 0;
-      for (const b of batches) {
-        scalarWords.set(b.scalarWords, wo); suffixes.set(b.suffixes, so);
-        wo += b.scalarWords.length; so += b.suffixes.length;
-      }
-      return { scalarWords, suffixes };
-    }
-
-    _prefixToBytes(prefix) {
-      const bytes = [];
-      for (let i = 0; i < prefix.length; i += 2) {
-        bytes.push(parseInt(prefix.slice(i, i + 2).padEnd(2, '0'), 16));
-      }
-      return bytes;
-    }
-
-    _unpackScalarBytes(scalarWords, index) {
-      const bytes = new Uint8Array(32);
-      const wo = index * 8;
-      for (let w = 0; w < 8; w++) {
-        const v = scalarWords[wo + w], b = w * 4;
-        bytes[b] = v & 255; bytes[b+1] = (v >>> 8) & 255;
-        bytes[b+2] = (v >>> 16) & 255; bytes[b+3] = (v >>> 24) & 255;
-      }
-      return bytes;
-    }
-
-    _derivePublicKey(clampedScalar) {
-      let v = 0n;
-      for (let i = 0; i < 32; i++) v |= BigInt(clampedScalar[i]) << BigInt(i * 8);
-      const scalar = v % ED25519_ORDER;
-      if (scalar === 0n) throw new Error('Scalar reduced to zero');
-      const point = nobleEd25519.Point.BASE.multiply(scalar);
-      return point.toRawBytes ? point.toRawBytes() : point.toBytes();
-    }
-
-    // Pipelined GPU search loop: generates next batch while scanning the current one.
-    async _gpuLoop(prefix, prefixLen) {
-      const prefixBytes = this._prefixToBytes(prefix);
-      let nextBatch = this._generateHashBatch();
-
-      while (this.isRunning) {
-        let batch;
-        try { batch = await nextBatch; }
-        catch (e) { nextBatch = this._generateHashBatch(); continue; }
-
-        nextBatch = this._generateHashBatch(); // overlap hash gen with GPU scan
-
-        const matchedIdxs = await this.gpuScanner.scanBatchMatches(batch.scalarWords, prefixBytes, prefixLen);
-        this.attempts += batch.scalarWords.length / 8;
-
-        for (const idx of matchedIdxs) {
-          const privBytes = new Uint8Array(64);
-          privBytes.set(this._unpackScalarBytes(batch.scalarWords, idx), 0);
-          privBytes.set(batch.suffixes.slice(idx * 32, idx * 32 + 32), 32);
-
-          let pubBytes;
-          try { pubBytes = this._derivePublicKey(privBytes.slice(0, 32)); }
-          catch (e) { continue; }
-
-          const pubHex = this.toHex(pubBytes);
-          if (pubHex.startsWith('00') || pubHex.startsWith('FF') || !pubHex.startsWith(prefix)) continue;
-
-          const privHex = this.toHex(privBytes);
-          const val = await this.validateKeypair(privHex, pubHex);
-          if (!val.valid) continue;
-
-          this.isRunning = false;
-          return { publicKey: pubHex, privateKey: privHex, attempts: this.attempts, timeElapsed: (Date.now() - this.startTime) / 1000 };
-        }
-
-        await new Promise(r => setTimeout(r, 0)); // yield to event loop
-      }
-      return null;
     }
 
     // ------------------------------------------------------------------ shared
@@ -449,11 +118,8 @@ self.onmessage = async (event) => {
         if (el('kgn-attempts')) el('kgn-attempts').textContent = this.attempts.toLocaleString();
         if (el('kgn-elapsed'))  el('kgn-elapsed').textContent  = elapsed.toFixed(1) + 's';
         if (el('kgn-rate'))     el('kgn-rate').textContent     = Math.round(rate).toLocaleString();
-        const method = this.useGpu
-          ? `GPU + ${this.maxHashWorkers} hash workers`
-          : this.generationMode === 'js-fallback' ? 'JS fallback' : `${this.workers.length} WASM workers`;
         const pt = el('kgn-progress-text');
-        if (pt) pt.textContent = `${this.attempts.toLocaleString()} attempts | ${Math.round(rate).toLocaleString()} keys/sec | ${elapsed.toFixed(1)}s [${method}]`;
+        if (pt) pt.textContent = `${this.attempts.toLocaleString()} attempts | ${Math.round(rate).toLocaleString()} keys/sec | ${elapsed.toFixed(1)}s`;
         const prob = 1 / Math.pow(16, prefixLen);
         const pct = Math.min((this.attempts * prob) * 100, 99);
         const fill = el('kgn-progress-fill');
@@ -468,23 +134,7 @@ self.onmessage = async (event) => {
       }, 10000);
 
       try {
-        let matched = null;
-
-        if (this.useGpu && this.gpuScanner) {
-          matched = await this._gpuLoop(prefix, prefixLen);
-        } else if (this.generationMode === 'js-fallback') {
-          matched = await this._startJsFallback(prefix);
-        } else {
-          // The WASM worker (wasm/pkg/meshcore_keygen) emits keypairs whose
-          // public key fails validateKeypair's derive-check, so it is not
-          // used. js/fallback-keygen.js derives the public key the same way
-          // validateKeypair does (Point.BASE.multiply of the clamped scalar),
-          // so it produces self-consistent keys. It is slower than the WASM
-          // path but correct; the GPU path remains available for speed.
-          await this._loadJsFallback('WASM keygen disabled: derive-check mismatch');
-          matched = await this._startJsFallback(prefix);
-        }
-
+        const matched = await this._search(prefix);
         if (!matched) return null;
         const validation = await this.validateKeypair(matched.privateKey, matched.publicKey);
         if (!validation.valid) throw new Error('Key validation failed: ' + validation.error);
@@ -494,7 +144,6 @@ self.onmessage = async (event) => {
         return { publicKey: matched.publicKey, privateKey: matched.privateKey, attempts: this.attempts, timeElapsed: (Date.now() - this.startTime) / 1000 };
       } catch (e) {
         this.isRunning = false;
-        if (!this.useGpu) this._stopWorkers();
         this._clearTimers();
         throw e;
       }
@@ -508,44 +157,11 @@ self.onmessage = async (event) => {
     stop() {
       this.isRunning = false;
       this.stopRequested = true;
-      if (!this.useGpu) this._stopWorkers();
       this._clearTimers();
-    }
-
-    // Dispose the WebGPU scanner (GPUDevice/adapter) and remove the injected
-    // UMD <script>. Without this, the GPUDevice and the global module leak
-    // across SPA navigations away from the keygen page.
-    _disposeGpu() {
-      if (this.gpuScanner) {
-        try {
-          // Prefer an explicit teardown on the scanner if the vendor bundle
-          // provides one; otherwise destroy the underlying GPUDevice directly.
-          if (typeof this.gpuScanner.destroy === 'function') {
-            this.gpuScanner.destroy();
-          } else if (typeof this.gpuScanner.dispose === 'function') {
-            this.gpuScanner.dispose();
-          } else if (this.gpuScanner.device && typeof this.gpuScanner.device.destroy === 'function') {
-            this.gpuScanner.device.destroy();
-          }
-        } catch (e) { /* best-effort teardown */ }
-        this.gpuScanner = null;
-      }
-      this.gpuAvailable = false;
-      this.gpuChecked = false;
-      this.useGpu = false;
-      if (this._gpuScript) {
-        try { if (this._gpuScript.parentNode) this._gpuScript.parentNode.removeChild(this._gpuScript); }
-        catch (e) { /* ignore */ }
-        this._gpuScript = null;
-      }
     }
 
     destroy() {
       this.stop();
-      for (const w of this.workers) w.worker.terminate();
-      this.workers = [];
-      this._terminateHashWorkers();
-      this._disposeGpu();
       this.initialized = false;
     }
   }
@@ -638,14 +254,6 @@ self.onmessage = async (event) => {
         <div id="kgn-reserved-warning" class="kgn-warning" style="display:none">
           ⚠️ Prefixes starting with <code>00</code> or <code>FF</code> are reserved by MeshCore.
         </div>
-      </div>
-
-      <div class="kgn-field kgn-gpu-row" id="kgn-gpu-row" style="display:none">
-        <label class="kgn-gpu-label" style="display:flex;align-items:center;gap:8px;cursor:pointer">
-          <input type="checkbox" id="kgn-gpu-toggle" style="width:16px;height:16px;cursor:pointer">
-          <span>⚡ Use GPU acceleration (WebGPU)</span>
-        </label>
-        <div class="kgn-hint" id="kgn-gpu-hint" style="margin-top:4px"></div>
       </div>
 
       <div class="kgn-btns">
@@ -758,13 +366,8 @@ self.onmessage = async (event) => {
     </div>
 
     <div class="keygen-faq-section">
-      <h3>What is GPU acceleration?</h3>
-      <p>When your browser supports WebGPU, you can enable the ⚡ GPU toggle to use your graphics card for prefix scanning. The GPU evaluates thousands of candidates in parallel, typically delivering a significant speedup for longer prefixes. A ~2 MB WebGPU module is downloaded on first use. GPU mode requires Chrome 113+ or Edge 113+; Firefox and Safari do not yet support WebGPU.</p>
-    </div>
-
-    <div class="keygen-faq-section">
       <h3>What does "Open in popup" do?</h3>
-      <p>Launches the keygen in a separate browser window so generation continues uninterrupted while you navigate to other pages in the main window. Each window runs independently with its own workers.</p>
+      <p>Launches the keygen in a separate browser window so generation continues uninterrupted while you navigate to other pages in the main window. Each window runs its own independent search.</p>
     </div>
 
     <div class="keygen-faq-section">
@@ -793,7 +396,6 @@ self.onmessage = async (event) => {
         <li><strong>Wrong key format:</strong> Copy the full 128-character private key.</li>
         <li><strong>Key import fails:</strong> Verify the public key prefix matches, then retry.</li>
         <li><strong>Browser freezes / slow:</strong> Refresh and try a shorter prefix.</li>
-        <li><strong>GPU toggle not visible:</strong> Your browser does not support WebGPU. Try Chrome 113+ or Edge 113+.</li>
       </ul>
     </div>
 
@@ -831,9 +433,6 @@ self.onmessage = async (event) => {
     const resultEl    = $('kgn-result');
     const errorEl     = $('kgn-error');
     const modal       = $('kgn-modal');
-    const gpuRow      = $('kgn-gpu-row');
-    const gpuToggle   = $('kgn-gpu-toggle');
-    const gpuHint     = $('kgn-gpu-hint');
 
     function showError(msg) { errorEl.textContent = msg; errorEl.style.display = 'block'; }
     function hideError()    { errorEl.style.display = 'none'; }
@@ -842,7 +441,6 @@ self.onmessage = async (event) => {
       generateBtn.disabled = on;
       stopBtn.disabled     = !on;
       progressEl.style.display = on ? 'block' : 'none';
-      if (gpuToggle) gpuToggle.disabled = on;
     }
 
     function showResult(result) {
@@ -854,14 +452,6 @@ self.onmessage = async (event) => {
       resultEl.style.display = 'block';
       resultEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
-
-    // GPU acceleration stays hidden. vendor/webgpu-ed25519.js is now the
-    // correct upstream build (jkingsman/meshcore-web-keygen — its earlier
-    // PRECOMP_WORDS table was corrupt), but the GPU scan still yields no
-    // valid keys in this integration: scanBatchMatches finds no candidates
-    // whose noble-derived public key matches the prefix. Re-enable by
-    // restoring the detectGpu()/gpuRow block once that is debugged.
-    void gpuRow; void gpuToggle; void gpuHint;
 
     // Popup button — opens the SPA in a separate window; generation is independent
     $('kgn-popup-btn').addEventListener('click', () => {
@@ -897,25 +487,11 @@ self.onmessage = async (event) => {
       resultEl.style.display = 'none';
       setGenerating(true);
 
-      const wantGpu = gpuToggle && gpuToggle.checked;
-      $('kgn-progress-text').textContent = wantGpu
-        ? 'Loading WebGPU module and autotuning…'
-        : 'Loading Ed25519 library…';
+      $('kgn-progress-text').textContent = 'Loading Ed25519 library…';
       $('kgn-progress-fill').style.width = '0%';
 
       try {
         await generator.initialize();
-
-        if (wantGpu) {
-          const gpuReady = await generator.enableGpu();
-          if (!gpuReady) {
-            if (gpuToggle) gpuToggle.checked = false;
-            gpuHint.textContent = 'GPU unavailable in this session — falling back to CPU.';
-            generator.disableGpu();
-          }
-        } else {
-          generator.disableGpu();
-        }
 
         const result = await generator.generateVanityKey(prefix, prefix.length);
         if (result) {
