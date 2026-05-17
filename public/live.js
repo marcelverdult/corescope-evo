@@ -993,7 +993,7 @@
             <button class="feed-hide-btn" id="feedHideBtn" title="Hide feed">✕</button>
           </div>
           <div class="panel-content" aria-live="polite" aria-relevant="additions" role="log">
-            <div class="live-feed-empty" aria-hidden="true">Waiting for packets…</div>
+            <div class="live-feed-empty" aria-hidden="true">${PageState.empty({ icon: '📡', title: 'Waiting for packets', hint: 'Live packets appear here as they arrive' })}</div>
           </div>
         </div>
         <button class="feed-show-btn hidden" id="feedShowBtn" title="Show feed">📋</button>
@@ -1928,7 +1928,7 @@
     const content = document.getElementById('nodeDetailContent');
     panel.classList.remove('hidden');
     document.getElementById('nodeDetailBackdrop').classList.add('active');
-    content.innerHTML = '<div style="padding:20px;color:var(--text-muted)">Loading…</div>';
+    content.innerHTML = PageState.loading('Loading…');
     try {
       const [data, healthData] = await Promise.all([
         api('/nodes/' + encodeURIComponent(pubkey), { ttl: 30 }),
@@ -1988,7 +1988,7 @@
           '</div>';
       }
 
-      html += `<div id="liveNodePaths" style="margin-top:8px;"><div style="font-size:11px;color:var(--text-muted);padding:4px 0;"><span class="spinner" style="font-size:10px"></span> Loading paths…</div></div>`;
+      html += `<div id="liveNodePaths" style="margin-top:8px;">${PageState.loading('Loading paths…')}</div>`;
 
       html += `<div style="margin-top:12px;display:flex;gap:8px;">
         <a href="#/nodes/${encodeURIComponent(n.public_key)}" style="font-size:12px;color:var(--accent);">Full Detail →</a>
@@ -2031,7 +2031,7 @@
         if (pathEl) pathEl.innerHTML = '';
       });
     } catch (e) {
-      content.innerHTML = `<div style="padding:20px;color:var(--text-muted);">Error: ${e.message}</div>`;
+      PageState.error(content, e, () => showNodeDetail(pubkey));
     }
   }
 
@@ -2058,7 +2058,15 @@
       // Fetch affinity data for hop disambiguation
       fetchAffinityData();
       startAffinityRefresh();
-    } catch (e) { console.error('Failed to load nodes:', e); }
+    } catch (e) {
+      console.error('Failed to load nodes:', e);
+      // Surface the failure visibly: the feed panel's empty-state placeholder is
+      // the only clean container on the live page (nodes render as map markers,
+      // not a list). loadNodes is a safe retry — it re-fetches and re-renders
+      // markers without re-running page init or re-binding the WebSocket feed.
+      var _feedPh = document.querySelector('#liveFeed .live-feed-empty');
+      if (_feedPh) PageState.error(_feedPh, e, () => loadNodes());
+    }
   }
 
   let _affinityInterval = null;
@@ -2172,7 +2180,7 @@
       var _ph = document.createElement('div');
       _ph.className = 'live-feed-empty';
       _ph.setAttribute('aria-hidden', 'true');
-      _ph.textContent = 'Waiting for packets…';
+      _ph.innerHTML = PageState.empty({ icon: '📡', title: 'Waiting for packets', hint: 'Live packets appear here as they arrive' });
       feedContent.appendChild(_ph);
     }
 
