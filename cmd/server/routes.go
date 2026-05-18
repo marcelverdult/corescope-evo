@@ -57,6 +57,13 @@ type Server struct {
 	backupRunning  bool
 	backupLastDone time.Time
 
+	// In-memory perf-metrics ring buffer for /api/perf/history. Populated by
+	// a background goroutine (one sample per minute) and capped at
+	// perfHistoryCap. Not persisted — the server DB is opened read-only, so
+	// history resets on restart by design.
+	perfHistoryMu sync.Mutex
+	perfHistory   []PerfSample
+
 	// Router reference for OpenAPI spec generation
 	router *mux.Router
 }
@@ -167,6 +174,7 @@ func (s *Server) RegisterRoutes(r *mux.Router) {
 	r.HandleFunc("/api/perf/io", s.handlePerfIO).Methods("GET")
 	r.HandleFunc("/api/perf/sqlite", s.handlePerfSqlite).Methods("GET")
 	r.HandleFunc("/api/perf/write-sources", s.handlePerfWriteSources).Methods("GET")
+	r.HandleFunc("/api/perf/history", s.handlePerfHistory).Methods("GET")
 	r.Handle("/api/perf/reset", s.requireAPIKey(http.HandlerFunc(s.handlePerfReset))).Methods("POST")
 	r.Handle("/api/admin/prune", s.requireAPIKey(http.HandlerFunc(s.handleAdminPrune))).Methods("POST")
 	r.Handle("/api/debug/affinity", s.requireAPIKey(http.HandlerFunc(s.handleDebugAffinity))).Methods("GET")
@@ -793,6 +801,17 @@ func (s *Server) handlePerf(w http.ResponseWriter, r *http.Request) {
 		sqliteStats = &ss
 	}
 
+	// Observer health breakdown — same last_seen thresholds as the observers page.
+	var observerCounts *ObserverCounts
+	if s.db != nil {
+		observerCounts = s.db.GetObserverCounts()
+	}
+
+	wsClients := 0
+	if s.hub != nil {
+		wsClients = s.hub.ClientCount()
+	}
+
 	writeJSON(w, PerfResponse{
 		Uptime:        uptimeSec,
 		TotalRequests: totalRequests,
@@ -802,6 +821,8 @@ func (s *Server) handlePerf(w http.ResponseWriter, r *http.Request) {
 		Cache:         perfCS,
 		PacketStore:   pktStoreStats,
 		Sqlite:        sqliteStats,
+		WebSocketClients: wsClients,
+		ObserverCounts:   observerCounts,
 		GoRuntime: func() *GoRuntimeStats {
 			ms := s.getMemStats()
 			return &GoRuntimeStats{
@@ -814,6 +835,8 @@ func (s *Server) handlePerf(w http.ResponseWriter, r *http.Request) {
 				HeapInuseMB:  float64(ms.HeapInuse) / 1024 / 1024,
 				HeapIdleMB:   float64(ms.HeapIdle) / 1024 / 1024,
 				NumCPU:       runtime.NumCPU(),
+				CpuPercent:   getCPUPercent(),
+				TotalSysMB:   float64(ms.Sys) / 1024 / 1024,
 			}
 		}(),
 	})

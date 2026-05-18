@@ -1134,6 +1134,45 @@ func (db *DB) GetObservers() ([]Observer, error) {
 	return observers, nil
 }
 
+// GetObserverCounts returns the observer health breakdown for /api/perf.
+//
+// Online/stale/offline use the SAME last_seen thresholds as the observers
+// page (public/observers.js healthStatus): online if last_seen is within the
+// last 10 minutes, stale if within the last hour, offline otherwise. An
+// observer with a NULL/empty last_seen counts as offline (matching the
+// frontend's "Unknown → health-red"). Soft-deleted observers (inactive) are
+// excluded so the total matches the observers list.
+//
+// Thresholds are computed in Go and passed as RFC3339 strings; last_seen is
+// stored as an RFC3339 timestamp, which sorts/compares lexicographically.
+func (db *DB) GetObserverCounts() *ObserverCounts {
+	counts := &ObserverCounts{}
+	if db == nil || db.conn == nil {
+		return counts
+	}
+	// Cutoffs are formatted in UTC: last_seen is stored as a UTC RFC3339
+	// timestamp (…Z suffix), and SQLite compares timestamps as strings —
+	// a local-zone offset (…+02:00) would break the lexicographic compare.
+	now := time.Now().UTC()
+	onlineCutoff := now.Add(-10 * time.Minute).Format(time.RFC3339)
+	staleCutoff := now.Add(-1 * time.Hour).Format(time.RFC3339)
+
+	err := db.conn.QueryRow(`
+		SELECT
+			COUNT(*),
+			COUNT(CASE WHEN last_seen IS NOT NULL AND last_seen >= ? THEN 1 END),
+			COUNT(CASE WHEN last_seen IS NOT NULL AND last_seen >= ? AND last_seen < ? THEN 1 END),
+			COUNT(CASE WHEN last_seen IS NULL OR last_seen < ? THEN 1 END)
+		FROM observers
+		WHERE inactive IS NULL OR inactive = 0`,
+		onlineCutoff, staleCutoff, onlineCutoff, staleCutoff,
+	).Scan(&counts.Total, &counts.Online, &counts.Stale, &counts.Offline)
+	if err != nil {
+		return &ObserverCounts{}
+	}
+	return counts
+}
+
 // GetObserverByID returns a single observer.
 func (db *DB) GetObserverByID(id string) (*Observer, error) {
 	var o Observer

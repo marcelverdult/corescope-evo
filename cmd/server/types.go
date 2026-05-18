@@ -225,15 +225,17 @@ type SqliteStats struct {
 }
 
 type PerfResponse struct {
-	Uptime        int                           `json:"uptime"`
-	TotalRequests int64                         `json:"totalRequests"`
-	AvgMs         float64                       `json:"avgMs"`
-	Endpoints     map[string]*EndpointStatsResp `json:"endpoints"`
-	SlowQueries   []SlowQuery                   `json:"slowQueries"`
-	Cache         PerfCacheStats                `json:"cache"`
-	PacketStore   *PerfPacketStoreStats         `json:"packetStore"`
-	Sqlite        *SqliteStats                  `json:"sqlite"`
-	GoRuntime     *GoRuntimeStats               `json:"goRuntime,omitempty"`
+	Uptime           int                           `json:"uptime"`
+	TotalRequests    int64                         `json:"totalRequests"`
+	AvgMs            float64                       `json:"avgMs"`
+	Endpoints        map[string]*EndpointStatsResp `json:"endpoints"`
+	SlowQueries      []SlowQuery                   `json:"slowQueries"`
+	Cache            PerfCacheStats                `json:"cache"`
+	PacketStore      *PerfPacketStoreStats         `json:"packetStore"`
+	Sqlite           *SqliteStats                  `json:"sqlite"`
+	GoRuntime        *GoRuntimeStats               `json:"goRuntime,omitempty"`
+	WebSocketClients int                           `json:"webSocketClients"`
+	ObserverCounts   *ObserverCounts               `json:"observerCounts"`
 }
 
 // GoRuntimeStats holds Go runtime metrics for the perf endpoint.
@@ -247,6 +249,45 @@ type GoRuntimeStats struct {
 	HeapInuseMB  float64 `json:"heapInuseMB"`
 	HeapIdleMB   float64 `json:"heapIdleMB"`
 	NumCPU       int     `json:"numCPU"`
+	CpuPercent   float64 `json:"cpuPercent"`
+	// TotalSysMB is runtime.MemStats.Sys — total memory obtained from the OS
+	// for the Go runtime (heap + stacks + everything Go-managed), in MB.
+	TotalSysMB float64 `json:"totalSysMB"`
+}
+
+// ObserverCounts is the observer health breakdown surfaced on /api/perf.
+// Online/stale/offline use the SAME last_seen thresholds as the observers
+// page (public/observers.js healthStatus): online < 10 min, stale < 1 hour,
+// offline ≥ 1 hour. Only non-soft-deleted observers are counted.
+type ObserverCounts struct {
+	Total   int `json:"total"`
+	Online  int `json:"online"`
+	Stale   int `json:"stale"`
+	Offline int `json:"offline"`
+}
+
+// PerfSample is a flat point-in-time snapshot of the numeric metrics the
+// Performance dashboard charts. Stored in an in-memory ring buffer and served
+// by /api/perf/history so the dashboard can backfill its time-series on load.
+// Field names match what public/perf.js reads from a history sample.
+type PerfSample struct {
+	Ts              int64   `json:"ts"` // unix milliseconds
+	CpuPercent      float64 `json:"cpuPercent"`
+	Goroutines      int     `json:"goroutines"`
+	LastPauseMs     float64 `json:"lastPauseMs"`
+	HeapAllocMB     float64 `json:"heapAllocMB"`
+	HeapInuseMB     float64 `json:"heapInuseMB"`
+	HeapSysMB       float64 `json:"heapSysMB"`
+	TotalSysMB      float64 `json:"totalSysMB"`
+	AvgMs           float64 `json:"avgMs"`
+	CacheHitRate    float64 `json:"cacheHitRate"`
+	PacketsInRAM    int     `json:"packetsInRAM"`
+	TrackedMB       float64 `json:"trackedMB"`
+	DbSizeMB        float64 `json:"dbSizeMB"`
+	WalSizeMB       float64 `json:"walSizeMB"`
+	WsClients       int     `json:"wsClients"`
+	TotalObservers  int     `json:"totalObservers"`
+	OnlineObservers int     `json:"onlineObservers"`
 }
 
 // ─── Packets ───────────────────────────────────────────────────────────────────
