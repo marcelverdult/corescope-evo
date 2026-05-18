@@ -71,5 +71,31 @@ func ensureServerIndexes(dbPath string) error {
 			return fmt.Errorf("ensure idx_observations_observer_id: %w", err)
 		}
 	}
+
+	// Coverage indexes for the nodes/observers tables. These cover the
+	// GetNodes ORDER BY / WHERE, GetAllRoleCounts / GetRoleCounts GROUP BY,
+	// and the GetStoreStats observers last_seen > ? filter. Created
+	// column-aware because legacy server-only DBs may predate these columns
+	// (the ingestor-created schema always has them).
+	type coverageIdx struct {
+		table, column, indexSQL string
+	}
+	coverage := []coverageIdx{
+		{"nodes", "last_seen", `CREATE INDEX IF NOT EXISTS idx_nodes_last_seen ON nodes(last_seen)`},
+		{"nodes", "role", `CREATE INDEX IF NOT EXISTS idx_nodes_role ON nodes(role)`},
+		{"observers", "last_seen", `CREATE INDEX IF NOT EXISTS idx_observers_last_seen ON observers(last_seen)`},
+	}
+	for _, ci := range coverage {
+		has, err := tableHasColumn(rw, ci.table, ci.column)
+		if err != nil {
+			return fmt.Errorf("probe %s.%s: %w", ci.table, ci.column, err)
+		}
+		if !has {
+			continue // legacy schema lacks the column — skip its index
+		}
+		if _, err := rw.Exec(ci.indexSQL); err != nil {
+			return fmt.Errorf("ensure index %q: %w", ci.indexSQL, err)
+		}
+	}
 	return nil
 }

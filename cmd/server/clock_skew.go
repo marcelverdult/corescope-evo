@@ -173,6 +173,12 @@ type ClockSkewEngine struct {
 	hashEvidence     map[string][]hashEvidenceEntry // hash → per-observer raw/corrected data
 	lastComputed     time.Time
 	computeInterval  time.Duration
+
+	// fleet response cache — avoids re-computing for every /api/nodes/clock-skew
+	// call. TTL matches computeInterval (30s).
+	fleetCacheMu  sync.Mutex
+	fleetCache    []*NodeClockSkew
+	fleetCachedAt time.Time
 }
 
 // hashEvidenceEntry stores raw evidence per observer per hash, cached during Recompute.
@@ -707,6 +713,15 @@ func (s *PacketStore) getNodeClockSkewLocked(pubkey string) *NodeClockSkew {
 // GetFleetClockSkew returns clock skew data for all nodes that have skew data.
 // Must NOT be called with s.mu held.
 func (s *PacketStore) GetFleetClockSkew() []*NodeClockSkew {
+	// Fast path: return cached result if still fresh (TTL matches compute interval).
+	s.clockSkew.fleetCacheMu.Lock()
+	if s.clockSkew.fleetCache != nil && time.Since(s.clockSkew.fleetCachedAt) < 30*time.Second {
+		result := s.clockSkew.fleetCache
+		s.clockSkew.fleetCacheMu.Unlock()
+		return result
+	}
+	s.clockSkew.fleetCacheMu.Unlock()
+
 	// Recompute BEFORE taking the store RLock — the heavy compute must not
 	// run under the lock (#10).
 	s.clockSkew.Recompute(s)
@@ -737,6 +752,12 @@ func (s *PacketStore) GetFleetClockSkew() []*NodeClockSkew {
 		cs.CalibrationSummary = nil
 		results = append(results, cs)
 	}
+
+	s.clockSkew.fleetCacheMu.Lock()
+	s.clockSkew.fleetCache = results
+	s.clockSkew.fleetCachedAt = time.Now()
+	s.clockSkew.fleetCacheMu.Unlock()
+
 	return results
 }
 

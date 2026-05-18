@@ -61,8 +61,12 @@
           vb = b.packetsLastHour || 0;
           break;
         case 'uptime':
-          va = a.first_seen ? Date.now() - new Date(a.first_seen).getTime() : 0;
-          vb = b.first_seen ? Date.now() - new Date(b.first_seen).getTime() : 0;
+          // Prefer the device-reported uptime_secs (accurate — reflects actual
+          // node uptime, independent of when our ingestor first saw it); fall
+          // back to the first_seen delta only when the device hasn't reported
+          // uptime. uptime_secs is scaled to ms to match the fallback's unit.
+          va = a.uptime_secs != null ? a.uptime_secs * 1000 : (a.first_seen ? Date.now() - new Date(a.first_seen).getTime() : 0);
+          vb = b.uptime_secs != null ? b.uptime_secs * 1000 : (b.first_seen ? Date.now() - new Date(b.first_seen).getTime() : 0);
           break;
         case 'sf':
           va = a.radio ? parseInt(a.radio.split(',')[2]) || 0 : 0;

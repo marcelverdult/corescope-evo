@@ -73,3 +73,49 @@ func TestEnsureServerIndexes_CreatesObservationsIndexes(t *testing.T) {
 		}
 	}
 }
+
+// TestEnsureServerIndexes_CoverageIndexes verifies that the nodes/observers
+// coverage indexes (idx_nodes_last_seen, idx_nodes_role, idx_observers_last_seen)
+// are created when the underlying columns exist, and that their absence on a
+// legacy schema is tolerated (no error, index simply skipped).
+func TestEnsureServerIndexes_CoverageIndexes(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "full_schema.db")
+
+	conn, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	// Full ingestor-shaped schema: nodes/observers have last_seen + role.
+	stmts := []string{
+		`CREATE TABLE transmissions (id INTEGER PRIMARY KEY, raw_hex TEXT, hash TEXT, first_seen TEXT, route_type INTEGER, payload_type INTEGER, payload_version INTEGER, decoded_json TEXT)`,
+		`CREATE TABLE observations (id INTEGER PRIMARY KEY, transmission_id INTEGER, observer_idx INTEGER, snr REAL, rssi REAL, path_json TEXT, timestamp TEXT)`,
+		`CREATE TABLE observers (id TEXT PRIMARY KEY, name TEXT, last_seen TEXT, first_seen TEXT)`,
+		`CREATE TABLE nodes (public_key TEXT PRIMARY KEY, name TEXT, role TEXT, lat REAL, lon REAL, last_seen TEXT, first_seen TEXT)`,
+	}
+	for _, s := range stmts {
+		if _, err := conn.Exec(s); err != nil {
+			t.Fatalf("setup %q: %v", s, err)
+		}
+	}
+	conn.Close()
+
+	if err := ensureServerIndexes(dbPath); err != nil {
+		t.Fatalf("ensureServerIndexes: %v", err)
+	}
+
+	conn2, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	defer conn2.Close()
+
+	coverage := []string{"idx_nodes_last_seen", "idx_nodes_role", "idx_observers_last_seen"}
+	for _, name := range coverage {
+		var found string
+		err := conn2.QueryRow(`SELECT name FROM sqlite_master WHERE type='index' AND name=?`, name).Scan(&found)
+		if err != nil {
+			t.Errorf("coverage index %s not created (err=%v)", name, err)
+		}
+	}
+}

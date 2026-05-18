@@ -76,24 +76,56 @@ type GraphStats struct {
 
 // ─── Graph accessor on Server ──────────────────────────────────────────────────
 
-// getNeighborGraph returns the current neighbor graph, rebuilding if stale.
-func (s *Server) getNeighborGraph() *NeighborGraph {
-	s.neighborMu.Lock()
-	defer s.neighborMu.Unlock()
-
-	if s.neighborGraph == nil || s.neighborGraph.IsStale() {
-		if s.store != nil {
-			opts := BuildOptions{MaxEdgeKm: DefaultMaxEdgeKm}
-			if s.cfg != nil {
-				opts.EnableLog = s.cfg.DebugAffinity
-				opts.MaxEdgeKm = s.cfg.NeighborMaxEdgeKm()
-			}
-			s.neighborGraph = BuildFromStoreWithOptions(s.store, opts)
-		} else {
-			s.neighborGraph = NewNeighborGraph()
-		}
+// buildNeighborGraph constructs a fresh neighbor graph from the store using the
+// configured build options. Safe to call without s.neighborMu held.
+func (s *Server) buildNeighborGraph() *NeighborGraph {
+	if s.store == nil {
+		return NewNeighborGraph()
 	}
-	return s.neighborGraph
+	opts := BuildOptions{MaxEdgeKm: DefaultMaxEdgeKm}
+	if s.cfg != nil {
+		opts.EnableLog = s.cfg.DebugAffinity
+		opts.MaxEdgeKm = s.cfg.NeighborMaxEdgeKm()
+	}
+	return BuildFromStoreWithOptions(s.store, opts)
+}
+
+// getNeighborGraph returns the current neighbor graph, rebuilding if stale.
+//
+// neighborMu is an RWMutex so concurrent readers never block each other. On TTL
+// expiry the stale graph is returned immediately and a single background
+// goroutine (guarded by neighborRebuilding) rebuilds and swaps in the fresh
+// graph. Only the very first call (nil graph at startup) blocks.
+func (s *Server) getNeighborGraph() *NeighborGraph {
+	s.neighborMu.RLock()
+	g := s.neighborGraph
+	s.neighborMu.RUnlock()
+
+	if g == nil {
+		// First call — block once so callers never receive nil.
+		s.neighborMu.Lock()
+		if s.neighborGraph == nil {
+			s.neighborGraph = s.buildNeighborGraph()
+		}
+		g = s.neighborGraph
+		s.neighborMu.Unlock()
+		return g
+	}
+
+	// Stale: kick off one background rebuild and return the stale graph
+	// immediately so concurrent callers (e.g. 100 WS clients) are never
+	// queued behind the rebuild.
+	if g.IsStale() && s.neighborRebuilding.CompareAndSwap(false, true) {
+		go func() {
+			defer s.neighborRebuilding.Store(false)
+			built := s.buildNeighborGraph()
+			s.neighborMu.Lock()
+			s.neighborGraph = built
+			s.neighborMu.Unlock()
+		}()
+	}
+
+	return g
 }
 
 // ─── Handlers ──────────────────────────────────────────────────────────────────

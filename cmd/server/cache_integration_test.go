@@ -4,6 +4,7 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -76,6 +77,44 @@ func TestIntegration_StatsGzippedAndCached(t *testing.T) {
 	if body2["engine"] != "go" {
 		t.Errorf("cached engine = %v, want go", body2["engine"])
 	}
+}
+
+// TestIntegration_AppDoesNotSetVaryAcceptEncoding asserts the app emits zero
+// "Vary: Accept-Encoding" tokens. The Caddy reverse proxy adds that header to
+// every response; if the app added its own, the proxy would concatenate them
+// into a duplicated "Vary: Accept-Encoding, Accept-Encoding" header. The check
+// covers both the cache miss and hit paths so neither gzipMiddleware nor the
+// response cache's header replay can reintroduce the token.
+func TestIntegration_AppDoesNotSetVaryAcceptEncoding(t *testing.T) {
+	router := setupCachingTestServer(t)
+
+	get := func() *httptest.ResponseRecorder {
+		req := httptest.NewRequest("GET", "/api/stats", nil)
+		req.Header.Set("Accept-Encoding", "gzip")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		return w
+	}
+
+	countAE := func(t *testing.T, w *httptest.ResponseRecorder, label string) {
+		t.Helper()
+		n := 0
+		for _, v := range w.Header().Values("Vary") {
+			for _, tok := range strings.Split(v, ",") {
+				if strings.EqualFold(strings.TrimSpace(tok), "Accept-Encoding") {
+					n++
+				}
+			}
+		}
+		if n != 0 {
+			t.Fatalf("%s: app emitted %d Accept-Encoding tokens in Vary, want 0 "+
+				"(the Caddy proxy owns this header) (Vary=%q)",
+				label, n, w.Header().Values("Vary"))
+		}
+	}
+
+	countAE(t, get(), "miss")
+	countAE(t, get(), "hit")
 }
 
 func TestIntegration_PlainClientNotGzipped(t *testing.T) {

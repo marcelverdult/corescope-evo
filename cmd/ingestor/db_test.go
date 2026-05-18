@@ -830,10 +830,11 @@ func TestBuildPacketData(t *testing.T) {
 	snr := 5.0
 	rssi := -100.0
 	msg := &MQTTPacketMessage{
-		Raw:    rawHex,
-		SNR:    &snr,
-		RSSI:   &rssi,
-		Origin: "test-observer",
+		Raw:       rawHex,
+		SNR:       &snr,
+		RSSI:      &rssi,
+		Origin:    "test-observer",
+		Timestamp: "2026-05-16T10:00:00Z",
 	}
 
 	pkt := BuildPacketData(msg, decoded, "obs123", "SJC")
@@ -865,8 +866,8 @@ func TestBuildPacketData(t *testing.T) {
 	if pkt.PayloadType != decoded.Header.PayloadType {
 		t.Errorf("payloadType mismatch")
 	}
-	if pkt.Timestamp == "" {
-		t.Error("timestamp should be set")
+	if pkt.Timestamp != "2026-05-16T10:00:00Z" {
+		t.Errorf("timestamp=%s, want 2026-05-16T10:00:00Z", pkt.Timestamp)
 	}
 	if pkt.DecodedJSON == "" || pkt.DecodedJSON == "{}" {
 		t.Error("decodedJSON should be populated")
@@ -922,6 +923,160 @@ func TestUpsertNodeEmptyLastSeen(t *testing.T) {
 	s.db.QueryRow("SELECT last_seen FROM nodes WHERE public_key = 'aabbccdd'").Scan(&lastSeen)
 	if lastSeen == "" {
 		t.Error("last_seen should be set even with empty input")
+	}
+}
+
+func TestObserverKeyRotation(t *testing.T) {
+	s, err := OpenStore(tempDBPath(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	if err := s.UpsertObserver("obs-old", "Gateway East", "AMS", nil); err != nil {
+		t.Fatal(err)
+	}
+	// Same name, new MQTT ID — simulates key rotation
+	if err := s.UpsertObserver("obs-new", "Gateway East", "AMS", nil); err != nil {
+		t.Fatal(err)
+	}
+
+	var inactive int
+	s.db.QueryRow("SELECT COALESCE(inactive, 0) FROM observers WHERE id = 'obs-old'").Scan(&inactive)
+	if inactive != 1 {
+		t.Errorf("old observer inactive=%d, want 1 (should be retired on key rotation)", inactive)
+	}
+	s.db.QueryRow("SELECT COALESCE(inactive, 0) FROM observers WHERE id = 'obs-new'").Scan(&inactive)
+	if inactive != 0 {
+		t.Errorf("new observer inactive=%d, want 0", inactive)
+	}
+}
+
+func TestNodeKeyRotation(t *testing.T) {
+	s, err := OpenStore(tempDBPath(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	lat, lon := 52.0, 5.0
+	if err := s.UpsertNode("pubkey-old", "Bedroom Repeater", "repeater", &lat, &lon, ""); err != nil {
+		t.Fatal(err)
+	}
+	// Same name, new public key — simulates key rotation
+	if err := s.UpsertNode("pubkey-new", "Bedroom Repeater", "repeater", &lat, &lon, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	var n int
+	s.db.QueryRow("SELECT COUNT(*) FROM inactive_nodes WHERE public_key = 'pubkey-old'").Scan(&n)
+	if n != 1 {
+		t.Errorf("old node in inactive_nodes: count=%d, want 1", n)
+	}
+	s.db.QueryRow("SELECT COUNT(*) FROM nodes WHERE public_key = 'pubkey-old'").Scan(&n)
+	if n != 0 {
+		t.Errorf("old node still in nodes: count=%d, want 0", n)
+	}
+	s.db.QueryRow("SELECT COUNT(*) FROM nodes WHERE public_key = 'pubkey-new'").Scan(&n)
+	if n != 1 {
+		t.Errorf("new node in nodes: count=%d, want 1", n)
+	}
+}
+
+// TestUpsertObserverAtNoBackwardsLastSeen verifies that a stale rxTime (e.g. a
+// retained MQTT message replayed on reconnect) never moves observers.last_seen
+// backwards from the value an earlier, fresher upsert recorded.
+func TestUpsertObserverAtNoBackwardsLastSeen(t *testing.T) {
+	s, err := OpenStore(tempDBPath(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	recent := time.Now().UTC().Add(-1 * time.Minute).Format(time.RFC3339)
+	stale := time.Now().UTC().Add(-72 * time.Hour).Format(time.RFC3339)
+
+	if err := s.UpsertObserverAt("obs1", "Gateway", "AMS", nil, recent); err != nil {
+		t.Fatal(err)
+	}
+	// A retained/replayed message with an old rxTime must NOT regress last_seen.
+	if err := s.UpsertObserverAt("obs1", "Gateway", "AMS", nil, stale); err != nil {
+		t.Fatal(err)
+	}
+
+	var lastSeen string
+	s.db.QueryRow("SELECT last_seen FROM observers WHERE id = 'obs1'").Scan(&lastSeen)
+	if lastSeen != recent {
+		t.Errorf("last_seen=%q, want %q (stale rxTime must not regress it)", lastSeen, recent)
+	}
+}
+
+// TestInsertTransmissionNoBackwardsObserverLastSeen verifies that a buffered
+// packet carrying an old rxTime does not push observers.last_seen /
+// last_packet_at backwards once a fresher packet has been recorded.
+func TestInsertTransmissionNoBackwardsObserverLastSeen(t *testing.T) {
+	s, err := OpenStore(tempDBPath(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	if err := s.UpsertObserver("obsA", "Gateway", "AMS", nil); err != nil {
+		t.Fatal(err)
+	}
+
+	recent := time.Now().UTC().Add(-2 * time.Minute).Format(time.RFC3339)
+	stale := time.Now().UTC().Add(-96 * time.Hour).Format(time.RFC3339)
+
+	// Fresh packet first.
+	if _, err := s.InsertTransmission(&PacketData{
+		RawHex: "0A00" + strings.Repeat("11", 10), Hash: "hashfresh0000001",
+		Timestamp: recent, ObserverID: "obsA", RouteType: 1, PayloadType: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Buffered packet with an old rxTime — must not regress observer last_seen.
+	if _, err := s.InsertTransmission(&PacketData{
+		RawHex: "0A00" + strings.Repeat("22", 10), Hash: "hashstale0000001",
+		Timestamp: stale, ObserverID: "obsA", RouteType: 1, PayloadType: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var lastSeen, lastPacketAt string
+	s.db.QueryRow("SELECT last_seen, COALESCE(last_packet_at,'') FROM observers WHERE id = 'obsA'").
+		Scan(&lastSeen, &lastPacketAt)
+	if lastSeen < recent {
+		t.Errorf("last_seen=%q regressed below fresh packet rxTime %q", lastSeen, recent)
+	}
+	if lastPacketAt < recent {
+		t.Errorf("last_packet_at=%q regressed below fresh packet rxTime %q", lastPacketAt, recent)
+	}
+}
+
+// TestUpsertNodeNoBackwardsLastSeen verifies a buffered advert with an old
+// lastSeen cannot push nodes.last_seen backwards.
+func TestUpsertNodeNoBackwardsLastSeen(t *testing.T) {
+	s, err := OpenStore(tempDBPath(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	recent := time.Now().UTC().Add(-3 * time.Minute).Format(time.RFC3339)
+	stale := time.Now().UTC().Add(-120 * time.Hour).Format(time.RFC3339)
+
+	if err := s.UpsertNode("nodekey1", "Repeater", "repeater", nil, nil, recent); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpsertNode("nodekey1", "Repeater", "repeater", nil, nil, stale); err != nil {
+		t.Fatal(err)
+	}
+
+	var lastSeen string
+	s.db.QueryRow("SELECT last_seen FROM nodes WHERE public_key = 'nodekey1'").Scan(&lastSeen)
+	if lastSeen != recent {
+		t.Errorf("node last_seen=%q, want %q (stale advert must not regress it)", lastSeen, recent)
 	}
 }
 
