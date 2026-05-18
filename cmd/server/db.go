@@ -2219,6 +2219,8 @@ type MetricsSample struct {
 	TxAirtimePct  *float64 `json:"tx_airtime_pct"`
 	RxAirtimePct  *float64 `json:"rx_airtime_pct"`
 	RecvErrorRate *float64 `json:"recv_error_rate"`
+	UptimeSecs    *int64   `json:"uptime_secs,omitempty"`
+	QueueLen      *int     `json:"queue_len,omitempty"`
 	IsReboot      bool     `json:"is_reboot_sample,omitempty"`
 }
 
@@ -2232,6 +2234,8 @@ type rawMetricsSample struct {
 	BatteryMv   *int
 	PacketsSent *int
 	PacketsRecv *int
+	UptimeSecs  *int64
+	QueueLen    *int
 }
 
 // GetObserverMetrics returns time-series metrics with server-side delta computation.
@@ -2256,22 +2260,22 @@ func (db *DB) GetObserverMetrics(observerID, since, until, resolution string, sa
 		// Use LAST value per bucket (latest timestamp) instead of MAX to preserve
 		// reboot semantics: if a device reboots mid-bucket, the last sample is the
 		// post-reboot baseline, not the pre-reboot high-water mark.
-		query = `SELECT ts, noise_floor, tx_air_secs, rx_air_secs, recv_errors, battery_mv, packets_sent, packets_recv FROM (
+		query = `SELECT ts, noise_floor, tx_air_secs, rx_air_secs, recv_errors, battery_mv, packets_sent, packets_recv, uptime_secs, queue_len FROM (
 			SELECT
 				strftime('%Y-%m-%dT%H:00:00Z', timestamp) as ts,
-				noise_floor, tx_air_secs, rx_air_secs, recv_errors, battery_mv, packets_sent, packets_recv,
+				noise_floor, tx_air_secs, rx_air_secs, recv_errors, battery_mv, packets_sent, packets_recv, uptime_secs, queue_len,
 				ROW_NUMBER() OVER (PARTITION BY observer_id, strftime('%Y-%m-%dT%H:00:00Z', timestamp) ORDER BY timestamp DESC) as rn
 			FROM observer_metrics WHERE observer_id = ?`
 	case "1d":
 		bucketSizeSec = 86400
-		query = `SELECT ts, noise_floor, tx_air_secs, rx_air_secs, recv_errors, battery_mv, packets_sent, packets_recv FROM (
+		query = `SELECT ts, noise_floor, tx_air_secs, rx_air_secs, recv_errors, battery_mv, packets_sent, packets_recv, uptime_secs, queue_len FROM (
 			SELECT
 				strftime('%Y-%m-%dT00:00:00Z', timestamp) as ts,
-				noise_floor, tx_air_secs, rx_air_secs, recv_errors, battery_mv, packets_sent, packets_recv,
+				noise_floor, tx_air_secs, rx_air_secs, recv_errors, battery_mv, packets_sent, packets_recv, uptime_secs, queue_len,
 				ROW_NUMBER() OVER (PARTITION BY observer_id, strftime('%Y-%m-%dT00:00:00Z', timestamp) ORDER BY timestamp DESC) as rn
 			FROM observer_metrics WHERE observer_id = ?`
 	default: // "5m" or raw
-		query = `SELECT timestamp, noise_floor, tx_air_secs, rx_air_secs, recv_errors, battery_mv, packets_sent, packets_recv
+		query = `SELECT timestamp, noise_floor, tx_air_secs, rx_air_secs, recv_errors, battery_mv, packets_sent, packets_recv, uptime_secs, queue_len
 			FROM observer_metrics WHERE observer_id = ?`
 	}
 
@@ -2300,7 +2304,7 @@ func (db *DB) GetObserverMetrics(observerID, since, until, resolution string, sa
 	var raw []rawMetricsSample
 	for rows.Next() {
 		var s rawMetricsSample
-		if err := rows.Scan(&s.Timestamp, &s.NoiseFloor, &s.TxAirSecs, &s.RxAirSecs, &s.RecvErrors, &s.BatteryMv, &s.PacketsSent, &s.PacketsRecv); err != nil {
+		if err := rows.Scan(&s.Timestamp, &s.NoiseFloor, &s.TxAirSecs, &s.RxAirSecs, &s.RecvErrors, &s.BatteryMv, &s.PacketsSent, &s.PacketsRecv, &s.UptimeSecs, &s.QueueLen); err != nil {
 			return nil, nil, err
 		}
 		raw = append(raw, s)
@@ -2333,6 +2337,8 @@ func computeDeltas(raw []rawMetricsSample, bucketSizeSec int) ([]MetricsSample, 
 			Timestamp:  cur.Timestamp,
 			NoiseFloor: cur.NoiseFloor,
 			BatteryMv:  cur.BatteryMv,
+			UptimeSecs: cur.UptimeSecs,
+			QueueLen:   cur.QueueLen,
 		}
 
 		if i == 0 {
