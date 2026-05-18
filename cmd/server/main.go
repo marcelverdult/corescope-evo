@@ -328,6 +328,8 @@ func main() {
 	if v := os.Getenv("CORESCOPE_API_CACHE_TTL"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			apiCacheTTL = time.Duration(n) * time.Second
+		} else {
+			log.Printf("[cache] invalid CORESCOPE_API_CACHE_TTL %q, using default %v", v, apiCacheTTL)
 		}
 	}
 	if apiCacheTTL > 0 {
