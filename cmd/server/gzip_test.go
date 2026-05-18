@@ -75,3 +75,23 @@ func TestGzipMiddleware_SkipsNonAPIPath(t *testing.T) {
 		t.Fatal("v1 gzip is scoped to /api/ paths only")
 	}
 }
+
+func TestGzipMiddleware_SkipsWhenEncodingAlreadySet(t *testing.T) {
+	// Simulates an outer middleware that already set Content-Encoding before
+	// gzipMiddleware runs. The guard must skip compression in that case.
+	h := gzipMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("payload"))
+	}))
+	req := httptest.NewRequest("GET", "/api/x", nil)
+	req.Header.Set("Accept-Encoding", "gzip")
+	w := httptest.NewRecorder()
+	w.Header().Set("Content-Encoding", "br") // outer layer already encoded
+	h.ServeHTTP(w, req)
+
+	if w.Header().Get("Content-Encoding") != "br" {
+		t.Fatalf("must preserve the pre-set Content-Encoding, got %q", w.Header().Get("Content-Encoding"))
+	}
+	if w.Body.String() != "payload" {
+		t.Errorf("must not gzip when encoding already set; body = %q", w.Body.String())
+	}
+}
