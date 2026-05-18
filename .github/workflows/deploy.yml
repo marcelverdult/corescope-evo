@@ -158,6 +158,8 @@ jobs:
   # ───────────────────────────────────────────────────────────────
   e2e-test:
     name: "🎭 Playwright E2E Tests"
+    # Disabled — E2E no longer gates the pipeline (run locally instead).
+    if: false
     needs: [go-test]
     runs-on: ubuntu-latest
     defaults:
@@ -310,7 +312,10 @@ jobs:
   # ───────────────────────────────────────────────────────────────
   build-and-publish:
     name: "🏗️ Build & Publish Docker Image"
-    needs: [e2e-test]
+    # Disabled — Coolify builds the Docker image from the Dockerfile on
+    # deploy; the fork does not consume a GHCR image. Kept for reference.
+    if: false
+    needs: [go-test]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -360,7 +365,7 @@ jobs:
         id: docker-meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/kpa-clawbot/corescope
+          images: ghcr.io/${{ github.repository_owner }}/corescope
           tags: |
             type=semver,pattern=v{{version}}
             type=semver,pattern=v{{major}}.{{minor}}
@@ -425,7 +430,9 @@ jobs:
   # ───────────────────────────────────────────────────────────────
   deploy:
     name: "🚀 Deploy Staging"
-    if: github.event_name == 'push'
+    # Disabled — this fork deploys via Coolify, not the upstream's
+    # self-hosted runner. Kept for reference / future re-enable.
+    if: false
     needs: [build-and-publish]
     runs-on: [self-hosted, meshcore-runner-2]
     steps:
@@ -435,8 +442,8 @@ jobs:
       - name: Pull latest image from GHCR
         run: |
           # Try to pull the edge image from GHCR and tag for docker-compose compatibility
-          if docker pull ghcr.io/kpa-clawbot/corescope:edge; then
-            docker tag ghcr.io/kpa-clawbot/corescope:edge corescope-go:latest
+          if docker pull ghcr.io/${{ github.repository_owner }}/corescope:edge; then
+            docker tag ghcr.io/${{ github.repository_owner }}/corescope:edge corescope-go:latest
             echo "Pulled and tagged GHCR edge image ✅"
           else
             echo "⚠️ GHCR pull failed — falling back to locally built image"
@@ -513,7 +520,8 @@ jobs:
   # ───────────────────────────────────────────────────────────────
   publish:
     name: "📝 Publish Badges & Summary"
-    if: github.event_name == 'push'
+    # Disabled — depended on the self-hosted deploy job.
+    if: false
     needs: [deploy]
     runs-on: ubuntu-latest
     steps:
