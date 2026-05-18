@@ -61,16 +61,6 @@
   display: none;
 }
 .home-suggest.open { display: block; }
-.home-suggest-item {
-  padding: 10px 16px;
-  cursor: pointer;
-  color: var(--text);
-  font-size: .9rem;
-  border-bottom: 1px solid var(--border);
-}
-.home-suggest-item:last-child { border-bottom: none; }
-.home-suggest-item:hover { background: var(--row-hover); }
-.home-suggest-item small { color: var(--text-muted); margin-left: 8px; }
 
 /* Quick Stats */
 .home-stats {
@@ -333,22 +323,6 @@
   .home-footer-links { flex-direction: column; align-items: center; }
 }
 
-/* Favorites */
-.home-favorites { max-width: 720px; margin: 0 auto 24px; padding: 0 20px; }
-.fav-title { font-size: 1rem; margin-bottom: 12px; color: var(--text); }
-.fav-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
-.fav-loading { color: var(--text-muted); font-size: .85rem; }
-.fav-card {
-  background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
-  padding: 12px; cursor: pointer; transition: border-color .15s, transform .15s;
-}
-.fav-card:hover { border-color: var(--accent); transform: translateY(-1px); }
-.fav-card-header { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
-.fav-card-header strong { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .9rem; }
-.fav-status { font-size: .8rem; }
-.fav-card-stats { display: flex; gap: 12px; flex-wrap: wrap; font-size: .75rem; color: var(--text-muted); }
-.suggest-fav { font-size: .9rem; flex-shrink: 0; }
-
 /* ==================== My Mesh Dashboard ==================== */
 
 /* Onboarding prompt */
@@ -409,8 +383,6 @@
   grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
   gap: 16px;
 }
-.my-nodes-loading { color: var(--text-muted); font-size: .85rem; padding: 20px; grid-column: 1/-1; }
-
 .my-node-card {
   background: var(--surface-1);
   border: 1px solid var(--border);

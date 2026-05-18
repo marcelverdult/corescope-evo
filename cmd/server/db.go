@@ -2070,35 +2070,6 @@ func (db *DB) QueryMultiNodePackets(pubkeys []string, limit, offset int, order, 
 
 // --- Helpers ---
 
-func scanPacketRow(rows *sql.Rows) map[string]interface{} {
-	var id int
-	var rawHex, ts, obsID, obsName, direction, hash, pathJSON, decodedJSON, createdAt sql.NullString
-	var snr, rssi sql.NullFloat64
-	var score, routeType, payloadType, payloadVersion sql.NullInt64
-
-	if err := rows.Scan(&id, &rawHex, &ts, &obsID, &obsName, &direction, &snr, &rssi, &score, &hash, &routeType, &payloadType, &payloadVersion, &pathJSON, &decodedJSON, &createdAt); err != nil {
-		return nil
-	}
-	return map[string]interface{}{
-		"id":              id,
-		"raw_hex":         nullStr(rawHex),
-		"timestamp":       nullStr(ts),
-		"observer_id":     nullStr(obsID),
-		"observer_name":   nullStr(obsName),
-		"direction":       nullStr(direction),
-		"snr":             nullFloat(snr),
-		"rssi":            nullFloat(rssi),
-		"score":           nullInt(score),
-		"hash":            nullStr(hash),
-		"route_type":      nullInt(routeType),
-		"payload_type":    nullInt(payloadType),
-		"payload_version": nullInt(payloadVersion),
-		"path_json":       nullStr(pathJSON),
-		"decoded_json":    nullStr(decodedJSON),
-		"created_at":      nullStr(createdAt),
-	}
-}
-
 func scanNodeRow(rows *sql.Rows) map[string]interface{} {
 	var pk string
 	var name, role, lastSeen, firstSeen sql.NullString
