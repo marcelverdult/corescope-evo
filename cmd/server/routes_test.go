@@ -2033,12 +2033,12 @@ func TestHandlerErrorTimestamps(t *testing.T) {
 	router := mux.NewRouter()
 	srv.RegisterRoutes(router)
 
-	// Without a store, timestamps returns empty 200
+	// Without a store, timestamps returns 503
 	req := httptest.NewRequest("GET", "/api/packets/timestamps?since=2020-01-01", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
-	if w.Code != 200 {
-		t.Errorf("expected 200 for timestamps without store, got %d", w.Code)
+	if w.Code != 503 {
+		t.Errorf("expected 503 for timestamps without store, got %d", w.Code)
 	}
 }
 
@@ -2070,13 +2070,12 @@ func TestHandlerErrorBulkHealth(t *testing.T) {
 	router := mux.NewRouter()
 	srv.RegisterRoutes(router)
 
-	db.conn.Exec("DROP TABLE IF EXISTS nodes")
-
+	// Without a store, bulk-health returns 503
 	req := httptest.NewRequest("GET", "/api/nodes/bulk-health", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
-	if w.Code != 200 {
-		t.Errorf("expected 200, got %d", w.Code)
+	if w.Code != 503 {
+		t.Errorf("expected 503, got %d", w.Code)
 	}
 }
 

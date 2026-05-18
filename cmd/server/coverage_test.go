@@ -493,13 +493,8 @@ func TestHandleBulkHealthNoStore(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
-	if w.Code != 200 {
-		t.Fatalf("expected 200, got %d", w.Code)
-	}
-	var body []interface{}
-	json.Unmarshal(w.Body.Bytes(), &body)
-	if body == nil {
-		t.Fatal("expected array response")
+	if w.Code != 503 {
+		t.Fatalf("expected 503, got %d", w.Code)
 	}
 }
 
@@ -509,8 +504,8 @@ func TestHandleBulkHealthNoStoreMaxLimit(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
-	if w.Code != 200 {
-		t.Fatalf("expected 200, got %d", w.Code)
+	if w.Code != 503 {
+		t.Fatalf("expected 503, got %d", w.Code)
 	}
 }
 
@@ -521,16 +516,8 @@ func TestHandleAnalyticsRFNoStore(t *testing.T) {
 		req := httptest.NewRequest("GET", "/api/analytics/rf", nil)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
-		if w.Code != 200 {
-			t.Fatalf("expected 200, got %d", w.Code)
-		}
-		var body map[string]interface{}
-		json.Unmarshal(w.Body.Bytes(), &body)
-		if _, ok := body["snr"]; !ok {
-			t.Error("expected snr field")
-		}
-		if _, ok := body["payloadTypes"]; !ok {
-			t.Error("expected payloadTypes field")
+		if w.Code != 503 {
+			t.Fatalf("expected 503, got %d", w.Code)
 		}
 	})
 
@@ -538,8 +525,8 @@ func TestHandleAnalyticsRFNoStore(t *testing.T) {
 		req := httptest.NewRequest("GET", "/api/analytics/rf?region=SJC", nil)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
-		if w.Code != 200 {
-			t.Fatalf("expected 200, got %d", w.Code)
+		if w.Code != 503 {
+			t.Fatalf("expected 503, got %d", w.Code)
 		}
 	})
 }
@@ -1185,8 +1172,8 @@ func TestHandleAnalyticsTopologyNoStore(t *testing.T) {
 	req := httptest.NewRequest("GET", "/api/analytics/topology", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
-	if w.Code != 200 {
-		t.Fatalf("expected 200, got %d", w.Code)
+	if w.Code != 503 {
+		t.Fatalf("expected 503, got %d", w.Code)
 	}
 }
 
@@ -1195,8 +1182,8 @@ func TestHandleAnalyticsDistanceNoStore(t *testing.T) {
 	req := httptest.NewRequest("GET", "/api/analytics/distance", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
-	if w.Code != 200 {
-		t.Fatalf("expected 200, got %d", w.Code)
+	if w.Code != 503 {
+		t.Fatalf("expected 503, got %d", w.Code)
 	}
 }
 
@@ -1205,8 +1192,8 @@ func TestHandleAnalyticsHashSizesNoStore(t *testing.T) {
 	req := httptest.NewRequest("GET", "/api/analytics/hash-sizes", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
-	if w.Code != 200 {
-		t.Fatalf("expected 200, got %d", w.Code)
+	if w.Code != 503 {
+		t.Fatalf("expected 503, got %d", w.Code)
 	}
 }
 
@@ -1215,8 +1202,8 @@ func TestHandleAnalyticsSubpathsNoStore(t *testing.T) {
 	req := httptest.NewRequest("GET", "/api/analytics/subpaths", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
-	if w.Code != 200 {
-		t.Fatalf("expected 200, got %d", w.Code)
+	if w.Code != 503 {
+		t.Fatalf("expected 503, got %d", w.Code)
 	}
 }
 
@@ -1227,8 +1214,8 @@ func TestHandleAnalyticsSubpathDetailNoStore(t *testing.T) {
 		req := httptest.NewRequest("GET", "/api/analytics/subpath-detail?hops=aa,bb", nil)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
-		if w.Code != 200 {
-			t.Fatalf("expected 200, got %d", w.Code)
+		if w.Code != 503 {
+			t.Fatalf("expected 503, got %d", w.Code)
 		}
 	})
 
@@ -1278,8 +1265,8 @@ func TestHandlePacketTimestampsNoStore(t *testing.T) {
 		req := httptest.NewRequest("GET", "/api/packets/timestamps?since=2020-01-01T00:00:00Z", nil)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
-		if w.Code != 200 {
-			t.Fatalf("expected 200, got %d", w.Code)
+		if w.Code != 503 {
+			t.Fatalf("expected 503, got %d", w.Code)
 		}
 	})
 

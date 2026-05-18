@@ -974,11 +974,11 @@ func (s *Server) handlePacketTimestamps(w http.ResponseWriter, r *http.Request) 
 		writeError(w, 400, "since required")
 		return
 	}
-	if s.store != nil {
-		writeJSON(w, s.store.GetTimestamps(since))
+	if s.store == nil {
+		writeError(w, 503, "Packet store unavailable")
 		return
 	}
-	writeJSON(w, []string{})
+	writeJSON(w, s.store.GetTimestamps(since))
 }
 
 var hashPattern = regexp.MustCompile(`^[0-9a-f]{16}$`)
@@ -1429,25 +1429,24 @@ func (s *Server) handleBulkHealth(w http.ResponseWriter, r *http.Request) {
 		limit = 200
 	}
 
-	if s.store != nil {
-		region := r.URL.Query().Get("region")
-		results := s.store.GetBulkHealth(limit, region)
-		// Filter blacklisted nodes
-		if len(s.cfg.NodeBlacklist) > 0 {
-			filtered := make([]map[string]interface{}, 0, len(results))
-			for _, entry := range results {
-				if pk, ok := entry["public_key"].(string); !ok || !s.cfg.IsBlacklisted(pk) {
-					filtered = append(filtered, entry)
-				}
-			}
-			writeJSON(w, filtered)
-			return
-		}
-		writeJSON(w, results)
+	if s.store == nil {
+		writeError(w, 503, "Packet store unavailable")
 		return
 	}
-
-	writeJSON(w, []BulkHealthEntry{})
+	region := r.URL.Query().Get("region")
+	results := s.store.GetBulkHealth(limit, region)
+	// Filter blacklisted nodes
+	if len(s.cfg.NodeBlacklist) > 0 {
+		filtered := make([]map[string]interface{}, 0, len(results))
+		for _, entry := range results {
+			if pk, ok := entry["public_key"].(string); !ok || !s.cfg.IsBlacklisted(pk) {
+				filtered = append(filtered, entry)
+			}
+		}
+		writeJSON(w, filtered)
+		return
+	}
+	writeJSON(w, results)
 }
 
 func (s *Server) handleNetworkStatus(w http.ResponseWriter, r *http.Request) {
@@ -1756,45 +1755,25 @@ func (s *Server) handleFleetClockSkew(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAnalyticsRF(w http.ResponseWriter, r *http.Request) {
 	region := r.URL.Query().Get("region")
 	window := ParseTimeWindow(r)
-	if s.store != nil {
-		writeJSON(w, s.store.GetAnalyticsRFWithWindow(region, window))
+	if s.store == nil {
+		writeError(w, 503, "Packet store unavailable")
 		return
 	}
-	writeJSON(w, RFAnalyticsResponse{
-		SNR:            SignalStats{},
-		RSSI:           SignalStats{},
-		SnrValues:      Histogram{Bins: []HistogramBin{}, Min: 0, Max: 0},
-		RssiValues:     Histogram{Bins: []HistogramBin{}, Min: 0, Max: 0},
-		PacketSizes:    Histogram{Bins: []HistogramBin{}, Min: 0, Max: 0},
-		PacketsPerHour: []HourlyCount{},
-		PayloadTypes:   []PayloadTypeEntry{},
-		SnrByType:      []PayloadTypeSignal{},
-		SignalOverTime: []SignalOverTimeEntry{},
-		ScatterData:    []ScatterPoint{},
-	})
+	writeJSON(w, s.store.GetAnalyticsRFWithWindow(region, window))
 }
 
 func (s *Server) handleAnalyticsTopology(w http.ResponseWriter, r *http.Request) {
 	region := r.URL.Query().Get("region")
 	window := ParseTimeWindow(r)
-	if s.store != nil {
-		data := s.store.GetAnalyticsTopologyWithWindow(region, window)
-		if s.cfg != nil && len(s.cfg.NodeBlacklist) > 0 {
-			data = s.filterBlacklistedFromTopology(data)
-		}
-		writeJSON(w, data)
+	if s.store == nil {
+		writeError(w, 503, "Packet store unavailable")
 		return
 	}
-	writeJSON(w, TopologyResponse{
-		HopDistribution:  []TopologyHopDist{},
-		TopRepeaters:     []TopRepeater{},
-		TopPairs:         []TopPair{},
-		HopsVsSnr:        []HopsVsSnr{},
-		Observers:        []ObserverRef{},
-		PerObserverReach: map[string]*ObserverReach{},
-		MultiObsNodes:    []MultiObsNode{},
-		BestPathList:     []BestPathEntry{},
-	})
+	data := s.store.GetAnalyticsTopologyWithWindow(region, window)
+	if s.cfg != nil && len(s.cfg.NodeBlacklist) > 0 {
+		data = s.filterBlacklistedFromTopology(data)
+	}
+	writeJSON(w, data)
 }
 
 func (s *Server) handleAnalyticsChannels(w http.ResponseWriter, r *http.Request) {
@@ -1820,68 +1799,48 @@ func (s *Server) handleAnalyticsChannels(w http.ResponseWriter, r *http.Request)
 
 func (s *Server) handleAnalyticsDistance(w http.ResponseWriter, r *http.Request) {
 	region := r.URL.Query().Get("region")
-	if s.store != nil {
-		writeJSON(w, s.store.GetAnalyticsDistance(region))
+	if s.store == nil {
+		writeError(w, 503, "Packet store unavailable")
 		return
 	}
-	writeJSON(w, DistanceAnalyticsResponse{
-		Summary:       DistanceSummary{},
-		TopHops:       []DistanceHop{},
-		TopPaths:      []DistancePath{},
-		CatStats:      map[string]*CategoryDistStats{},
-		DistHistogram: nil,
-		DistOverTime:  []DistOverTimeEntry{},
-	})
+	writeJSON(w, s.store.GetAnalyticsDistance(region))
 }
 
 func (s *Server) handleAnalyticsHashSizes(w http.ResponseWriter, r *http.Request) {
-	if s.store != nil {
-		region := r.URL.Query().Get("region")
-		writeJSON(w, s.store.GetAnalyticsHashSizes(region))
+	if s.store == nil {
+		writeError(w, 503, "Packet store unavailable")
 		return
 	}
-	writeJSON(w, map[string]interface{}{
-		"total":                    0,
-		"distribution":            map[string]int{"1": 0, "2": 0, "3": 0},
-		"distributionByRepeaters": map[string]int{"1": 0, "2": 0, "3": 0},
-		"hourly":                  []HashSizeHourly{},
-		"topHops":                 []HashSizeHop{},
-		"multiByteNodes":          []MultiByteNode{},
-	})
+	region := r.URL.Query().Get("region")
+	writeJSON(w, s.store.GetAnalyticsHashSizes(region))
 }
 
 func (s *Server) handleAnalyticsHashCollisions(w http.ResponseWriter, r *http.Request) {
-	if s.store != nil {
-		region := r.URL.Query().Get("region")
-		writeJSON(w, s.store.GetAnalyticsHashCollisions(region))
+	if s.store == nil {
+		writeError(w, 503, "Packet store unavailable")
 		return
 	}
-	writeJSON(w, map[string]interface{}{
-		"inconsistent_nodes": []interface{}{},
-		"by_size":            map[string]interface{}{},
-	})
+	region := r.URL.Query().Get("region")
+	writeJSON(w, s.store.GetAnalyticsHashCollisions(region))
 }
 
 func (s *Server) handleAnalyticsSubpaths(w http.ResponseWriter, r *http.Request) {
-	if s.store != nil {
-		region := r.URL.Query().Get("region")
-		minLen := queryInt(r, "minLen", 2)
-		if minLen < 2 {
-			minLen = 2
-		}
-		maxLen := queryInt(r, "maxLen", 8)
-		limit := queryInt(r, "limit", 100)
-		data := s.store.GetAnalyticsSubpaths(region, minLen, maxLen, limit)
-		if s.cfg != nil && len(s.cfg.NodeBlacklist) > 0 {
-			data = s.filterBlacklistedFromSubpaths(data)
-		}
-		writeJSON(w, data)
+	if s.store == nil {
+		writeError(w, 503, "Packet store unavailable")
 		return
 	}
-	writeJSON(w, SubpathsResponse{
-		Subpaths:   []SubpathResp{},
-		TotalPaths: 0,
-	})
+	region := r.URL.Query().Get("region")
+	minLen := queryInt(r, "minLen", 2)
+	if minLen < 2 {
+		minLen = 2
+	}
+	maxLen := queryInt(r, "maxLen", 8)
+	limit := queryInt(r, "limit", 100)
+	data := s.store.GetAnalyticsSubpaths(region, minLen, maxLen, limit)
+	if s.cfg != nil && len(s.cfg.NodeBlacklist) > 0 {
+		data = s.filterBlacklistedFromSubpaths(data)
+	}
+	writeJSON(w, data)
 }
 
 // handleAnalyticsSubpathsBulk returns multiple length-range buckets in a single
@@ -1960,21 +1919,11 @@ func (s *Server) handleAnalyticsSubpathDetail(w http.ResponseWriter, r *http.Req
 			}
 		}
 	}
-	if s.store != nil {
-		writeJSON(w, s.store.GetSubpathDetail(rawHops))
+	if s.store == nil {
+		writeError(w, 503, "Packet store unavailable")
 		return
 	}
-	writeJSON(w, SubpathDetailResponse{
-		Hops:             rawHops,
-		Nodes:            []SubpathNode{},
-		TotalMatches:     0,
-		FirstSeen:        nil,
-		LastSeen:         nil,
-		Signal:           SubpathSignal{AvgSnr: nil, AvgRssi: nil, Samples: 0},
-		HourDistribution: make([]int, 24),
-		ParentPaths:      []ParentPath{},
-		Observers:        []SubpathObserver{},
-	})
+	writeJSON(w, s.store.GetSubpathDetail(rawHops))
 }
 
 // --- Other Handlers ---
