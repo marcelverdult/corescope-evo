@@ -32,7 +32,7 @@ The done/stale root plan docs have been moved to `docs/archive/`:
 and `docs/go-migration.md` (Go migration complete). The audio percussion layer
 and Audio Workbench M2–M5 remain tracked under P2 below.
 
-`docs/specs/*` are all done except `rf-health-dashboard` (P2) and the later
+`docs/specs/*` are all done except `rf-health-dashboard` M3/M5 (P2) and the later
 milestones of `deployment-simplification` (env-var config, zero-config start,
 operator deployment guide — M2–M4; M1's GHCR images + `docker-compose.simple.yml`
 are done).
@@ -55,9 +55,13 @@ are done).
 - **Audio percussion layer** (kick/snare/hihat) — `AUDIO-PLAN.md`, no code yet.
 - **Audio Workbench M2–M5** — override sliders, A/B compare, sequence editor, live
   annotation (`AUDIO-WORKBENCH.md`).
-- **`/metrics` Prometheus endpoint** — referenced by two specs, not implemented.
-- **RF-health dashboard** — confirm whether the analytics "RF" tab satisfies
-  `rf-health-dashboard.md` or a dedicated status-grid view is still wanted.
+- **RF-health dashboard — deferred milestones only.** The dedicated `rf-health`
+  analytics tab already implements `rf-health-dashboard.md` M1–M2 (per-observer
+  metrics grid, expand-to-detail charts, time-range selector). Outstanding is the
+  spec's own explicitly-deferred work: **M3 pattern detection** (a per-observer
+  `status` field — jammer / deaf / interference / low-battery — needs operator
+  feedback to design the thresholds) and **M5 per-observer Prometheus labels**
+  (`/metrics` currently exposes fleet aggregates only).
 - **Customizer click-to-identify inspector** — the one unbuilt customizer item.
 
 ### P3 — tech debt & cleanup
