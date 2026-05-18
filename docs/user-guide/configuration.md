@@ -211,3 +211,43 @@ See [Geographic Filtering](geofilter.md) for the full guide including the visual
 ## Home page
 
 The `home` section customizes the onboarding experience. See `config.example.json` for the full structure including `steps`, `checklist`, and `footerLinks`.
+
+## Branding templates
+
+The `template` key activates a named bundle of branding, theme, home page, and UI customizations that are shipped with the server under `templates/<name>/`. Instead of specifying every `branding`, `theme`, and `home` field individually, you can select a template and get a coherent look out of the box.
+
+```json
+"template": "cornmeister"
+```
+
+Set the value in `config.json` and restart the server. An empty string or the value `"default"` both produce the built-in CoreScope-EVO appearance.
+
+### Bundled templates
+
+| Name | Description |
+|------|-------------|
+| `default` | Built-in CoreScope-EVO look. This is also the behavior when `template` is empty or unset. |
+| `cornmeister` | Dutch "Cornmeister.nl" mesh branding — blue logo, donate section, announcement modal, first-visit network chooser, and observer-setup help. |
+
+### What a template provides
+
+A template bundles any combination of:
+
+- **`branding`** — site name, tagline, and logo URL
+- **`meta`** — page title and OpenGraph/social sharing tags
+- **`theme`** — color palette
+- **`home`** — hero text, onboarding steps, FAQ, and footer links
+- **`sections`** — optional UI sections such as a donate block, announcement modal, first-visit chooser, and observer-setup help panel
+
+Static assets referenced by the template (logos, images) live in `templates/<name>/assets/` and are served at the `/template-assets/` URL path.
+
+### Override precedence
+
+Templates integrate cleanly with the rest of the configuration. Values are merged in this order, with later entries winning:
+
+1. Built-in defaults
+2. Active template
+3. Explicit `branding`, `theme`, `home`, `meta`, and `sections` keys in `config.json`
+4. `theme.json` (if present)
+
+This means you can activate a template for the bulk of its customizations and still override individual values — for example, keep `cornmeister`'s color scheme but replace the site name with your own.
