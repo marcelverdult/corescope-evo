@@ -324,6 +324,14 @@ func main() {
 	router := mux.NewRouter()
 	srv.RegisterRoutes(router)
 
+	// In-app cookie session gate (replaces external Traefik basic-auth).
+	// Disabled when CORESCOPE_WEB_USER/CORESCOPE_WEB_PASSWORD are unset —
+	// a true pass-through no-op in that case.
+	webAuth := newWebAuth(os.Getenv("CORESCOPE_WEB_USER"), os.Getenv("CORESCOPE_WEB_PASSWORD"))
+	webAuth.logStartup()
+	webAuth.registerWebAuthRoutes(router)
+	router.Use(webAuth.middleware)
+
 	// WebSocket endpoint
 	router.HandleFunc("/ws", hub.ServeWS)
 
