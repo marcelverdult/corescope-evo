@@ -88,6 +88,8 @@
         ${checklist(homeCfg)}
       </section>`}
 
+      ${donateSection()}
+
       <section class="home-footer">
         <div class="home-footer-links">
           ${homeCfg?.footerLinks ? homeCfg.footerLinks.map(l => `<a href="${escapeAttr(l.url)}" class="home-footer-link" target="_blank" rel="noopener">${escapeHtml(l.label)}</a>`).join('') : `
@@ -546,6 +548,18 @@
       html = items.map(i => `<div class="checklist-item"><div class="checklist-q" role="button" tabindex="0" aria-expanded="false">${i.q}</div><div class="checklist-a">${i.a}</div></div>`).join('');
     }
     return html;
+  }
+
+  function donateSection() {
+    var d = window.SITE_CONFIG && window.SITE_CONFIG.sections && window.SITE_CONFIG.sections.donate;
+    if (!d || !d.enabled) return '';
+    var links = (d.links || []).map(function (l) {
+      return '<a class="home-donate-link" href="' + escapeAttr(l.url) + '" target="_blank" rel="noopener">' + escapeHtml(l.label) + '</a>';
+    }).join('');
+    var img = d.image ? '<img class="home-donate-img" src="' + escapeAttr(d.image) + '" alt="" loading="lazy">' : '';
+    return '<section class="home-donate">' +
+      (d.title ? '<h2>' + escapeHtml(d.title) + '</h2>' : '') +
+      img + '<div class="home-donate-links">' + links + '</div></section>';
   }
 
   registerPage('home', { init, destroy });

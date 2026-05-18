@@ -288,6 +288,49 @@
   padding: 0 16px 14px;
 }
 
+/* Donate / support section */
+.home-donate {
+  max-width: 720px;
+  margin: 0 auto 32px;
+  padding: 20px 24px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  text-align: center;
+}
+.home-donate h2 {
+  font-size: .9rem;
+  font-weight: 400;
+  color: var(--text-muted);
+  margin: 0 0 16px;
+  line-height: 1.6;
+}
+.home-donate-img {
+  display: block;
+  max-width: 320px;
+  width: 100%;
+  height: auto;
+  border-radius: 8px;
+  margin: 0 auto 16px;
+}
+.home-donate-links {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.home-donate-link {
+  display: inline-block;
+  padding: 10px 24px;
+  border-radius: 8px;
+  text-decoration: none;
+  font: 600 .9rem var(--font);
+  background: var(--accent);
+  color: #fff;
+  transition: opacity .15s;
+}
+.home-donate-link:hover { opacity: .85; }
+
 /* Footer links */
 .home-footer {
   max-width: 720px;
