@@ -25,37 +25,14 @@
   }
   function isMyNode(pubkey) { return getMyNodes().some(n => n.pubkey === pubkey); }
 
-  function isExperienced() { return localStorage.getItem(PREF_KEY) === 'experienced'; }
+  // Experienced by default — only an explicit 'new' choice shows setup guides.
+  function isExperienced() { return localStorage.getItem(PREF_KEY) !== 'new'; }
   function setLevel(level) { localStorage.setItem(PREF_KEY, level); }
 
   function init(container) {
-    if (!localStorage.getItem(PREF_KEY)) {
-      showChooser(container);
-      return;
-    }
+    // First-visit experience chooser removed — users default to "experienced"
+    // (no setup guides). The in-page #toggleLevel link still reveals guides.
     renderHome(container);
-  }
-
-  function showChooser(container) {
-    container.innerHTML = `
-      <section class="home-chooser">
-        <h1>Welcome to ${escapeHtml(window.SITE_CONFIG?.branding?.siteName || 'CoreScope')}</h1>
-        <p>How familiar are you with MeshCore?</p>
-        <div class="chooser-options">
-          <button class="chooser-btn new" id="chooseNew">
-            <span class="chooser-icon">🌱</span>
-            <strong>I\u2019m new</strong>
-            <span>Show me setup guides and tips</span>
-          </button>
-          <button class="chooser-btn exp" id="chooseExp">
-            <span class="chooser-icon">⚡</span>
-            <strong>I know what I\u2019m doing</strong>
-            <span>Just the analyzer, skip the guides</span>
-          </button>
-        </div>
-      </section>`;
-    document.getElementById('chooseNew').addEventListener('click', () => { setLevel('new'); renderHome(container); });
-    document.getElementById('chooseExp').addEventListener('click', () => { setLevel('experienced'); renderHome(container); });
   }
 
   function renderHome(container) {
