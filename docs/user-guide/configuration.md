@@ -247,7 +247,9 @@ Templates integrate cleanly with the rest of the configuration. Values are merge
 
 1. Built-in defaults
 2. Active template
-3. Explicit `branding`, `theme`, `home`, `meta`, and `sections` keys in `config.json`
+3. Explicit keys in `config.json`
 4. `theme.json` (if present)
+
+`theme.json` participates in this chain only for the colour and branding layers — `branding`, `theme`, `themeDark`, `nodeColors`, `typeColors`, and `home`. The `meta` and `sections` keys are not read from `theme.json`; for those two layers the chain stops at step 3 (`config.json`).
 
 This means you can activate a template for the bulk of its customizations and still override individual values — for example, keep `cornmeister`'s color scheme but replace the site name with your own.
