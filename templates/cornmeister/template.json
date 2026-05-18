@@ -1,0 +1,96 @@
+{
+  "name": "cornmeister",
+  "label": "Cornmeister.nl (Dutch mesh)",
+  "branding": {
+    "siteName": "CORNMEISTER.NL",
+    "tagline": "Dutch mesh analyzer",
+    "logoUrl": "/template-assets/logo.svg"
+  },
+  "meta": {
+    "title": "Cornmeister.nl",
+    "description": "Real-time MeshCore Netherlands mesh network analyzer — live packet visualization, node tracking, channel decryption, route analysis, and deep mesh analytics.",
+    "ogImage": "https://raw.githubusercontent.com/Cornmeister/corescope/master/public/og-image.png",
+    "ogUrl": "https://analyzer.00id.net",
+    "themeColor": "#0a0a0a",
+    "repoUrl": "https://github.com/Cornmeister/corescope"
+  },
+  "home": {
+    "heroTitle": "CORNMEISTER.NL",
+    "heroSubtitle": "Find your nodes to start monitoring them.",
+    "steps": [
+      {
+        "emoji": "💬",
+        "title": "First: Join the MeshCore Community",
+        "description": "Connect with other mesh enthusiasts in the community to get help and share experiences. Join the Discord: https://discord.gg/HfJVk9J29K"
+      },
+      {
+        "emoji": "🔵",
+        "title": "Step 1: Connect via Bluetooth",
+        "description": "Flash BLE companion firmware from the MeshCore Flasher at https://flasher.meshcore.co.uk/. Screenless devices: default PIN 123456. Screen devices: random PIN shown on display. If pairing fails: forget device, reboot, re-pair."
+      },
+      {
+        "emoji": "📻",
+        "title": "Step 2: Set the frequency for Nederland (EU/UK Narrow)",
+        "description": "Netherlands Recommended: 868 MHz · BW 62.5 kHz · SF 8 · CR 8 · 22 dBm. Example frequency: 869.618 MHz."
+      },
+      {
+        "emoji": "📡",
+        "title": "Step 3: Advertise yourself",
+        "description": "Tap the signal icon → Flood to broadcast your node to the mesh. Companions only advert when you trigger it manually."
+      },
+      {
+        "emoji": "🔁",
+        "title": "Step 4: Check \"Heard N repeats\"",
+        "description": "\"Sent\" = transmitted, no confirmation. \"Heard 0 repeats\" = no repeater picked it up. \"Heard 1+ repeats\" = you're on the mesh!"
+      },
+      {
+        "emoji": "📍",
+        "title": "Repeaters near you?",
+        "description": "Check the network map at #/map to see active repeaters."
+      }
+    ],
+    "checklist": [],
+    "footerLinks": [
+      { "label": "📦 Packets", "url": "#/packets" },
+      { "label": "🗺️ Network Map", "url": "#/map" },
+      { "label": "🔴 Live", "url": "#/live" },
+      { "label": "📡 All Nodes", "url": "#/nodes" },
+      { "label": "💬 Channels", "url": "#/channels" }
+    ]
+  },
+  "sections": {
+    "donate": {
+      "enabled": true,
+      "title": "The Cornmeister.nl Meshcore Analyzer runs on real hardware, processing tens of thousands of mesh packets around the clock. If it's useful to you, a small donation goes a long way toward keeping the server running.",
+      "image": "/template-assets/powered-by-dutchmeshcore.png",
+      "links": [
+        { "label": "❤️ Support the project", "url": "https://bunq.me/CornmeisterNL" },
+        { "label": "💬 Join the Discord", "url": "https://discord.gg/HfJVk9J29K" }
+      ]
+    },
+    "announcement": {
+      "enabled": true,
+      "modal": {
+        "id": "mqtt-migration-2025",
+        "kicker": "MQTT",
+        "logoUrl": "https://dutchmeshcore.nl/dmclogo.jpg",
+        "logoAlt": "DutchMeshCore",
+        "titleNl": "Belangrijke migratie",
+        "titleEn": "Important migration",
+        "bodyNl": "Wij maken sinds kort gebruik van de MQTT servers van DutchMeshCore.nl, heb jij jouw observers al aangepast naar deze servers? De mqtt.cornmeister.nl gaat binnenkort met vervroegd pensioen.",
+        "bodyEn": "We recently switched to the MQTT servers of DutchMeshCore.nl — have you already updated your observers to use these servers? mqtt.cornmeister.nl will be retiring soon.",
+        "primaryUrlNl": "Klik hier voor meer info",
+        "primaryUrlEn": "Click here for more info",
+        "primaryUrl": "https://dutchmeshcore.nl",
+        "discordUrlNl": "Vragen? Bezoek onze Discord server",
+        "discordUrlEn": "Questions? Visit our Discord server",
+        "discordUrl": "https://discord.gg/HfJVk9J29K"
+      }
+    },
+    "firstVisitChooser": { "enabled": true },
+    "observerSetup": {
+      "enabled": true,
+      "html": "<div class=\"obs-help\"><div class=\"help-box\"><div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;cursor:pointer\" data-action=\"toggle-help\"><strong>ℹ️ How to connect your observer to Cornmeister.nl</strong><span class=\"help-toggle\" style=\"font-size:14px;user-select:none\">▶</span></div><div class=\"help-content\" style=\"overflow:hidden;transition:max-height 0.3s ease;max-height:0px\"><div class=\"text-muted\" style=\"font-size:12px;margin-bottom:16px\">Connect your node to the DutchMeshcore.nl MQTT ingestors to share raw packets with Cornmeister.nl.</div><div style=\"margin-bottom:12px;padding:10px 12px;background:var(--surface-0);border:1px solid var(--border);border-radius:6px\"><strong style=\"font-size:12px\">📍 Step 1 — Your region (IATA code)</strong><div class=\"text-muted\" style=\"font-size:12px;margin-top:4px;margin-bottom:8px\">Cornmeister.nl groups observers by the IATA airport code nearest to them. If your observer shows as <strong>Offline</strong> or doesn't appear in the list, you most likely haven't set this yet. Pick your region below — the commands update automatically.</div><select id=\"obsIataSelect\" style=\"width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:6px;background:var(--input-bg);color:var(--text);font-size:12px;cursor:pointer\"><option value=\"AMS\">AMS – Schiphol Airport</option><option value=\"DHR\">DHR – Den Helder Airport</option><option value=\"EIN\">EIN – Eindhoven Airport</option><option value=\"ENS\">ENS – Enschede Airport</option><option value=\"GLZ\">GLZ – Gilze-Rijen Airbase</option><option value=\"GRQ\">GRQ – Eelde Airport</option><option value=\"LEY\">LEY – Lelystad Airport</option><option value=\"LID\">LID – Valkenburg Airbase (Closed)</option><option value=\"LWR\">LWR – Leeuwarden Airbase</option><option value=\"MST\">MST – Maastricht Airport</option><option value=\"QAR\">QAR – Deelen Airbase</option><option value=\"RTM\">RTM – Rotterdam Airport</option><option value=\"UDE\">UDE – Volkel Airbase</option><option value=\"UTC\">UTC – Soesterberg Airbase (Closed)</option><option value=\"WOE\">WOE – Woensdrecht Airbase</option></select></div><div style=\"margin-bottom:16px;padding:10px 12px;background:var(--surface-0);border:1px solid var(--border);border-radius:6px\"><strong style=\"font-size:12px\">✉️ Step 2 — Owner email address (optional)</strong><div class=\"text-muted\" style=\"font-size:12px;margin-top:4px;margin-bottom:8px\">Used for ownership verification or observer notifications.</div><input id=\"obsEmailInput\" type=\"email\" placeholder=\"name@example.nl\" style=\"width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:6px;background:var(--input-bg);color:var(--text);font-size:12px;box-sizing:border-box\" /></div><div style=\"margin-bottom:16px\"><strong style=\"font-size:12px\">⌨️ Step 3 — Paste into your device console</strong><div class=\"text-muted\" style=\"font-size:12px;margin-top:4px;margin-bottom:8px\">Requires the <a href=\"https://dutch-meshcore.github.io/Dutch-Meshcore-Toolbox/#/firmware\" target=\"_blank\" rel=\"noopener\" style=\"color:var(--accent)\">DutchMeshcore.nl MQTT Bridge firmware</a> (Heltec, LilyGO, T-Beam, RAK and more).</div><div style=\"background:var(--surface-1,#1a1a2e);border:1px solid var(--border);border-radius:6px;overflow:hidden\"><div style=\"display:flex;justify-content:space-between;align-items:center;padding:6px 10px;border-bottom:1px solid var(--border);background:var(--surface-0)\"><span style=\"font-size:11px;color:var(--text-muted)\">MeshCore console</span><button data-action=\"copy-commands\" style=\"font-size:11px;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);cursor:pointer\">📋 Copy</button></div><pre class=\"help-code\" style=\"margin:0;padding:10px 12px;border-radius:0\"><code id=\"obsCommandBlock\">set mqtt.iata <span class=\"obs-iata-val\">AMS</span>\n<span class=\"obs-email-line\" style=\"display:none\">set mqtt.email <span class=\"obs-email-val\"></span>\n</span>set mqtt1.preset dutchmeshcore-1\nset mqtt2.preset dutchmeshcore-2\nreboot</code></pre></div><div style=\"margin-top:8px;padding:8px 10px;background:color-mix(in srgb,var(--accent) 10%,transparent);border:1px solid color-mix(in srgb,var(--accent) 30%,transparent);border-radius:6px;font-size:12px\"><strong>⚡ Both ingestors required for high availability.</strong> <span class=\"text-muted\">If one goes down your observer stays connected via the other. <code>mqtt1.preset</code> → Ingestor 1 &nbsp;·&nbsp; <code>mqtt2.preset</code> → Ingestor 2.</span></div></div><hr style=\"margin:16px 0;border:none;border-top:1px solid var(--border)\"><div style=\"margin-bottom:12px\"><strong style=\"font-size:12px\">🔧 Manual configuration (reference)</strong><div class=\"text-muted\" style=\"font-size:12px;margin-top:4px;margin-bottom:10px\">For custom firmware builds, generic MQTT clients, or anyone integrating directly without using the preset commands above.</div><div style=\"display:grid;grid-template-columns:1fr 1fr;gap:10px\"><div><strong style=\"font-size:12px\">Ingestor 1</strong><table class=\"help-table\" style=\"margin-top:6px\"><tr><td>Server:</td><td><code>collector1.dutchmeshcore.nl</code></td></tr><tr><td>Port:</td><td><code>443</code></td></tr><tr><td>Transport:</td><td><code>WebSockets (TLS)</code></td></tr></table></div><div><strong style=\"font-size:12px\">Ingestor 2</strong><table class=\"help-table\" style=\"margin-top:6px\"><tr><td>Server:</td><td><code>collector2.dutchmeshcore.nl</code></td></tr><tr><td>Port:</td><td><code>443</code></td></tr><tr><td>Transport:</td><td><code>WebSockets (TLS)</code></td></tr></table></div></div></div><hr style=\"margin:16px 0;border:none;border-top:1px solid var(--border)\"><div style=\"font-size:12px;color:var(--text-muted)\">Missing the info for your specific device? Take a look at the DutchMeshcore.nl <a href=\"https://dutch-meshcore.github.io/Dutch-Meshcore-Toolbox/\" target=\"_blank\" rel=\"noopener\" style=\"color:var(--accent)\">toolbox</a>.</div></div></div></div>"
+    }
+  }
+}
