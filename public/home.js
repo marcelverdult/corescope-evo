@@ -33,6 +33,7 @@
     // First-visit experience chooser removed — users default to "experienced"
     // (no setup guides). The in-page #toggleLevel link still reveals guides.
     renderHome(container);
+    maybeShowAnnouncement();
   }
 
   function renderHome(container) {
@@ -548,6 +549,114 @@
       html = items.map(i => `<div class="checklist-item"><div class="checklist-q" role="button" tabindex="0" aria-expanded="false">${i.q}</div><div class="checklist-a">${i.a}</div></div>`).join('');
     }
     return html;
+  }
+
+  // ==================== ANNOUNCEMENT MODAL ====================
+  // Config-gated, dismiss-once modal driven by window.SITE_CONFIG.sections.announcement.
+  // Dismissed state is persisted in localStorage so it survives page reloads.
+  var ANNOUNCEMENT_LANG_KEY = 'home-announcement-lang';
+
+  function maybeShowAnnouncement() {
+    var a = window.SITE_CONFIG && window.SITE_CONFIG.sections && window.SITE_CONFIG.sections.announcement;
+    if (!a || !a.enabled || !a.modal) return;
+    var m = a.modal;
+    var key = 'meshcore-announcement-dismissed-' + (m.id || 'default');
+    if (localStorage.getItem(key) === '1') return;
+
+    // Determine initial language (NL default, same as fork)
+    var lang = localStorage.getItem(ANNOUNCEMENT_LANG_KEY) === 'en' ? 'en' : 'nl';
+
+    // Build overlay + card via innerHTML (matches home.js style for other sections)
+    var overlay = document.createElement('div');
+    overlay.className = 'ann-overlay';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-labelledby', 'annTitle');
+    overlay.dataset.lang = lang;
+
+    var logoHtml = m.logoUrl
+      ? '<img class="ann-logo" src="' + escapeAttr(m.logoUrl) + '" alt="' + escapeHtml(m.logoAlt || '') + '" loading="lazy">'
+      : '';
+
+    overlay.innerHTML = '<div class="ann-card">' +
+      '<div class="ann-head">' +
+        '<div class="ann-head-left">' +
+          logoHtml +
+          '<div>' +
+            (m.kicker ? '<p class="ann-kicker">' + escapeHtml(m.kicker) + '</p>' : '') +
+            '<h2 class="ann-title" id="annTitle">' +
+              '<span data-ann-title="nl">' + escapeHtml(m.titleNl || '') + '</span>' +
+              '<span data-ann-title="en">' + escapeHtml(m.titleEn || '') + '</span>' +
+            '</h2>' +
+          '</div>' +
+        '</div>' +
+        '<div class="ann-controls">' +
+          '<div class="ann-lang" role="group" aria-label="Language">' +
+            '<button type="button" class="ann-lang-btn" data-ann-lang="nl" aria-pressed="' + (lang === 'nl' ? 'true' : 'false') + '">NL</button>' +
+            '<button type="button" class="ann-lang-btn" data-ann-lang="en" aria-pressed="' + (lang === 'en' ? 'true' : 'false') + '">EN</button>' +
+          '</div>' +
+          '<button type="button" class="ann-close" aria-label="Dismiss">×</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="ann-body">' +
+        '<p data-ann-body="nl">' + escapeHtml(m.bodyNl || '') + '</p>' +
+        '<p data-ann-body="en">' + escapeHtml(m.bodyEn || '') + '</p>' +
+        '<div class="ann-actions">' +
+          (m.primaryUrl
+            ? '<a class="ann-primary" href="' + escapeAttr(m.primaryUrl) + '" target="_blank" rel="noopener">' +
+                '<span data-ann-action="nl">' + escapeHtml(m.primaryUrlNl || '') + '</span>' +
+                '<span data-ann-action="en">' + escapeHtml(m.primaryUrlEn || '') + '</span>' +
+              '</a>'
+            : '') +
+          (m.discordUrl
+            ? '<a class="ann-secondary" href="' + escapeAttr(m.discordUrl) + '" target="_blank" rel="noopener">' +
+                '<span data-ann-discord="nl">' + escapeHtml(m.discordUrlNl || '') + '</span>' +
+                '<span data-ann-discord="en">' + escapeHtml(m.discordUrlEn || '') + '</span>' +
+              '</a>'
+            : '') +
+        '</div>' +
+      '</div>' +
+    '</div>';
+
+    document.body.appendChild(overlay);
+
+    // Helper: update lang state on overlay and toggle aria-pressed
+    function setLang(newLang) {
+      lang = newLang;
+      localStorage.setItem(ANNOUNCEMENT_LANG_KEY, lang);
+      overlay.dataset.lang = lang;
+      overlay.querySelectorAll('.ann-lang-btn').forEach(function (b) {
+        b.setAttribute('aria-pressed', b.dataset.annLang === lang ? 'true' : 'false');
+      });
+    }
+
+    // Helper: dismiss
+    function dismiss() {
+      localStorage.setItem(key, '1');
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+    }
+
+    // Lang toggle buttons
+    overlay.querySelectorAll('.ann-lang-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        setLang(btn.dataset.annLang === 'en' ? 'en' : 'nl');
+      });
+    });
+
+    // Close/dismiss button
+    var closeBtn = overlay.querySelector('.ann-close');
+    if (closeBtn) closeBtn.addEventListener('click', dismiss);
+
+    // Click on the dim overlay background (outside the card) also dismisses
+    overlay.addEventListener('click', function (e) {
+      if (e.target === overlay) dismiss();
+    });
+
+    // Keyboard: Escape dismisses
+    function handleKey(e) {
+      if (e.key === 'Escape') { dismiss(); document.removeEventListener('keydown', handleKey); }
+    }
+    document.addEventListener('keydown', handleKey);
   }
 
   function donateSection() {
