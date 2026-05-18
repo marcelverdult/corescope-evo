@@ -76,7 +76,10 @@ async function run() {
 
   await step('empty-state container is < 40% of viewport height', async () => {
     const data = await page.evaluate(() => {
-      const empty = document.querySelector('.ch-empty');
+      // The channels empty state is rendered via PageState.empty() — a .ps
+      // block inside the #chMessages pane (the legacy .ch-empty class was
+      // retired in the PageState refactor).
+      const empty = document.querySelector('#chMessages .ps');
       if (!empty) return null;
       return {
         h: Math.round(empty.getBoundingClientRect().height),
