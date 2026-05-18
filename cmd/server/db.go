@@ -68,8 +68,10 @@ func (db *DB) resolvedPathByObsStatement() *sql.Stmt {
 }
 
 // OpenDB opens a read-only SQLite connection with WAL mode.
+// cache_size is set to 128 MiB per connection (negative value = KiB) so the
+// server's read-heavy workload doesn't thrash the default 8 MiB SQLite cache.
 func OpenDB(path string) (*DB, error) {
-	dsn := fmt.Sprintf("file:%s?mode=ro&_journal_mode=WAL&_busy_timeout=5000", path)
+	dsn := fmt.Sprintf("file:%s?mode=ro&_journal_mode=WAL&_busy_timeout=5000&_pragma=cache_size(-131072)", path)
 	conn, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
@@ -1021,6 +1023,73 @@ func (db *DB) GetRecentTransmissionsForNode(pubkey string, limit int) ([]map[str
 	}
 
 	// Fetch observations for all transmissions
+	if len(txIDs) > 0 {
+		obsMap := db.getObservationsForTransmissions(txIDs)
+		for _, p := range packets {
+			if id, ok := p["id"].(int); ok {
+				if obs, found := obsMap[id]; found {
+					p["observations"] = obs
+				}
+			}
+		}
+	}
+
+	return packets, nil
+}
+
+// GetRecentDirectPacketsForNode returns transmissions that this node directly received —
+// identified by the node's pubkey prefix appearing as the first element of path_json in at
+// least one observation. First-in-path means the node heard the original transmission
+// directly (0 relay hops from sender) and forwarded it; this works for repeaters, room
+// servers, and any other node type without requiring it to be a registered observer.
+// sinceHours=0 means no time filter. limit=0 defaults to 20, max 2000.
+func (db *DB) GetRecentDirectPacketsForNode(pubkey string, limit int, sinceHours int) ([]map[string]interface{}, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 2000 {
+		limit = 2000
+	}
+
+	selectCols, observerJoin := db.transmissionBaseSQL()
+
+	// The first element of path_json is the first relay hop. If it is a prefix of this node's
+	// pubkey (or the pubkey starts with it), the node heard the packet directly from the sender.
+	// We use "? LIKE first_hop || '%'" so varying prefix lengths all match correctly.
+	directCond := "EXISTS (SELECT 1 FROM observations o2 WHERE o2.transmission_id = t.id AND json_extract(o2.path_json, '$[0]') IS NOT NULL AND json_extract(o2.path_json, '$[0]') != '' AND ? LIKE json_extract(o2.path_json, '$[0]') || '%')"
+
+	var querySQL string
+	var args []interface{}
+	if sinceHours > 0 {
+		querySQL = fmt.Sprintf(
+			"SELECT %s FROM transmissions t %s WHERE %s AND t.first_seen >= datetime('now','-%d hours') ORDER BY t.first_seen DESC LIMIT ?",
+			selectCols, observerJoin, directCond, sinceHours)
+	} else {
+		querySQL = fmt.Sprintf(
+			"SELECT %s FROM transmissions t %s WHERE %s ORDER BY t.first_seen DESC LIMIT ?",
+			selectCols, observerJoin, directCond)
+	}
+	args = []interface{}{pubkey, limit}
+
+	rows, err := db.conn.Query(querySQL, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	packets := make([]map[string]interface{}, 0)
+	var txIDs []int
+	for rows.Next() {
+		p := db.scanTransmissionRow(rows)
+		if p != nil {
+			p["observations"] = []map[string]interface{}{}
+			if id, ok := p["id"].(int); ok {
+				txIDs = append(txIDs, id)
+			}
+			packets = append(packets, p)
+		}
+	}
+
 	if len(txIDs) > 0 {
 		obsMap := db.getObservationsForTransmissions(txIDs)
 		for _, p := range packets {
