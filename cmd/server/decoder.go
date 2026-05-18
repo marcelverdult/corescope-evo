@@ -1,87 +1,92 @@
 package main
 
 import (
-	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"math"
 	"strings"
-	"time"
 
-	"github.com/meshcore-analyzer/packetpath"
+	"github.com/meshcore-analyzer/meshdecode"
 	"github.com/meshcore-analyzer/sigvalidate"
 )
 
-// Route type constants (header bits 1-0)
+// The route-type/payload-type constants, the Header/Path/AdvertFlags/
+// TransportCodes structs, and the path/hash/sanitize helpers are shared with
+// the ingestor via the meshdecode module — they decode identically in both
+// binaries. They are re-exported here as aliases/consts so the rest of the
+// server package (and its tests) keep using the original local names.
+//
+// The Payload struct and everything that constructs it (the per-payload
+// decoders, decodePayload, DecodePacket, PayloadJSON, ValidateAdvert) stay
+// local: the server and ingestor Payload structs have diverged. decodeHeader
+// also stays local because it resolves payload-type names through the
+// server-local payloadTypeNames map (see store.go).
+
+// Route type constants (header bits 1-0).
 const (
-	RouteTransportFlood  = 0
-	RouteFlood           = 1
-	RouteDirect          = 2
-	RouteTransportDirect = 3
+	RouteTransportFlood  = meshdecode.RouteTransportFlood
+	RouteFlood           = meshdecode.RouteFlood
+	RouteDirect          = meshdecode.RouteDirect
+	RouteTransportDirect = meshdecode.RouteTransportDirect
 )
 
-// Payload type constants (header bits 5-2)
+// Payload type constants (header bits 5-2).
 const (
-	PayloadREQ        = 0x00
-	PayloadRESPONSE   = 0x01
-	PayloadTXT_MSG    = 0x02
-	PayloadACK        = 0x03
-	PayloadADVERT     = 0x04
-	PayloadGRP_TXT    = 0x05
-	PayloadGRP_DATA   = 0x06
-	PayloadANON_REQ   = 0x07
-	PayloadPATH       = 0x08
-	PayloadTRACE      = 0x09
-	PayloadMULTIPART  = 0x0A
-	PayloadCONTROL    = 0x0B
-	PayloadRAW_CUSTOM = 0x0F
+	PayloadREQ        = meshdecode.PayloadREQ
+	PayloadRESPONSE   = meshdecode.PayloadRESPONSE
+	PayloadTXT_MSG    = meshdecode.PayloadTXT_MSG
+	PayloadACK        = meshdecode.PayloadACK
+	PayloadADVERT     = meshdecode.PayloadADVERT
+	PayloadGRP_TXT    = meshdecode.PayloadGRP_TXT
+	PayloadGRP_DATA   = meshdecode.PayloadGRP_DATA
+	PayloadANON_REQ   = meshdecode.PayloadANON_REQ
+	PayloadPATH       = meshdecode.PayloadPATH
+	PayloadTRACE      = meshdecode.PayloadTRACE
+	PayloadMULTIPART  = meshdecode.PayloadMULTIPART
+	PayloadCONTROL    = meshdecode.PayloadCONTROL
+	PayloadRAW_CUSTOM = meshdecode.PayloadRAW_CUSTOM
 )
 
-var routeTypeNames = map[int]string{
-	0: "TRANSPORT_FLOOD",
-	1: "FLOOD",
-	2: "DIRECT",
-	3: "TRANSPORT_DIRECT",
+// Firmware-derived limits — see firmware/src/MeshCore.h:19,21.
+const (
+	maxPathSize      = meshdecode.MaxPathSize      // MAX_PATH_SIZE — total path bytes allowed
+	maxPacketPayload = meshdecode.MaxPacketPayload // MAX_PACKET_PAYLOAD — max raw payload bytes
+)
+
+var routeTypeNames = meshdecode.RouteTypeNames
+
+// Shared decoded-packet structs (field-identical in server and ingestor).
+type (
+	Header         = meshdecode.Header
+	TransportCodes = meshdecode.TransportCodes
+	Path           = meshdecode.Path
+	AdvertFlags    = meshdecode.AdvertFlags
+)
+
+// isValidPathLen mirrors firmware Packet::isValidPathLen.
+func isValidPathLen(pathByte byte) bool { return meshdecode.IsValidPathLen(pathByte) }
+
+// decodePath decodes the path/hop bytes that follow the path byte.
+func decodePath(pathByte byte, buf []byte, offset int) (Path, int, error) {
+	return meshdecode.DecodePath(pathByte, buf, offset)
 }
 
-// Header is the decoded packet header.
-type Header struct {
-	RouteType       int    `json:"routeType"`
-	RouteTypeName   string `json:"routeTypeName"`
-	PayloadType     int    `json:"payloadType"`
-	PayloadTypeName string `json:"payloadTypeName"`
-	PayloadVersion  int    `json:"payloadVersion"`
-}
+// isTransportRoute delegates to packetpath.IsTransportRoute via meshdecode.
+func isTransportRoute(routeType int) bool { return meshdecode.IsTransportRoute(routeType) }
 
-// TransportCodes are present on TRANSPORT_FLOOD and TRANSPORT_DIRECT routes.
-type TransportCodes struct {
-	Code1 string `json:"code1"`
-	Code2 string `json:"code2"`
-}
+// ComputeContentHash computes the SHA-256-based content hash (first 16 hex chars).
+func ComputeContentHash(rawHex string) string { return meshdecode.ComputeContentHash(rawHex) }
 
-// Path holds decoded path/hop information.
-type Path struct {
-	HashSize      int      `json:"hashSize"`
-	HashCount     int      `json:"hashCount"`
-	Hops          []string `json:"hops"`
-	HopsCompleted *int     `json:"hopsCompleted,omitempty"`
-}
+// sanitizeName strips non-printable characters (< 0x20 except tab/newline) and DEL.
+func sanitizeName(s string) string { return meshdecode.SanitizeName(s) }
 
-// AdvertFlags holds decoded advert flag bits.
-type AdvertFlags struct {
-	Raw         int  `json:"raw"`
-	Type        int  `json:"type"`
-	Chat        bool `json:"chat"`
-	Repeater    bool `json:"repeater"`
-	Room        bool `json:"room"`
-	Sensor      bool `json:"sensor"`
-	HasLocation bool `json:"hasLocation"`
-	HasFeat1    bool `json:"hasFeat1"`
-	HasFeat2    bool `json:"hasFeat2"`
-	HasName     bool `json:"hasName"`
-}
+// advertRole returns the node role implied by the advert flags.
+func advertRole(f *AdvertFlags) string { return meshdecode.AdvertRole(f) }
+
+// epochToISO formats a Unix epoch (seconds) as an ISO-8601 UTC timestamp.
+func epochToISO(epoch uint32) string { return meshdecode.EpochToISO(epoch) }
 
 // Payload is a generic decoded payload. Fields are populated depending on type.
 type Payload struct {
@@ -142,59 +147,6 @@ func decodeHeader(b byte) Header {
 		PayloadTypeName: ptName,
 		PayloadVersion:  pv,
 	}
-}
-
-// Firmware-derived limits — see firmware/src/MeshCore.h:19,21.
-const (
-	maxPathSize      = 64  // MAX_PATH_SIZE — total path bytes allowed
-	maxPacketPayload = 184 // MAX_PACKET_PAYLOAD — max raw payload bytes
-)
-
-// isValidPathLen mirrors firmware Packet::isValidPathLen
-// (firmware/src/Packet.cpp:13-18). hash_size==4 is reserved; total path bytes
-// must fit within MAX_PATH_SIZE.
-func isValidPathLen(pathByte byte) bool {
-	hashCount := int(pathByte & 0x3F)
-	hashSize := int(pathByte>>6) + 1
-	if hashSize == 4 {
-		return false // reserved
-	}
-	return hashCount*hashSize <= maxPathSize
-}
-
-func decodePath(pathByte byte, buf []byte, offset int) (Path, int, error) {
-	hashSize := int(pathByte>>6) + 1
-	hashCount := int(pathByte & 0x3F)
-	// Exact mirror of firmware Packet::isValidPathLen (Packet.cpp:13-18).
-	// hash_size==4 is reserved and is rejected by firmware regardless of
-	// hash_count, so we must reject 0xC0 etc even on zero-hop packets —
-	// firmware never emits them, so an on-wire pathByte with the upper
-	// 2 bits set to 11 is by definition malformed/adversarial.
-	if !isValidPathLen(pathByte) {
-		return Path{}, 0, fmt.Errorf("invalid path encoding: pathByte 0x%02X (hash_size=%d hash_count=%d) violates firmware validity (Packet.cpp:13-18, MAX_PATH_SIZE=%d)", pathByte, hashSize, hashCount, maxPathSize)
-	}
-	totalBytes := hashSize * hashCount
-	hops := make([]string, 0, hashCount)
-
-	for i := 0; i < hashCount; i++ {
-		start := offset + i*hashSize
-		end := start + hashSize
-		if end > len(buf) {
-			break
-		}
-		hops = append(hops, strings.ToUpper(hex.EncodeToString(buf[start:end])))
-	}
-
-	return Path{
-		HashSize:  hashSize,
-		HashCount: hashCount,
-		Hops:      hops,
-	}, totalBytes, nil
-}
-
-// isTransportRoute delegates to packetpath.IsTransportRoute.
-func isTransportRoute(routeType int) bool {
-	return packetpath.IsTransportRoute(routeType)
 }
 
 func decodeEncryptedPayload(typeName string, buf []byte) Payload {
@@ -278,10 +230,10 @@ func decodeAdvert(buf []byte, validateSignatures bool) Payload {
 			off += 8
 		}
 		if hasFeat1 && len(appdata) >= off+2 {
-			off += 2  // skip feat1 bytes (reserved for future use)
+			off += 2 // skip feat1 bytes (reserved for future use)
 		}
 		if hasFeat2 && len(appdata) >= off+2 {
-			off += 2  // skip feat2 bytes (reserved for future use)
+			off += 2 // skip feat2 bytes (reserved for future use)
 		}
 		if p.Flags.HasName {
 			name := string(appdata[off:])
@@ -513,62 +465,6 @@ func DecodePacket(hexString string, validateSignatures bool) (*DecodedPacket, er
 	}, nil
 }
 
-// ComputeContentHash computes the SHA-256-based content hash (first 16 hex chars).
-// It hashes the payload-type nibble + payload (skipping path bytes) to produce a
-// route-independent identifier for the same logical packet. For TRACE packets,
-// path_len is included in the hash to match firmware behavior.
-func ComputeContentHash(rawHex string) string {
-	buf, err := hex.DecodeString(rawHex)
-	if err != nil || len(buf) < 2 {
-		if len(rawHex) >= 16 {
-			return rawHex[:16]
-		}
-		return rawHex
-	}
-
-	headerByte := buf[0]
-	offset := 1
-	if isTransportRoute(int(headerByte & 0x03)) {
-		offset += 4
-	}
-	if offset >= len(buf) {
-		if len(rawHex) >= 16 {
-			return rawHex[:16]
-		}
-		return rawHex
-	}
-	pathByte := buf[offset]
-	offset++
-	hashSize := int((pathByte>>6)&0x3) + 1
-	hashCount := int(pathByte & 0x3F)
-	pathBytes := hashSize * hashCount
-
-	payloadStart := offset + pathBytes
-	if payloadStart > len(buf) {
-		if len(rawHex) >= 16 {
-			return rawHex[:16]
-		}
-		return rawHex
-	}
-
-	payload := buf[payloadStart:]
-
-	// Hash payload-type byte only (bits 2-5 of header), not the full header.
-	// Firmware: SHA256(payload_type + [path_len for TRACE] + payload)
-	// Using the full header caused different hashes for the same logical packet
-	// when route type or version bits differed. See issue #786.
-	payloadType := (headerByte >> 2) & 0x0F
-	toHash := []byte{payloadType}
-	if int(payloadType) == PayloadTRACE {
-		// Firmware uses uint16_t path_len (2 bytes, little-endian)
-		toHash = append(toHash, pathByte, 0x00)
-	}
-	toHash = append(toHash, payload...)
-
-	h := sha256.Sum256(toHash)
-	return hex.EncodeToString(h[:])[:16]
-}
-
 // PayloadJSON serializes the payload to JSON for DB storage.
 func PayloadJSON(p *Payload) string {
 	b, err := json.Marshal(p)
@@ -634,34 +530,4 @@ func ValidateAdvert(p *Payload) (bool, string) {
 	}
 
 	return true, ""
-}
-
-// sanitizeName strips non-printable characters (< 0x20 except tab/newline) and DEL.
-func sanitizeName(s string) string {
-	var b strings.Builder
-	b.Grow(len(s))
-	for _, c := range s {
-		if c == '\t' || c == '\n' || (c >= 0x20 && c != 0x7f) {
-			b.WriteRune(c)
-		}
-	}
-	return b.String()
-}
-
-func advertRole(f *AdvertFlags) string {
-	if f.Repeater {
-		return "repeater"
-	}
-	if f.Room {
-		return "room"
-	}
-	if f.Sensor {
-		return "sensor"
-	}
-	return "companion"
-}
-
-func epochToISO(epoch uint32) string {
-	t := time.Unix(int64(epoch), 0)
-	return t.UTC().Format("2006-01-02T15:04:05.000Z")
 }
