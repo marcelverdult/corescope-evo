@@ -1085,6 +1085,11 @@ window.addEventListener('DOMContentLoaded', () => {
   // and mutates all of these; if any are missing the layout math throws
   // before we can fall back gracefully.
   if (navMoreBtn && navMoreMenu && navMoreWrap && navLeft && navRightEl && linksContainer && navTop) {
+    // Re-parent the dropdown to <body>: inside .nav-left it was clipped by
+    // that element's overflow:hidden (which the Priority+ link strip needs),
+    // so the menu only ever showed its first row. As a body child it is
+    // position:fixed and JS-positioned under the More button on open.
+    if (navMoreMenu.parentNode !== document.body) document.body.appendChild(navMoreMenu);
     // Measure available room and decide which links overflow.
     // Algorithm: try to fit all links inline. If the link strip doesn't
     // fit alongside .nav-right + .nav-brand, hide non-priority links one
@@ -1270,6 +1275,12 @@ window.addEventListener('DOMContentLoaded', () => {
       navMoreMenu.classList.toggle('open');
       navMoreBtn.setAttribute('aria-expanded', String(opening));
       if (opening) {
+        // Position the fixed dropdown just below the More button, its right
+        // edge aligned to the button's right edge.
+        var br = navMoreBtn.getBoundingClientRect();
+        navMoreMenu.style.top = (br.bottom + 4) + 'px';
+        navMoreMenu.style.right = Math.max(0, window.innerWidth - br.right) + 'px';
+        navMoreMenu.style.left = 'auto';
         var firstLink = navMoreMenu.querySelector('.nav-link');
         if (firstLink) firstLink.focus();
       }
