@@ -5,6 +5,7 @@
   let searchTimeout = null;
   let miniMap = null;
   let searchAbort = null; // AbortController for document-level listeners
+  var _announcementCleanup = null; // teardown fn for any open announcement modal
 
   const PREF_KEY = 'meshcore-user-level';
   const MY_NODES_KEY = 'meshcore-my-nodes'; // [{pubkey, name, addedAt}]
@@ -217,6 +218,7 @@
     clearTimeout(searchTimeout);
     if (searchAbort) { searchAbort.abort(); searchAbort = null; }
     if (miniMap) { miniMap.remove(); miniMap = null; }
+    if (_announcementCleanup) { _announcementCleanup(); _announcementCleanup = null; }
   }
 
   // ==================== MY NODES DASHBOARD ====================
@@ -556,6 +558,16 @@
   // Dismissed state is persisted in localStorage so it survives page reloads.
   var ANNOUNCEMENT_LANG_KEY = 'home-announcement-lang';
 
+  // Fix 3: Only allow safe URL schemes in config-sourced hrefs.
+  // Accepts absolute http/https, root-relative paths, and hash routes.
+  function isSafeUrl(u) {
+    if (typeof u !== 'string' || !u) return false;
+    return u.indexOf('http://') === 0 ||
+           u.indexOf('https://') === 0 ||
+           u.charAt(0) === '/' ||
+           u.charAt(0) === '#';
+  }
+
   function maybeShowAnnouncement() {
     var a = window.SITE_CONFIG && window.SITE_CONFIG.sections && window.SITE_CONFIG.sections.announcement;
     if (!a || !a.enabled || !a.modal) return;
@@ -576,6 +588,20 @@
 
     var logoHtml = m.logoUrl
       ? '<img class="ann-logo" src="' + escapeAttr(m.logoUrl) + '" alt="' + escapeHtml(m.logoAlt || '') + '" loading="lazy">'
+      : '';
+
+    // Fix 3: guard config URLs before emitting href attributes
+    var primaryLink = (m.primaryUrl && isSafeUrl(m.primaryUrl))
+      ? '<a class="ann-primary" href="' + escapeAttr(m.primaryUrl) + '" target="_blank" rel="noopener">' +
+          '<span data-ann-action="nl">' + escapeHtml(m.primaryUrlNl || '') + '</span>' +
+          '<span data-ann-action="en">' + escapeHtml(m.primaryUrlEn || '') + '</span>' +
+        '</a>'
+      : '';
+    var discordLink = (m.discordUrl && isSafeUrl(m.discordUrl))
+      ? '<a class="ann-secondary" href="' + escapeAttr(m.discordUrl) + '" target="_blank" rel="noopener">' +
+          '<span data-ann-discord="nl">' + escapeHtml(m.discordUrlNl || '') + '</span>' +
+          '<span data-ann-discord="en">' + escapeHtml(m.discordUrlEn || '') + '</span>' +
+        '</a>'
       : '';
 
     overlay.innerHTML = '<div class="ann-card">' +
@@ -601,20 +627,7 @@
       '<div class="ann-body">' +
         '<p data-ann-body="nl">' + escapeHtml(m.bodyNl || '') + '</p>' +
         '<p data-ann-body="en">' + escapeHtml(m.bodyEn || '') + '</p>' +
-        '<div class="ann-actions">' +
-          (m.primaryUrl
-            ? '<a class="ann-primary" href="' + escapeAttr(m.primaryUrl) + '" target="_blank" rel="noopener">' +
-                '<span data-ann-action="nl">' + escapeHtml(m.primaryUrlNl || '') + '</span>' +
-                '<span data-ann-action="en">' + escapeHtml(m.primaryUrlEn || '') + '</span>' +
-              '</a>'
-            : '') +
-          (m.discordUrl
-            ? '<a class="ann-secondary" href="' + escapeAttr(m.discordUrl) + '" target="_blank" rel="noopener">' +
-                '<span data-ann-discord="nl">' + escapeHtml(m.discordUrlNl || '') + '</span>' +
-                '<span data-ann-discord="en">' + escapeHtml(m.discordUrlEn || '') + '</span>' +
-              '</a>'
-            : '') +
-        '</div>' +
+        '<div class="ann-actions">' + primaryLink + discordLink + '</div>' +
       '</div>' +
     '</div>';
 
@@ -630,11 +643,22 @@
       });
     }
 
-    // Helper: dismiss
+    // Fix 1 + 2: shared teardown — removes overlay node and keydown listener.
+    // Called by both dismiss() and _announcementCleanup (navigate-away path).
+    function teardown() {
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      document.removeEventListener('keydown', handleKey);
+    }
+
+    // Helper: dismiss (persists the "seen" flag, then tears down)
     function dismiss() {
       localStorage.setItem(key, '1');
-      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      teardown();
+      _announcementCleanup = null; // prevent double-call from destroy()
     }
+
+    // Fix 2: register teardown so destroy() can clean up on navigation away
+    _announcementCleanup = teardown;
 
     // Lang toggle buttons
     overlay.querySelectorAll('.ann-lang-btn').forEach(function (btn) {
@@ -652,9 +676,9 @@
       if (e.target === overlay) dismiss();
     });
 
-    // Keyboard: Escape dismisses
+    // Fix 1: named function reference so removeEventListener in teardown() works
     function handleKey(e) {
-      if (e.key === 'Escape') { dismiss(); document.removeEventListener('keydown', handleKey); }
+      if (e.key === 'Escape') dismiss();
     }
     document.addEventListener('keydown', handleKey);
   }
@@ -663,7 +687,7 @@
     var d = window.SITE_CONFIG && window.SITE_CONFIG.sections && window.SITE_CONFIG.sections.donate;
     if (!d || !d.enabled) return '';
     var links = (d.links || []).map(function (l) {
-      if (!l.url) return '';
+      if (!l.url || !isSafeUrl(l.url)) return '';
       return '<a class="home-donate-link" href="' + escapeAttr(l.url) + '" target="_blank" rel="noopener">' + escapeHtml(l.label) + '</a>';
     }).join('');
     var img = d.image ? '<img class="home-donate-img" src="' + escapeAttr(d.image) + '" alt="" loading="lazy">' : '';
