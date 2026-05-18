@@ -31,10 +31,46 @@
   function setLevel(level) { localStorage.setItem(PREF_KEY, level); }
 
   function init(container) {
-    // First-visit experience chooser removed — users default to "experienced"
-    // (no setup guides). The in-page #toggleLevel link still reveals guides.
+    var chooser = window.SITE_CONFIG && window.SITE_CONFIG.sections && window.SITE_CONFIG.sections.firstVisitChooser;
+    var levelChosen = localStorage.getItem(PREF_KEY) !== null;
+    if (chooser && chooser.enabled && !levelChosen) {
+      showChooser(container);
+      return;
+    }
     renderHome(container);
     maybeShowAnnouncement();
+  }
+
+  function showChooser(container) {
+    var siteName = window.SITE_CONFIG && window.SITE_CONFIG.branding && window.SITE_CONFIG.branding.siteName
+      ? window.SITE_CONFIG.branding.siteName
+      : 'CoreScope';
+    container.innerHTML = '<section class="home-chooser">' +
+      '<h1>Welcome to ' + escapeHtml(siteName) + '</h1>' +
+      '<p>How familiar are you with MeshCore?</p>' +
+      '<div class="chooser-options">' +
+        '<button class="chooser-btn" id="chooseNew" type="button">' +
+          '<span class="chooser-icon">🌱</span>' +
+          '<strong>I’m new</strong>' +
+          '<span>Show me setup guides and tips</span>' +
+        '</button>' +
+        '<button class="chooser-btn" id="chooseExp" type="button">' +
+          '<span class="chooser-icon">⚡</span>' +
+          '<strong>I know what I’m doing</strong>' +
+          '<span>Just the analyzer, skip the guides</span>' +
+        '</button>' +
+      '</div>' +
+    '</section>';
+    document.getElementById('chooseNew').addEventListener('click', function () {
+      setLevel('new');
+      renderHome(container);
+      maybeShowAnnouncement();
+    });
+    document.getElementById('chooseExp').addEventListener('click', function () {
+      setLevel('experienced');
+      renderHome(container);
+      maybeShowAnnouncement();
+    });
   }
 
   function renderHome(container) {
