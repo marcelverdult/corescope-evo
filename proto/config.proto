@@ -61,6 +61,12 @@ message ThemeResponse {
   // Home page customization (null if not configured).
   // Opaque object — structure varies by deployment.
   optional string home_json = 6 [json_name = "home"];
+  // Site metadata (title, description, OpenGraph) — opaque object.
+  optional string meta_json = 7 [json_name = "meta"];
+  // Structural section toggles (donate, announcement, chooser) — opaque object.
+  optional string sections_json = 8 [json_name = "sections"];
+  // Active template name.
+  string template = 9;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
