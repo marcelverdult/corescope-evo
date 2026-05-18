@@ -350,6 +350,11 @@ func main() {
 	stopEviction := store.StartEvictionTicker()
 	defer stopEviction()
 
+	// Start perf-history collector — snapshots perf metrics into an
+	// in-memory ring buffer once a minute for /api/perf/history.
+	stopPerfHistory := srv.startPerfHistoryCollector()
+	defer stopPerfHistory()
+
 	// Auto-prune old packets if retention.packetDays is configured
 	vacuumPages := cfg.IncrementalVacuumPages()
 	var stopPrune func()
