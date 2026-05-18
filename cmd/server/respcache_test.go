@@ -113,7 +113,7 @@ func TestResponseCache_NonCacheablePathBypasses(t *testing.T) {
 	}
 }
 
-func TestResponseCache_DoesNotCacheErrorResponses(t *testing.T) {
+func TestResponseCache_CachesErrorsBriefly(t *testing.T) {
 	rc := newResponseCache(time.Minute)
 	var calls int32
 	h := rc.middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -121,11 +121,16 @@ func TestResponseCache_DoesNotCacheErrorResponses(t *testing.T) {
 		w.WriteHeader(500)
 		w.Write([]byte("err"))
 	}))
-	for i := 0; i < 3; i++ {
-		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/api/stats", nil))
+	for i := 0; i < 5; i++ {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest("GET", "/api/stats", nil))
+		if w.Code != 500 {
+			t.Fatalf("request %d code = %d, want 500", i, w.Code)
+		}
 	}
-	if got := atomic.LoadInt32(&calls); got != 3 {
-		t.Errorf("error responses must not be cached: handler called %d times, want 3", got)
+	// Errors are negative-cached, so a rapid burst collapses to one call.
+	if got := atomic.LoadInt32(&calls); got != 1 {
+		t.Errorf("error burst: handler called %d times, want 1 (negative-cached)", got)
 	}
 }
 
@@ -173,7 +178,7 @@ func TestResponseCache_EvictsWhenOverCapacity(t *testing.T) {
 	}
 }
 
-func TestResponseCache_ErrorPathReRunsWithoutDeadlock(t *testing.T) {
+func TestResponseCache_ErrorPathCoalescesWithoutDeadlock(t *testing.T) {
 	rc := newResponseCache(time.Minute)
 	var calls int32
 	release := make(chan struct{})
@@ -194,10 +199,30 @@ func TestResponseCache_ErrorPathReRunsWithoutDeadlock(t *testing.T) {
 	}
 	time.Sleep(50 * time.Millisecond) // let all 10 coalesce onto one key
 	close(release)
-	wg.Wait() // must return — proves no deadlock/spin on the error re-loop
+	wg.Wait() // must return — proves no deadlock/spin
 
-	// Errors are never cached, so every request eventually runs the handler.
-	if got := atomic.LoadInt32(&calls); got != n {
-		t.Errorf("error path: handler called %d times, want %d", got, n)
+	// The owner negative-caches the 500; waiters serve it from cache.
+	if got := atomic.LoadInt32(&calls); got != 1 {
+		t.Errorf("error burst: handler called %d times, want 1 (single-flight + negative cache)", got)
+	}
+}
+
+func TestResponseCache_ErrorCacheExpires(t *testing.T) {
+	// rc.ttl shorter than errorCacheTTL, so cacheFor is capped at rc.ttl.
+	rc := newResponseCache(20 * time.Millisecond)
+	var calls int32
+	h := rc.middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		w.WriteHeader(500)
+		w.Write([]byte("err"))
+	}))
+	do := func() {
+		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/api/stats", nil))
+	}
+	do()
+	time.Sleep(40 * time.Millisecond)
+	do()
+	if got := atomic.LoadInt32(&calls); got != 2 {
+		t.Errorf("handler called %d times, want 2 (error cache must expire)", got)
 	}
 }

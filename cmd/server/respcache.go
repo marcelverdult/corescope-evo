@@ -71,6 +71,12 @@ var cacheableAPIPaths = map[string]bool{
 	"/api/iata-coords": true,
 }
 
+// errorCacheTTL bounds how long a non-200 response is served from cache.
+// Non-200s are cached briefly so an error burst still collapses to one
+// handler call (stampede protection), but not for the full TTL — a
+// transient failure must recover quickly.
+const errorCacheTTL = 2 * time.Second
+
 // cacheEntry is one stored HTTP response.
 type cacheEntry struct {
 	status  int
@@ -141,11 +147,19 @@ func (rc *responseCache) middleware(next http.Handler) http.Handler {
 				body:   cap.buf.Bytes(),
 			}
 			rc.mu.Lock()
-			if cap.status == http.StatusOK {
-				e.expires = time.Now().Add(rc.ttl)
-				rc.entries[key] = e
-				rc.evictLocked()
+			// 200s cached for the full TTL; non-200s cached only briefly
+			// (capped at rc.ttl) so an error burst still collapses to one
+			// handler call without serving a stale error for long.
+			cacheFor := rc.ttl
+			if cap.status != http.StatusOK {
+				cacheFor = errorCacheTTL
+				if rc.ttl < cacheFor {
+					cacheFor = rc.ttl
+				}
 			}
+			e.expires = time.Now().Add(cacheFor)
+			rc.entries[key] = e
+			rc.evictLocked()
 			delete(rc.inflight, key)
 			rc.mu.Unlock()
 			wg.Done()
