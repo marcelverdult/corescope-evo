@@ -19,7 +19,7 @@
   let affinityData = null;
   let userHasMoved = false;
   let controlsCollapsed = false;
-  let _mapThemeObs = null;  // theme MutationObserver — hoisted so destroy() can disconnect it
+  let _mapSatmapThemeHandler = null;  // theme-refresh listener that syncs the basemap — hoisted so destroy() can remove it
 
   // Safe escape — falls back to identity if app.js hasn't loaded yet
   const safeEsc = (typeof esc === 'function') ? esc : function (s) { return s; };
@@ -224,9 +224,6 @@
       attribution: '© OpenStreetMap © CartoDB',
       maxZoom: 19,
     }).addTo(map);
-    // Satmap (below) now owns tile-layer selection; the theme observer that
-    // used to swap dark/light tiles is no longer needed.
-    if (_mapThemeObs) { _mapThemeObs.disconnect(); _mapThemeObs = null; }
 
     // Satmap provider switching — config-based: base tile + overlays + CSS
     // filter + per-style max zoom. Persisted in localStorage; legacy 'default'
@@ -274,14 +271,40 @@
       localStorage.setItem('meshcore-map-satmap', provider);
     }
 
-    const _savedMapSatmap = localStorage.getItem('meshcore-map-satmap') ||
-      (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark_matter' : 'positron');
+    // Effective dark/light comes from the app theme (data-theme on <html>),
+    // falling back to the OS preference only when the app theme is unset.
+    function _mapThemeIsDark() {
+      const t = document.documentElement.getAttribute('data-theme');
+      if (t === 'dark') return true;
+      if (t === 'light') return false;
+      return window.matchMedia('(prefers-color-scheme: dark)').matches;
+    }
+
+    // The positron/dark_matter pair always tracks the app theme; theme-neutral
+    // styles (satellite, osm, …) are kept as the user saved them.
+    let _savedMapSatmap = localStorage.getItem('meshcore-map-satmap');
+    if (_savedMapSatmap === 'default') _savedMapSatmap = 'positron';
+    if (!_savedMapSatmap || _savedMapSatmap === 'positron' || _savedMapSatmap === 'dark_matter') {
+      _savedMapSatmap = _mapThemeIsDark() ? 'dark_matter' : 'positron';
+    }
     const _mcSatmapSel = document.getElementById('mcSatmap');
     if (_mcSatmapSel) {
-      _mcSatmapSel.value = _savedMapSatmap === 'default' ? 'positron' : _savedMapSatmap;
+      _mcSatmapSel.value = _savedMapSatmap;
       _mcSatmapSel.addEventListener('change', (e) => applyMapSatmap(e.target.value));
     }
     applyMapSatmap(_savedMapSatmap);
+
+    // Auto-follow the app theme: on every theme toggle, swap the basemap when
+    // the current style is the light/dark pair. Listener removed in destroy().
+    _mapSatmapThemeHandler = function () {
+      const cur = _mcSatmapSel ? _mcSatmapSel.value : localStorage.getItem('meshcore-map-satmap');
+      if (cur !== 'positron' && cur !== 'dark_matter') return;
+      const want = _mapThemeIsDark() ? 'dark_matter' : 'positron';
+      if (cur === want) return;
+      if (_mcSatmapSel) _mcSatmapSel.value = want;
+      applyMapSatmap(want);
+    };
+    window.addEventListener('theme-refresh', _mapSatmapThemeHandler);
 
     // Save position on move
     map.on('moveend', () => {
@@ -1279,7 +1302,7 @@
   function destroy() {
     if (wsHandler) offWS(wsHandler);
     wsHandler = null;
-    if (_mapThemeObs) { _mapThemeObs.disconnect(); _mapThemeObs = null; }
+    if (_mapSatmapThemeHandler) { window.removeEventListener('theme-refresh', _mapSatmapThemeHandler); _mapSatmapThemeHandler = null; }
     if (map) {
       map.remove();
       map = null;
