@@ -177,6 +177,20 @@
             <legend class="mc-label">Quick Jump</legend>
             <div class="mc-jumps" id="mcJumps" role="group" aria-label="Jump to region"></div>
           </fieldset>
+          <fieldset class="mc-section">
+            <legend class="mc-label">Map Style</legend>
+            <select id="mcSatmap" aria-label="Map tile style" style="width:100%">
+              <option value="positron">Positron</option>
+              <option value="dark_matter">Dark Matter</option>
+              <option value="gray_canvas">Gray Canvas</option>
+              <option value="satellite">Satellite</option>
+              <option value="hybrid">Hybrid</option>
+              <option value="opentopo">OpenTopo</option>
+              <option value="osm">OSM</option>
+              <option value="hillshade_blend">Hillshade Blend</option>
+              <option value="neon_tactical">Neon Tactical</option>
+            </select>
+          </fieldset>
         </div>
       </div>`;
 
@@ -206,19 +220,68 @@
     // If navigated with ?node=PUBKEY, highlight that node after markers load
     targetNodeKey = urlParams.get('node') || null;
 
-    const isDark = document.documentElement.getAttribute('data-theme') === 'dark' ||
-      (document.documentElement.getAttribute('data-theme') !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-    const tileLayer = L.tileLayer(isDark ? TILE_DARK : TILE_LIGHT, {
+    const tileLayer = L.tileLayer(TILE_LIGHT, {
       attribution: '© OpenStreetMap © CartoDB',
       maxZoom: 19,
     }).addTo(map);
-    if (_mapThemeObs) _mapThemeObs.disconnect();
-    _mapThemeObs = new MutationObserver(function () {
-      const dark = document.documentElement.getAttribute('data-theme') === 'dark' ||
-        (document.documentElement.getAttribute('data-theme') !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-      tileLayer.setUrl(dark ? TILE_DARK : TILE_LIGHT);
-    });
-    _mapThemeObs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    // Satmap (below) now owns tile-layer selection; the theme observer that
+    // used to swap dark/light tiles is no longer needed.
+    if (_mapThemeObs) { _mapThemeObs.disconnect(); _mapThemeObs = null; }
+
+    // Satmap provider switching — config-based: base tile + overlays + CSS
+    // filter + per-style max zoom. Persisted in localStorage; legacy 'default'
+    // migrated to 'positron'. Dark/light theme picks the first-load default.
+    const _M_ESRI_SAT        = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+    const _M_ESRI_LABELS     = 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}';
+    const _M_ESRI_HILLSHADE  = 'https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}';
+    const _M_ESRI_HILL_DARK  = 'https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade_Dark/MapServer/tile/{z}/{y}/{x}';
+    const _M_CARTO_DARK      = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+    const _M_CARTO_DARK_NL   = 'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png';
+    const _M_CARTO_LIGHT_LBL = 'https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png';
+    const _M_SATMAP_CONFIG = {
+      positron:        { base: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png' },
+      dark_matter:     { base: _M_CARTO_DARK },
+      gray_canvas:     { base: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}' },
+      satellite:       { base: _M_ESRI_SAT },
+      hybrid:          { base: _M_ESRI_SAT,      overlay: _M_ESRI_LABELS,    overlayOpacity: 1 },
+      opentopo:        { base: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', mapMaxZoom: 17 },
+      osm:             { base: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png' },
+      hillshade_blend: { base: _M_CARTO_DARK,     overlay: _M_ESRI_HILL_DARK,  overlayOpacity: 0.5, mapMaxZoom: 17 },
+      neon_tactical:   { base: _M_CARTO_DARK_NL,
+                         overlays: [
+                           { url: _M_ESRI_HILLSHADE,    opacity: 0.25 },
+                           { url: _M_CARTO_LIGHT_LBL,   opacity: 0.85 },
+                         ],
+                         filter: 'hue-rotate(180deg) saturate(1.4) contrast(1.1)',
+                         mapMaxZoom: 17 },
+    };
+    let _mOverlayLayers = [];
+
+    function applyMapSatmap(provider) {
+      if (provider === 'default') provider = 'positron';
+      _mOverlayLayers.forEach(l => map.removeLayer(l));
+      _mOverlayLayers = [];
+      const mapEl = document.getElementById('leaflet-map');
+      if (mapEl) mapEl.style.filter = '';
+      const cfg = _M_SATMAP_CONFIG[provider] || _M_SATMAP_CONFIG.positron;
+      tileLayer.setUrl(cfg.base);
+      const overlays = cfg.overlays || (cfg.overlay ? [{ url: cfg.overlay, opacity: cfg.overlayOpacity ?? 1 }] : []);
+      overlays.forEach(o => {
+        _mOverlayLayers.push(L.tileLayer(o.url, { maxZoom: 19, opacity: o.opacity }).addTo(map));
+      });
+      if (cfg.filter && mapEl) mapEl.style.filter = cfg.filter;
+      map.setMaxZoom(cfg.mapMaxZoom ?? 19);
+      localStorage.setItem('meshcore-map-satmap', provider);
+    }
+
+    const _savedMapSatmap = localStorage.getItem('meshcore-map-satmap') ||
+      (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark_matter' : 'positron');
+    const _mcSatmapSel = document.getElementById('mcSatmap');
+    if (_mcSatmapSel) {
+      _mcSatmapSel.value = _savedMapSatmap === 'default' ? 'positron' : _savedMapSatmap;
+      _mcSatmapSel.addEventListener('change', (e) => applyMapSatmap(e.target.value));
+    }
+    applyMapSatmap(_savedMapSatmap);
 
     // Save position on move
     map.on('moveend', () => {

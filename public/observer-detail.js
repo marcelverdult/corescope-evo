@@ -90,25 +90,43 @@
     try {
       destroyCharts();
       chartDefaults();
-      const [obs, analytics, obsSkewArr] = await Promise.all([
+      // Telemetry metrics endpoint takes a `since` timestamp + resolution
+      // rather than the analytics `days` param. Coarsen resolution as the
+      // window grows so long ranges return a manageable number of points.
+      const since = new Date(Date.now() - currentDays * 86400000).toISOString();
+      const metricsRes = currentDays <= 1 ? '5m' : currentDays <= 7 ? '1h' : '1d';
+      const [obs, analytics, obsSkewArr, metrics] = await Promise.all([
         api('/observers/' + encodeURIComponent(currentId)),
         api('/observers/' + encodeURIComponent(currentId) + '/analytics?days=' + currentDays),
         api('/observers/clock-skew', { ttl: 30000 }).catch(function() { return []; }),
+        api('/observers/' + encodeURIComponent(currentId) + '/metrics?since=' + encodeURIComponent(since) + '&resolution=' + metricsRes).catch(function() { return null; }),
       ]);
       // Find this observer's calibration data.
       var obsSkew = null;
       (Array.isArray(obsSkewArr) ? obsSkewArr : []).forEach(function(s) {
         if (s && s.observerID === currentId) obsSkew = s;
       });
-      renderDetail(obs, analytics, obsSkew);
+      renderDetail(obs, analytics, obsSkew, metrics);
     } catch (e) {
       PageState.error(document.getElementById('obsDetailContent'), e, loadDetail);
     }
   }
 
-  function renderDetail(obs, analytics, obsSkew) {
+  function renderDetail(obs, analytics, obsSkew, metrics) {
     const el = document.getElementById('obsDetailContent');
     if (!el) return;
+
+    // Pre-compute telemetry data sets so chart cards can be conditionally
+    // rendered in the template — observers without metrics (new, or fields
+    // not yet reported) show a clean page with no blank card boxes.
+    var mSamples = metrics && metrics.metrics ? metrics.metrics : [];
+    var uptimePoints     = mSamples.filter(function(m) { return m.uptime_secs != null; });
+    var batteryPoints    = mSamples.filter(function(m) { return m.battery_mv != null; });
+    var noiseFloorPoints = mSamples.filter(function(m) { return m.noise_floor != null; });
+    var rssiPoints       = (analytics.rssiTimeline && analytics.rssiTimeline.length > 0) ? analytics.rssiTimeline : [];
+    var airtimePoints    = mSamples.filter(function(m) { return m.tx_airtime_pct != null || m.rx_airtime_pct != null; });
+    var recvErrorPoints  = mSamples.filter(function(m) { return m.recv_errors != null; });
+    var queueLenPoints   = mSamples.filter(function(m) { return m.queue_len != null; });
 
     const title = document.getElementById('obsTitle');
     if (title) title.textContent = obs.name || obs.id.substring(0, 16) + '…';
@@ -216,6 +234,13 @@
           <h3 style="margin:0 0 8px;font-size:0.95em">SNR Distribution</h3>
           <canvas id="obsSnrChart" role="img" aria-label="SNR distribution chart"></canvas>
         </div>
+        ${uptimePoints.length > 0 ? `<div class="chart-card" style="padding:12px"><h3 style="margin:0 0 8px;font-size:0.95em">Uptime</h3><canvas id="obsUptimeChart" role="img" aria-label="Uptime chart"></canvas></div>` : ''}
+        ${batteryPoints.length > 0 ? `<div class="chart-card" style="padding:12px"><h3 style="margin:0 0 8px;font-size:0.95em">Battery</h3><canvas id="obsBatteryChart" role="img" aria-label="Battery voltage chart"></canvas></div>` : ''}
+        ${noiseFloorPoints.length > 0 ? `<div class="chart-card" style="padding:12px"><h3 style="margin:0 0 8px;font-size:0.95em">Noise Floor</h3><canvas id="obsNoiseFloorChart" role="img" aria-label="Noise floor chart"></canvas></div>` : ''}
+        ${rssiPoints.length > 0 ? `<div class="chart-card" style="padding:12px"><h3 style="margin:0 0 8px;font-size:0.95em">RSSI (avg per period)</h3><canvas id="obsRssiChart" role="img" aria-label="RSSI chart"></canvas></div>` : ''}
+        ${airtimePoints.length > 0 ? `<div class="chart-card" style="padding:12px"><h3 style="margin:0 0 8px;font-size:0.95em" id="obsAirtimeTitle">Airtime Utilization (%)</h3><canvas id="obsAirtimeChart" role="img" aria-label="Airtime utilization chart"></canvas></div>` : ''}
+        ${recvErrorPoints.length > 0 ? `<div class="chart-card" style="padding:12px"><h3 style="margin:0 0 8px;font-size:0.95em">Receive Errors (per interval)</h3><canvas id="obsRecvErrorsChart" role="img" aria-label="Receive errors chart"></canvas></div>` : ''}
+        ${queueLenPoints.length > 0 ? `<div class="chart-card" style="padding:12px"><h3 style="margin:0 0 8px;font-size:0.95em">TX Queue Length</h3><canvas id="obsQueueLenChart" role="img" aria-label="TX queue length chart"></canvas></div>` : ''}
       </div>
       <div style="margin-top:20px">
         <h3 style="font-size:0.95em">Recent Packets</h3>
@@ -234,6 +259,27 @@
     }
     if (analytics.snrDistribution && analytics.snrDistribution.length > 0) {
       renderSnrChart(analytics.snrDistribution);
+    }
+    if (uptimePoints.length > 0) {
+      renderUptimeChart(uptimePoints);
+    }
+    if (batteryPoints.length > 0) {
+      renderBatteryChart(batteryPoints);
+    }
+    if (noiseFloorPoints.length > 0) {
+      renderNoiseFloorChart(noiseFloorPoints);
+    }
+    if (rssiPoints.length > 0) {
+      renderRssiChart(rssiPoints);
+    }
+    if (airtimePoints.length > 0) {
+      renderAirtimeChart(airtimePoints);
+    }
+    if (recvErrorPoints.length > 0) {
+      renderRecvErrorsChart(recvErrorPoints);
+    }
+    if (queueLenPoints.length > 0) {
+      renderQueueLenChart(queueLenPoints);
     }
     if (analytics.recentPackets) {
       renderRecentPackets(analytics.recentPackets);
@@ -333,6 +379,244 @@
         plugins: { legend: { display: false } },
         scales: {
           x: { title: { display: true, text: 'SNR (dB)' } },
+          y: { beginAtZero: true, ticks: { precision: 0 } }
+        }
+      }
+    });
+    charts.push(c);
+  }
+
+  function metricLabels(samples) {
+    return samples.map(function(s) {
+      return new Date(s.timestamp).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    });
+  }
+
+  function renderUptimeChart(samples) {
+    const ctx = document.getElementById('obsUptimeChart');
+    if (!ctx) return;
+    // For each reboot, push a 0 at the same timestamp first so the line drops
+    // vertically to the baseline before rising again — clean sharkfin shape.
+    const labels = [];
+    const data = [];
+    samples.forEach(function(s) {
+      const lbl = new Date(s.timestamp).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      if (s.is_reboot_sample || s.is_reboot) {
+        labels.push(lbl);
+        data.push(0);
+      }
+      labels.push(lbl);
+      data.push(s.uptime_secs);
+    });
+    const c = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [{
+          label: 'Uptime',
+          data: data,
+          borderColor: CHART_COLORS[2],
+          backgroundColor: CHART_COLORS[2] + '20',
+          fill: true, tension: 0, pointRadius: 0, spanGaps: true,
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: true,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: function(ctx) { return formatDuration(ctx.raw); } } }
+        },
+        scales: {
+          x: { ticks: { maxRotation: 45, autoSkip: true, maxTicksLimit: 12 } },
+          y: { beginAtZero: true, ticks: { callback: function(v) { return formatDuration(v); } } }
+        }
+      }
+    });
+    charts.push(c);
+  }
+
+  function renderBatteryChart(samples) {
+    const ctx = document.getElementById('obsBatteryChart');
+    if (!ctx) return;
+    const c = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: metricLabels(samples),
+        datasets: [{
+          label: 'Battery (mV)',
+          data: samples.map(function(s) { return s.battery_mv; }),
+          borderColor: CHART_COLORS[3],
+          backgroundColor: CHART_COLORS[3] + '20',
+          fill: true, tension: 0.3, pointRadius: 2,
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: true,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { maxRotation: 45, autoSkip: true, maxTicksLimit: 12 } },
+          y: { ticks: { callback: function(v) { return v + ' mV'; } } }
+        }
+      }
+    });
+    charts.push(c);
+  }
+
+  function renderNoiseFloorChart(samples) {
+    const ctx = document.getElementById('obsNoiseFloorChart');
+    if (!ctx) return;
+    const c = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: metricLabels(samples),
+        datasets: [{
+          label: 'Noise Floor (dBm)',
+          data: samples.map(function(s) { return s.noise_floor; }),
+          borderColor: CHART_COLORS[4],
+          backgroundColor: CHART_COLORS[4] + '20',
+          fill: true, tension: 0.3, pointRadius: 2,
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: true,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { maxRotation: 45, autoSkip: true, maxTicksLimit: 12 } },
+          y: { ticks: { callback: function(v) { return v + ' dBm'; } } }
+        }
+      }
+    });
+    charts.push(c);
+  }
+
+  function renderRssiChart(timeline) {
+    const ctx = document.getElementById('obsRssiChart');
+    if (!ctx) return;
+    const c = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: timeline.map(function(t) { return t.label; }),
+        datasets: [{
+          label: 'Avg RSSI (dBm)',
+          data: timeline.map(function(t) { return t.avg; }),
+          borderColor: CHART_COLORS[5],
+          backgroundColor: CHART_COLORS[5] + '20',
+          fill: true, tension: 0.3, pointRadius: 2,
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: true,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { maxRotation: 45, autoSkip: true, maxTicksLimit: 12 } },
+          y: { ticks: { callback: function(v) { return v + ' dBm'; } } }
+        }
+      }
+    });
+    charts.push(c);
+  }
+
+  function renderAirtimeChart(samples) {
+    const ctx = document.getElementById('obsAirtimeChart');
+    if (!ctx) return;
+    const txVals = samples.map(function(s) { return s.tx_airtime_pct; });
+    const rxVals = samples.map(function(s) { return s.rx_airtime_pct; });
+    const avg = function(vals) {
+      const v = vals.filter(function(x) { return x != null; });
+      return v.length ? Math.round(v.reduce(function(a, b) { return a + b; }, 0) / v.length * 100) / 100 : null;
+    };
+    const txAvg = avg(txVals);
+    const rxAvg = avg(rxVals);
+    const titleEl = document.getElementById('obsAirtimeTitle');
+    if (titleEl) {
+      var suffix = '';
+      if (txAvg != null || rxAvg != null) {
+        suffix = ' — ' + (txAvg != null ? '(TX: ' + txAvg + '%)' : '') +
+          (txAvg != null && rxAvg != null ? ' - ' : '') +
+          (rxAvg != null ? '(RX: ' + rxAvg + '%)' : '');
+      }
+      titleEl.textContent = 'Airtime Utilization (%)' + suffix;
+    }
+    const c = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: metricLabels(samples),
+        datasets: [
+          {
+            label: 'TX Airtime %',
+            data: txVals,
+            borderColor: CHART_COLORS[0],
+            backgroundColor: CHART_COLORS[0] + '20',
+            fill: false, tension: 0.3, pointRadius: 2, spanGaps: true,
+          },
+          {
+            label: 'RX Airtime %',
+            data: rxVals,
+            borderColor: CHART_COLORS[1],
+            backgroundColor: CHART_COLORS[1] + '20',
+            fill: false, tension: 0.3, pointRadius: 2, spanGaps: true,
+          },
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: true,
+        plugins: { legend: { display: true, position: 'top', labels: { boxWidth: 12 } } },
+        scales: {
+          x: { ticks: { maxRotation: 45, autoSkip: true, maxTicksLimit: 12 } },
+          y: { beginAtZero: true, ticks: { callback: function(v) { return v + '%'; } } }
+        }
+      }
+    });
+    charts.push(c);
+  }
+
+  function renderRecvErrorsChart(samples) {
+    const ctx = document.getElementById('obsRecvErrorsChart');
+    if (!ctx) return;
+    const c = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: metricLabels(samples),
+        datasets: [{
+          label: 'Errors',
+          data: samples.map(function(s) { return s.recv_errors; }),
+          backgroundColor: CHART_COLORS[1] + '80',
+          borderColor: CHART_COLORS[1],
+          borderWidth: 1,
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: true,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { maxRotation: 45, autoSkip: true, maxTicksLimit: 12 } },
+          y: { beginAtZero: true, ticks: { precision: 0 } }
+        }
+      }
+    });
+    charts.push(c);
+  }
+
+  function renderQueueLenChart(samples) {
+    const ctx = document.getElementById('obsQueueLenChart');
+    if (!ctx) return;
+    const c = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: metricLabels(samples),
+        datasets: [{
+          label: 'Queue Length',
+          data: samples.map(function(s) { return s.queue_len; }),
+          backgroundColor: CHART_COLORS[6] + '80',
+          borderColor: CHART_COLORS[6],
+          borderWidth: 1,
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: true,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { maxRotation: 45, autoSkip: true, maxTicksLimit: 12 } },
           y: { beginAtZero: true, ticks: { precision: 0 } }
         }
       }
