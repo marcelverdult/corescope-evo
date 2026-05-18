@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -320,6 +321,21 @@ func main() {
 	srv := NewServer(database, cfg, hub)
 	srv.store = store
 	srv.channelKeys = loadServerChannelKeys(cfg, configDir)
+
+	// API response cache. TTL from CORESCOPE_API_CACHE_TTL (seconds);
+	// 0 disables caching. Default 10s.
+	apiCacheTTL := 10 * time.Second
+	if v := os.Getenv("CORESCOPE_API_CACHE_TTL"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			apiCacheTTL = time.Duration(n) * time.Second
+		}
+	}
+	if apiCacheTTL > 0 {
+		srv.respCache = newResponseCache(apiCacheTTL)
+		log.Printf("[cache] API response cache enabled, TTL %v", apiCacheTTL)
+	} else {
+		log.Printf("[cache] API response cache disabled")
+	}
 
 	router := mux.NewRouter()
 	srv.RegisterRoutes(router)

@@ -66,6 +66,9 @@ type Server struct {
 
 	// Router reference for OpenAPI spec generation
 	router *mux.Router
+
+	// Shared TTL response cache for hot /api/ reads. nil = caching disabled.
+	respCache *responseCache
 }
 
 // maxJSONBodyBytes caps the size of JSON request bodies on POST endpoints.
@@ -151,6 +154,16 @@ func (s *Server) RegisterRoutes(r *mux.Router) {
 
 	// Backfill status header middleware
 	r.Use(s.backfillStatusMiddleware)
+
+	// Shared TTL response cache — collapses concurrent reads of hot /api/
+	// endpoints to a single query per TTL window. Added before gzip so a
+	// cached entry stores the already-compressed bytes.
+	if s.respCache != nil {
+		r.Use(s.respCache.middleware)
+	}
+
+	// Gzip /api/ responses for clients that accept it.
+	r.Use(gzipMiddleware)
 
 	// Config endpoints
 	r.HandleFunc("/api/config/cache", s.handleConfigCache).Methods("GET")
