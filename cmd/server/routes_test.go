@@ -4008,7 +4008,7 @@ func TestBuildThemeResponseConfigOverridesTemplate(t *testing.T) {
 }
 
 func TestBuildThemeResponseNilTemplateUsesDefaults(t *testing.T) {
-	s := &Server{cfg: &Config{}, tmpl: &SiteTemplate{Name: "default"}}
+	s := &Server{cfg: &Config{}, tmpl: nil}
 	tr := s.buildThemeResponse()
 	if tr.Branding["siteName"] != "CoreScope" {
 		t.Errorf("siteName = %v, want built-in default CoreScope", tr.Branding["siteName"])
