@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
+	"time"
 )
 
 // captureWriter is an http.ResponseWriter that buffers the entire response
@@ -54,4 +56,130 @@ func cacheKey(r *http.Request) string {
 		sb.WriteString("|gz")
 	}
 	return sb.String()
+}
+
+// cacheableAPIPaths is the allowlist of GET endpoints whose responses are
+// safe to serve from a short-TTL shared cache. All are read-only; the
+// underlying packet data is append-only and live updates arrive separately
+// over the WebSocket, so a few seconds of staleness is acceptable.
+var cacheableAPIPaths = map[string]bool{
+	"/api/stats":       true,
+	"/api/packets":     true,
+	"/api/nodes":       true,
+	"/api/observers":   true,
+	"/api/channels":    true,
+	"/api/iata-coords": true,
+}
+
+// cacheEntry is one stored HTTP response.
+type cacheEntry struct {
+	status  int
+	header  http.Header
+	body    []byte
+	expires time.Time
+}
+
+// responseCache is a TTL cache with single-flight. Concurrent misses for the
+// same key run the wrapped handler exactly once and share the result, so a
+// burst of traffic collapses to a single query instead of overrunning the DB.
+type responseCache struct {
+	mu         sync.Mutex
+	entries    map[string]*cacheEntry
+	inflight   map[string]*sync.WaitGroup
+	ttl        time.Duration
+	maxEntries int
+}
+
+func newResponseCache(ttl time.Duration) *responseCache {
+	return &responseCache{
+		entries:    make(map[string]*cacheEntry),
+		inflight:   make(map[string]*sync.WaitGroup),
+		ttl:        ttl,
+		maxEntries: 64,
+	}
+}
+
+// middleware wraps a handler with TTL caching + single-flight for the
+// allowlisted GET endpoints. All other requests pass straight through.
+func (rc *responseCache) middleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || !cacheableAPIPaths[r.URL.Path] {
+			next.ServeHTTP(w, r)
+			return
+		}
+		key := cacheKey(r)
+
+		for {
+			rc.mu.Lock()
+			if e, ok := rc.entries[key]; ok && time.Now().Before(e.expires) {
+				rc.mu.Unlock()
+				writeCachedEntry(w, e)
+				return
+			}
+			if wg, ok := rc.inflight[key]; ok {
+				// Another request is already computing this key. Wait for
+				// it, then loop to re-check the cache.
+				rc.mu.Unlock()
+				wg.Wait()
+				continue
+			}
+			// This goroutine owns the computation for this key.
+			wg := &sync.WaitGroup{}
+			wg.Add(1)
+			rc.inflight[key] = wg
+			rc.mu.Unlock()
+
+			cap := newCaptureWriter()
+			next.ServeHTTP(cap, r)
+
+			e := &cacheEntry{
+				status: cap.status,
+				header: cap.header.Clone(),
+				body:   cap.buf.Bytes(),
+			}
+			rc.mu.Lock()
+			if cap.status == http.StatusOK {
+				e.expires = time.Now().Add(rc.ttl)
+				rc.entries[key] = e
+				rc.evictLocked()
+			}
+			delete(rc.inflight, key)
+			rc.mu.Unlock()
+			wg.Done()
+
+			writeCachedEntry(w, e)
+			return
+		}
+	})
+}
+
+// evictLocked keeps the cache under maxEntries. It first drops expired
+// entries, then drops arbitrary entries until under cap. Caller holds rc.mu.
+func (rc *responseCache) evictLocked() {
+	if len(rc.entries) <= rc.maxEntries {
+		return
+	}
+	now := time.Now()
+	for k, e := range rc.entries {
+		if now.After(e.expires) {
+			delete(rc.entries, k)
+		}
+	}
+	for k := range rc.entries {
+		if len(rc.entries) <= rc.maxEntries {
+			break
+		}
+		delete(rc.entries, k)
+	}
+}
+
+// writeCachedEntry replays a stored response onto a real ResponseWriter.
+func writeCachedEntry(w http.ResponseWriter, e *cacheEntry) {
+	for k, vals := range e.header {
+		for _, v := range vals {
+			w.Header().Add(k, v)
+		}
+	}
+	w.WriteHeader(e.status)
+	w.Write(e.body)
 }

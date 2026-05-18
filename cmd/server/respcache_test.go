@@ -1,8 +1,13 @@
 package main
 
 import (
+	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestCaptureWriter_BuffersBodyHeaderAndStatus(t *testing.T) {
@@ -53,5 +58,117 @@ func TestCacheKey_GzipDistinctFromPlain(t *testing.T) {
 	r2.Header.Set("Accept-Encoding", "gzip")
 	if cacheKey(r1) == cacheKey(r2) {
 		t.Error("gzip and non-gzip requests must have distinct cache keys")
+	}
+}
+
+func TestResponseCache_ServesRepeatedRequestsFromCache(t *testing.T) {
+	rc := newResponseCache(time.Minute)
+	var calls int32
+	h := rc.middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		w.Write([]byte("payload"))
+	}))
+	for i := 0; i < 5; i++ {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest("GET", "/api/stats", nil))
+		if w.Body.String() != "payload" {
+			t.Fatalf("request %d body = %q", i, w.Body.String())
+		}
+	}
+	if got := atomic.LoadInt32(&calls); got != 1 {
+		t.Errorf("handler called %d times, want 1", got)
+	}
+}
+
+func TestResponseCache_ExpiresAfterTTL(t *testing.T) {
+	rc := newResponseCache(20 * time.Millisecond)
+	var calls int32
+	h := rc.middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		w.Write([]byte("x"))
+	}))
+	do := func() {
+		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/api/stats", nil))
+	}
+	do()
+	time.Sleep(40 * time.Millisecond)
+	do()
+	if got := atomic.LoadInt32(&calls); got != 2 {
+		t.Errorf("handler called %d times, want 2 (one per TTL window)", got)
+	}
+}
+
+func TestResponseCache_NonCacheablePathBypasses(t *testing.T) {
+	rc := newResponseCache(time.Minute)
+	var calls int32
+	h := rc.middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		w.Write([]byte("x"))
+	}))
+	for i := 0; i < 3; i++ {
+		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/api/perf", nil))
+	}
+	if got := atomic.LoadInt32(&calls); got != 3 {
+		t.Errorf("non-cacheable path: handler called %d times, want 3", got)
+	}
+}
+
+func TestResponseCache_DoesNotCacheErrorResponses(t *testing.T) {
+	rc := newResponseCache(time.Minute)
+	var calls int32
+	h := rc.middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		w.WriteHeader(500)
+		w.Write([]byte("err"))
+	}))
+	for i := 0; i < 3; i++ {
+		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/api/stats", nil))
+	}
+	if got := atomic.LoadInt32(&calls); got != 3 {
+		t.Errorf("error responses must not be cached: handler called %d times, want 3", got)
+	}
+}
+
+func TestResponseCache_SingleFlightCoalescesConcurrentMisses(t *testing.T) {
+	rc := newResponseCache(time.Minute)
+	var calls int32
+	release := make(chan struct{})
+	h := rc.middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		<-release // block so all concurrent requests pile up on one key
+		w.Write([]byte("ok"))
+	}))
+	const n = 20
+	var wg sync.WaitGroup
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		go func() {
+			defer wg.Done()
+			h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/api/stats", nil))
+		}()
+	}
+	time.Sleep(50 * time.Millisecond) // let all 20 arrive and coalesce
+	close(release)
+	wg.Wait()
+	if got := atomic.LoadInt32(&calls); got != 1 {
+		t.Errorf("single-flight failed: handler called %d times, want 1", got)
+	}
+}
+
+func TestResponseCache_EvictsWhenOverCapacity(t *testing.T) {
+	rc := newResponseCache(time.Minute)
+	rc.maxEntries = 4
+	h := rc.middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("x"))
+	}))
+	for i := 0; i < 20; i++ {
+		req := httptest.NewRequest("GET", "/api/packets?p="+strconv.Itoa(i), nil)
+		h.ServeHTTP(httptest.NewRecorder(), req)
+	}
+	rc.mu.Lock()
+	n := len(rc.entries)
+	rc.mu.Unlock()
+	if n > rc.maxEntries {
+		t.Errorf("cache holds %d entries, want <= %d", n, rc.maxEntries)
 	}
 }
