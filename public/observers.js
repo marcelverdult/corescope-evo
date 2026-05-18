@@ -80,6 +80,12 @@
     });
   }
 
+  function observerSetupHelp() {
+    var s = window.SITE_CONFIG && window.SITE_CONFIG.sections && window.SITE_CONFIG.sections.observerSetup;
+    if (!s || !s.enabled || !s.html) return '';
+    return '<section class="observer-setup-help">' + s.html + '</section>';
+  }
+
   function init(app) {
     loadSortState();
     app.innerHTML = `
@@ -89,6 +95,7 @@
           <a href="#/compare" class="btn-icon" title="Compare observers" aria-label="Compare observers" style="text-decoration:none">🔍</a>
           <button class="btn-icon" data-action="obs-refresh" title="Refresh" aria-label="Refresh observers">🔄</button>
         </div>
+        ${observerSetupHelp()}
         <div class="obs-stats-panel" id="obsStatsPanel">
           <div class="obs-stats-header" data-action="toggle-stats">
             <strong>📊 Observer Statistics</strong>
