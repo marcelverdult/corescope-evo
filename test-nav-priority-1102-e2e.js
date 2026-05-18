@@ -11,14 +11,14 @@
  * Acceptance:
  *  - At 2560px: ALL 11 links visible inline AND "More ▾" hidden.
  *  - At 1920px: at least 9 links visible (room for most).
- *  - At 1080px: 5 high-priority links visible AND More menu contains
+ *  - At 1080px: 6 high-priority links visible AND More menu contains
  *    every link not currently visible inline.
- *  - At 768px (just above hamburger threshold): 5 high-priority links
+ *  - At 800px (just above hamburger threshold): 6 high-priority links
  *    visible AND More menu non-empty.
  *
  * #1105 MINOR 7: at 1080/800px we now assert the visible set is *exactly*
- * the 5 high-priority links (Home/Packets/Map/Live/Nodes). A buggy queue
- * that hid Home and showed Lab would still pass the cardinality check.
+ * the 6 high-priority links (Home/Packets/Map/Live/Nodes/Perf). A buggy
+ * queue that hid Home and showed Lab would still pass the cardinality check.
  *
  * #1105 MINOR 9: also asserts that navigating to a route whose link
  * lives in the More menu lights up #navMoreBtn with .active.
@@ -31,13 +31,13 @@ const BASE = process.env.BASE_URL || 'http://localhost:13581';
 
 // [width, expected behavior]
 // requireExactHighPri: when true, asserts the visible set matches HIGH_PRIORITY_HREFS exactly
-const HIGH_PRIORITY_HREFS = ['#/home', '#/packets', '#/map', '#/live', '#/nodes'];
+const HIGH_PRIORITY_HREFS = ['#/home', '#/packets', '#/map', '#/live', '#/nodes', '#/perf'];
 const CASES = [
   // viewport, minVisible, moreVisible, requireExactHighPri, label
   { w: 2560, minVisible: 11, moreVisible: false, requireExactHighPri: false, label: '2560px — all visible' },
   { w: 1920, minVisible: 9,  moreVisible: null,  requireExactHighPri: false, label: '1920px — most visible' },
-  { w: 1080, minVisible: 5,  moreVisible: true,  requireExactHighPri: true,  label: '1080px — collapsed' },
-  { w: 800,  minVisible: 5,  moreVisible: true,  requireExactHighPri: true,  label: '800px — collapsed' },
+  { w: 1080, minVisible: 6,  moreVisible: true,  requireExactHighPri: true,  label: '1080px — collapsed' },
+  { w: 800,  minVisible: 6,  moreVisible: true,  requireExactHighPri: true,  label: '800px — collapsed' },
 ];
 
 const HEIGHT = 900;
