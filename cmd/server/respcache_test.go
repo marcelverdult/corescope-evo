@@ -172,3 +172,32 @@ func TestResponseCache_EvictsWhenOverCapacity(t *testing.T) {
 		t.Errorf("cache holds %d entries, want <= %d", n, rc.maxEntries)
 	}
 }
+
+func TestResponseCache_ErrorPathReRunsWithoutDeadlock(t *testing.T) {
+	rc := newResponseCache(time.Minute)
+	var calls int32
+	release := make(chan struct{})
+	h := rc.middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		<-release // hold the first owner so the others pile up on the key
+		w.WriteHeader(500)
+		w.Write([]byte("err"))
+	}))
+	const n = 10
+	var wg sync.WaitGroup
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		go func() {
+			defer wg.Done()
+			h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/api/stats", nil))
+		}()
+	}
+	time.Sleep(50 * time.Millisecond) // let all 10 coalesce onto one key
+	close(release)
+	wg.Wait() // must return — proves no deadlock/spin on the error re-loop
+
+	// Errors are never cached, so every request eventually runs the handler.
+	if got := atomic.LoadInt32(&calls); got != n {
+		t.Errorf("error path: handler called %d times, want %d", got, n)
+	}
+}

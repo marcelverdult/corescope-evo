@@ -132,6 +132,9 @@ func (rc *responseCache) middleware(next http.Handler) http.Handler {
 			cap := newCaptureWriter()
 			next.ServeHTTP(cap, r)
 
+			// cap.buf.Bytes() aliases the buffer's internal slice; safe
+			// because cap is discarded here and never written again. Any
+			// future change that reuses/pools captureWriter must copy.
 			e := &cacheEntry{
 				status: cap.status,
 				header: cap.header.Clone(),
