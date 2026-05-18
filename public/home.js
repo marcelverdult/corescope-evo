@@ -61,12 +61,12 @@
         '</button>' +
       '</div>' +
     '</section>';
-    document.getElementById('chooseNew').addEventListener('click', function () {
+    container.querySelector('#chooseNew').addEventListener('click', function () {
       setLevel('new');
       renderHome(container);
       maybeShowAnnouncement();
     });
-    document.getElementById('chooseExp').addEventListener('click', function () {
+    container.querySelector('#chooseExp').addEventListener('click', function () {
       setLevel('experienced');
       renderHome(container);
       maybeShowAnnouncement();
