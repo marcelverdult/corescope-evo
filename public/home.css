@@ -2,26 +2,6 @@
 
 /* Home page now uses body scroll (no #app override needed — see style.css) */
 
-/* Chooser */
-.home-chooser {
-  max-width: 520px;
-  margin: 15vh auto 0;
-  padding: 0 20px;
-  text-align: center;
-}
-.home-chooser h1 { font-size: 1.5rem; margin-bottom: 8px; }
-.home-chooser p { color: var(--text-muted); margin-bottom: 32px; }
-.chooser-options { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
-.chooser-btn {
-  display: flex; flex-direction: column; align-items: center; gap: 6px;
-  padding: 24px 28px; border-radius: 12px; border: 2px solid var(--border);
-  background: var(--surface-1); color: var(--text); cursor: pointer;
-  transition: border-color .15s, transform .15s; min-width: 200px;
-}
-.chooser-btn:hover { border-color: var(--accent); transform: translateY(-2px); }
-.chooser-icon { font-size: 2rem; }
-.chooser-btn strong { font-size: 1rem; }
-.chooser-btn span:last-child { font-size: .8rem; color: var(--text-muted); }
 .home-level-toggle { margin-top: 16px; }
 
 /* Hero */
