@@ -46,7 +46,7 @@ func LoadTemplate(name string, baseDirs ...string) *SiteTemplate {
 		var t SiteTemplate
 		if err := json.Unmarshal(data, &t); err != nil {
 			log.Printf("[template] WARNING: template %q is malformed (%v) — falling back to default", name, err)
-			break
+			continue
 		}
 		if t.Name == "" {
 			t.Name = name

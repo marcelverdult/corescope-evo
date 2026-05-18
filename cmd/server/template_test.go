@@ -63,3 +63,51 @@ func TestLoadTemplateNoFilesReturnsEmptyDefault(t *testing.T) {
 		t.Errorf("Name = %q, want default", tpl.Name)
 	}
 }
+
+// Fix 2: Dir is set on a successful load.
+func TestLoadTemplateDirIsPopulated(t *testing.T) {
+	base := t.TempDir()
+	writeTemplate(t, base, "acme", `{"name":"acme"}`)
+	tpl := LoadTemplate("acme", base)
+	if tpl.Dir == "" {
+		t.Fatal("Dir must be non-empty on successful load")
+	}
+	wantSuffix := filepath.Join("templates", "acme")
+	if !filepath.IsAbs(tpl.Dir) {
+		t.Errorf("Dir %q should be absolute", tpl.Dir)
+	}
+	if base := filepath.Base(filepath.Dir(tpl.Dir)); base != "templates" {
+		// simpler: check the last two path components
+		if got := filepath.Join(filepath.Base(filepath.Dir(tpl.Dir)), filepath.Base(tpl.Dir)); got != wantSuffix {
+			t.Errorf("Dir ends with %q, want %q", got, wantSuffix)
+		}
+	}
+}
+
+// Fix 3a: First baseDir wins when the template exists in multiple baseDirs.
+func TestLoadTemplateFirstBaseDirWins(t *testing.T) {
+	base1 := t.TempDir()
+	base2 := t.TempDir()
+	writeTemplate(t, base1, "brand", `{"name":"brand","label":"First"}`)
+	writeTemplate(t, base2, "brand", `{"name":"brand","label":"Second"}`)
+	tpl := LoadTemplate("brand", base1, base2)
+	if tpl.Label != "First" {
+		t.Errorf("Label = %q, want First (first baseDir should win)", tpl.Label)
+	}
+}
+
+// Fix 3b: A malformed template.json in the first baseDir falls through to a
+// valid copy in a later baseDir (verifies the break→continue fix).
+func TestLoadTemplateMalformedFirstBaseDirFallsThroughToValid(t *testing.T) {
+	base1 := t.TempDir()
+	base2 := t.TempDir()
+	writeTemplate(t, base1, "brand", `{not valid json`)
+	writeTemplate(t, base2, "brand", `{"name":"brand","label":"Valid"}`)
+	tpl := LoadTemplate("brand", base1, base2)
+	if tpl.Name != "brand" {
+		t.Errorf("Name = %q, want brand (should have loaded from base2)", tpl.Name)
+	}
+	if tpl.Label != "Valid" {
+		t.Errorf("Label = %q, want Valid", tpl.Label)
+	}
+}
