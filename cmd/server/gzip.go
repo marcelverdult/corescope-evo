@@ -36,9 +36,13 @@ func clientAcceptsGzip(r *http.Request) bool {
 // gzipMiddleware compresses /api/ responses for clients that accept gzip.
 // It is scoped to /api/ paths in v1 to avoid Range-request edge cases on
 // static files, and skips WebSocket upgrades (which hijack the connection).
+//
+// It deliberately does not emit Vary: Accept-Encoding. The Caddy reverse
+// proxy in front of this server already adds that header to every response
+// via its `encode` directive; a second copy here produced a duplicated
+// `Vary: Accept-Encoding, Accept-Encoding` header on /api/ responses.
 func gzipMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Add("Vary", "Accept-Encoding")
 		if !strings.HasPrefix(r.URL.Path, "/api/") ||
 			r.Header.Get("Upgrade") != "" ||
 			!clientAcceptsGzip(r) ||
