@@ -554,9 +554,11 @@
     var d = window.SITE_CONFIG && window.SITE_CONFIG.sections && window.SITE_CONFIG.sections.donate;
     if (!d || !d.enabled) return '';
     var links = (d.links || []).map(function (l) {
+      if (!l.url) return '';
       return '<a class="home-donate-link" href="' + escapeAttr(l.url) + '" target="_blank" rel="noopener">' + escapeHtml(l.label) + '</a>';
     }).join('');
     var img = d.image ? '<img class="home-donate-img" src="' + escapeAttr(d.image) + '" alt="" loading="lazy">' : '';
+    if (!d.title && !img && !links) return '';
     return '<section class="home-donate">' +
       (d.title ? '<h2>' + escapeHtml(d.title) + '</h2>' : '') +
       img + '<div class="home-donate-links">' + links + '</div></section>';
