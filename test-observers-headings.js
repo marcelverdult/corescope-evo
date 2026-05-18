@@ -1,9 +1,5 @@
 /* test-observers-headings.js — Issue #1039 regression test.
  * Asserts observer table thead column count matches tbody row column count.
- *
- * The thead mixes literal `<th>` tags with `sortTh('Label','col',prio)` helper
- * calls (each call renders exactly one `<th>`). The parser below understands
- * both forms so it stays accurate as columns move between literal and helper.
  */
 'use strict';
 
@@ -29,23 +25,13 @@ function extractBlock(s, openRe, closeRe) {
   return rest.slice(0, cm.index);
 }
 
-// Headings in source order. Each match is either a sortTh('Label',...) call or
-// a literal <th ...>Label</th> tag — both produce one column header.
-function theadLabels(thead) {
-  const labels = [];
-  const re = /sortTh\('([^']+)'|<th\b[^>]*>([^<]+)<\/th>/g;
-  let m;
-  while ((m = re.exec(thead)) !== null) {
-    labels.push((m[1] !== undefined ? m[1] : m[2]).trim());
-  }
-  return labels;
-}
-
 console.log('── Observers table headings (#1039) ──');
 
 test('thead column count equals tbody row column count', () => {
   const thead = extractBlock(src, /<thead><tr>/, /<\/tr><\/thead>/);
-  const thCount = theadLabels(thead).length;
+  // Columns are emitted either as literal `<th>` or via `sortTh(...)` calls.
+  const thCount = (thead.match(/<th\b/g) || []).length +
+                  (thead.match(/sortTh\(/g) || []).length;
 
   // tbody row template lives inside a backtick-template `<tr ...>...</tr>`.
   // Grab from the first `<tr ` after `tbody>` up to the first `</tr>`.
@@ -69,7 +55,11 @@ test('thead column count equals tbody row column count', () => {
 
 test('expected headings present and ordered', () => {
   const thead = extractBlock(src, /<thead><tr>/, /<\/tr><\/thead>/);
-  const labels = theadLabels(thead);
+  const labels = [];
+  // Columns are either literal `<th>Label</th>` or `sortTh('Label', ...)` calls.
+  const re = /sortTh\('([^']+)'|<th[^>]*>([^<]+)<\/th>/g;
+  let m;
+  while ((m = re.exec(thead)) !== null) labels.push((m[1] || m[2]).trim());
   const expected = ['Status', 'Name', 'SF', 'Region', 'Last Status', 'Last Packet',
                     'Packet Health', 'Total Packets', 'Packets/Hour', 'Clock Offset', 'Uptime'];
   assert.deepStrictEqual(labels, expected,

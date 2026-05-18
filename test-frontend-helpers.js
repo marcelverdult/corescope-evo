@@ -2580,6 +2580,7 @@ console.log('\n=== channels.js: shouldProcessWSMessageForRegion ===');
   ctx.atob = (s) => Buffer.from(String(s), 'base64').toString('utf8');
   ctx.crypto = { subtle: require('crypto').webcrypto.subtle }; ctx.TextEncoder = TextEncoder; ctx.TextDecoder = TextDecoder; ctx.Uint8Array = Uint8Array;
     loadInCtx(ctx, 'public/channel-decrypt.js');
+    loadInCtx(ctx, 'public/page-state.js');
     loadInCtx(ctx, 'public/channels.js');
   const shouldProcess = ctx.window._channelsShouldProcessWSMessageForRegion;
 
@@ -2706,7 +2707,6 @@ console.log('\n=== channels.js: WS batch + region snapshot integration ===');
     loadInCtx(ctx, 'public/channel-decrypt.js');
     loadInCtx(ctx, 'public/page-state.js');
     loadInCtx(ctx, 'public/channels.js');
-    ctx.app = appEl;
     ctx._pageHandlers.init(appEl);
     return { ctx, dom };
   }
@@ -2829,7 +2829,6 @@ console.log('\n=== channels.js: WS batch + region snapshot integration ===');
     loadInCtx(ctx, 'public/channel-decrypt.js');
     loadInCtx(ctx, 'public/page-state.js');
     loadInCtx(ctx, 'public/channels.js');
-    ctx.app = appEl;
     ctx._pageHandlers.init(appEl);
     await Promise.resolve();
     const selectPromise = ctx.window._channelsSelectChannelForTest('general');
@@ -2928,7 +2927,6 @@ console.log('\n=== channels.js: WS batch + region snapshot integration ===');
     loadInCtx(ctx, 'public/channel-decrypt.js');
     loadInCtx(ctx, 'public/page-state.js');
     loadInCtx(ctx, 'public/channels.js');
-    ctx.app = appEl;
     ctx._pageHandlers.init(appEl);
     await Promise.resolve();
     await ctx.window._channelsSelectChannelForTest('general');
@@ -3032,7 +3030,6 @@ console.log('\n=== channels.js: encrypted channel without key shows lock message
     loadInCtx(ctx, 'public/channel-decrypt.js');
     loadInCtx(ctx, 'public/page-state.js');
     loadInCtx(ctx, 'public/channels.js');
-    ctx.app = appEl;
     ctx._pageHandlers.init(appEl);
     // Wait for loadChannels() to resolve (async in init)
     for (let i = 0; i < 10; i++) await Promise.resolve();
@@ -3127,7 +3124,6 @@ console.log('\n=== channels.js: encrypted channel without key shows lock message
     loadInCtx(ctx, 'public/channel-decrypt.js');
     loadInCtx(ctx, 'public/page-state.js');
     loadInCtx(ctx, 'public/channels.js');
-    ctx.app = appEl;
     if (opts.storedKey) {
       ctx.ChannelDecrypt.saveKey(opts.storedKey.name, opts.storedKey.hex);
     }
@@ -3167,7 +3163,7 @@ console.log('\n=== channels.js: encrypted channel without key shows lock message
       includeEncryptedChannels: [{ hash: '#private', name: '#private', messageCount: 5, lastActivity: null, encrypted: true }],
       storedKey: { name: '#private', hex: 'abcd1234abcd1234abcd1234abcd1234' },
     });
-    assert.ok(!r.msgHtml.includes('no decryption key'), 'must not show no-key lock when key is stored');
+    assert.ok(!r.msgHtml.includes('no key configured'), 'must not show no-key lock when key is stored');
     // Decrypt path either renders something or shows decrypt-specific empty/wrong-key state — never the no-key lock.
   });
 }
