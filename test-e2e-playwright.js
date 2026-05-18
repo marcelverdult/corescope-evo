@@ -1366,7 +1366,12 @@ async function run() {
   });
 
   await test('Perf page has refresh button', async () => {
-    const refreshBtn = await page.$('#perfRefresh');
+    // The perf page defaults to the graphs view; the Reset/Refresh buttons
+    // live in the cards view, so toggle to it first via #perfViewToggle.
+    const viewToggle = await page.$('#perfViewToggle');
+    assert(viewToggle, 'Perf view toggle not found');
+    await viewToggle.click();
+    const refreshBtn = await page.waitForSelector('#perfRefresh', { timeout: 8000 }).catch(() => null);
     assert(refreshBtn, 'Perf refresh button not found');
     // Click refresh and verify content updates (no errors)
     await refreshBtn.click();
