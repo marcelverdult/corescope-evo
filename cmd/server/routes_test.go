@@ -3973,3 +3973,44 @@ func TestPacketDetailPrefersStoreOverDB(t *testing.T) {
 		t.Errorf("expected observation_count=2 (from store), got %v", body["observation_count"])
 	}
 }
+
+func TestBuildThemeResponseAppliesTemplate(t *testing.T) {
+	s := &Server{
+		cfg: &Config{},
+		tmpl: &SiteTemplate{
+			Name:     "acme",
+			Branding: map[string]interface{}{"siteName": "Acme Mesh"},
+			Meta:     map[string]interface{}{"title": "Acme"},
+			Sections: map[string]interface{}{"donate": map[string]interface{}{"enabled": true}},
+		},
+	}
+	tr := s.buildThemeResponse()
+	if tr.Branding["siteName"] != "Acme Mesh" {
+		t.Errorf("siteName = %v, want Acme Mesh", tr.Branding["siteName"])
+	}
+	if tr.Meta["title"] != "Acme" {
+		t.Errorf("meta.title = %v, want Acme", tr.Meta["title"])
+	}
+	if tr.Sections["donate"] == nil {
+		t.Errorf("sections.donate missing")
+	}
+}
+
+func TestBuildThemeResponseConfigOverridesTemplate(t *testing.T) {
+	s := &Server{
+		cfg:  &Config{Branding: map[string]interface{}{"siteName": "Operator Override"}},
+		tmpl: &SiteTemplate{Name: "acme", Branding: map[string]interface{}{"siteName": "Acme Mesh"}},
+	}
+	tr := s.buildThemeResponse()
+	if tr.Branding["siteName"] != "Operator Override" {
+		t.Errorf("siteName = %v, want Operator Override (config beats template)", tr.Branding["siteName"])
+	}
+}
+
+func TestBuildThemeResponseNilTemplateUsesDefaults(t *testing.T) {
+	s := &Server{cfg: &Config{}, tmpl: &SiteTemplate{Name: "default"}}
+	tr := s.buildThemeResponse()
+	if tr.Branding["siteName"] != "CoreScope" {
+		t.Errorf("siteName = %v, want built-in default CoreScope", tr.Branding["siteName"])
+	}
+}
