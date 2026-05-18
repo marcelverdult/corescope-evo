@@ -1659,7 +1659,11 @@ button.ch-item:hover .ch-icon-btn { opacity: 1; }
 .nav-more-wrap { display: none; position: relative; }
 .nav-more-btn { display: inline-flex; }
 .nav-more-menu {
-  display: none; position: absolute; top: calc(var(--top-nav-h, 52px) - 4px); right: 0;
+  /* position:fixed + JS-set top/right (see app.js nav-more handler). The menu
+     is moved to <body> and fixed-positioned so it is NOT clipped by the
+     overflow:hidden on .top-nav / .nav-left that the Priority+ link strip
+     relies on — an absolute dropdown inside those got cut to one row. */
+  display: none; position: fixed; top: 52px; right: 8px;
   background: var(--nav-bg); border: 1px solid var(--border); border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.15); flex-direction: column;
   min-width: 160px; padding: 4px 0; z-index: 1200;
