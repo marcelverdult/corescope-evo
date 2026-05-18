@@ -36,3 +36,6 @@ cmd/decrypt/decrypt
 
 # Project docs are kept local-only — repo holds CoreScope code only
 docs/
+
+# Claude Code session directory
+.claude/
