@@ -669,6 +669,54 @@ func buildThemeStyleTag(tr ThemeResponse) string {
 	return b.String()
 }
 
+// metaStr safely reads a string value from a meta map, returning fallback when
+// absent or when the value contains characters that could break out of an HTML
+// attribute or tag context.
+func metaStr(m map[string]interface{}, key, fallback string) string {
+	raw, ok := m[key]
+	if !ok {
+		return fallback
+	}
+	s, ok := raw.(string)
+	if !ok || s == "" || strings.ContainsAny(s, "<>\"\n\r") {
+		return fallback
+	}
+	return s
+}
+
+// buildSiteMetaTag renders the <title> and OpenGraph/Twitter meta tags from the
+// active template/config meta map. Replaces the static __SITE_META__ placeholder
+// in index.html so social crawlers see template-specific values.
+func buildSiteMetaTag(tr ThemeResponse) string {
+	m := tr.Meta
+	if m == nil {
+		m = map[string]interface{}{}
+	}
+	title := metaStr(m, "title", "CoreScope-EVO")
+	desc := metaStr(m, "description", "Real-time MeshCore LoRa mesh network analyzer")
+	ogImage := metaStr(m, "ogImage", "")
+	ogURL := metaStr(m, "ogUrl", "")
+	themeColor := metaStr(m, "themeColor", "#0a0a0a")
+	var b strings.Builder
+	b.WriteString("<title>" + title + "</title>")
+	b.WriteString(`<meta name="description" content="` + desc + `">`)
+	b.WriteString(`<meta property="og:title" content="` + title + `">`)
+	b.WriteString(`<meta property="og:description" content="` + desc + `">`)
+	if ogImage != "" {
+		b.WriteString(`<meta property="og:image" content="` + ogImage + `">`)
+		b.WriteString(`<meta name="twitter:image" content="` + ogImage + `">`)
+	}
+	if ogURL != "" {
+		b.WriteString(`<meta property="og:url" content="` + ogURL + `">`)
+	}
+	b.WriteString(`<meta property="og:type" content="website">`)
+	b.WriteString(`<meta name="twitter:card" content="summary_large_image">`)
+	b.WriteString(`<meta name="twitter:title" content="` + title + `">`)
+	b.WriteString(`<meta name="twitter:description" content="` + desc + `">`)
+	b.WriteString(`<meta name="theme-color" content="` + themeColor + `">`)
+	return b.String()
+}
+
 // spaHandler serves static files, falling back to index.html for SPA routes.
 // It reads index.html once at creation time and replaces the __BUST__ placeholder
 // with a Unix timestamp so browsers fetch fresh JS/CSS after each server restart,
@@ -684,6 +732,7 @@ func (s *Server) spaHandler(root string, fs http.Handler) http.Handler {
 	bustValue := fmt.Sprintf("%d", time.Now().Unix())
 	processed := strings.ReplaceAll(string(rawHTML), "__BUST__", bustValue)
 	processed = strings.ReplaceAll(processed, "__THEME_STYLE__", buildThemeStyleTag(s.buildThemeResponse()))
+	processed = strings.ReplaceAll(processed, "__SITE_META__", buildSiteMetaTag(s.buildThemeResponse()))
 	indexHTML := []byte(processed)
 	log.Printf("[static] cache-bust value: %s", bustValue)
 

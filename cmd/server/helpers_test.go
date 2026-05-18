@@ -512,6 +512,30 @@ func TestWriteJSON(t *testing.T) {
 	}
 }
 
+func TestSpaHandlerInjectsSiteMeta(t *testing.T) {
+	dir := t.TempDir()
+	html := `<!DOCTYPE html><html><head>__SITE_META__</head><body></body></html>`
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte(html), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{
+		cfg:  &Config{},
+		tmpl: &SiteTemplate{Name: "acme", Meta: map[string]interface{}{"title": "Acme Mesh", "description": "d"}},
+	}
+	fs := http.FileServer(http.Dir(dir))
+	handler := s.spaHandler(dir, fs)
+	req := httptest.NewRequest("GET", "/", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	body := rr.Body.String()
+	if !strings.Contains(body, "<title>Acme Mesh</title>") {
+		t.Errorf("title not injected, body=%q", body)
+	}
+	if strings.Contains(body, "__SITE_META__") {
+		t.Errorf("placeholder not replaced")
+	}
+}
+
 func TestHaversineKm(t *testing.T) {
 	// Same point should be 0
 	if d := haversineKm(37.0, -122.0, 37.0, -122.0); d != 0 {
