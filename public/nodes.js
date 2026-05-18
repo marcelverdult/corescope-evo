@@ -477,6 +477,117 @@
     return nodeData;
   }
 
+  // Shared Leaflet detail-map init — used by the full-screen node view and the
+  // side panel. detailMap is the module-level map handle.
+  function initNodeDetailMap(elId, n, zoomControl) {
+    try {
+      if (detailMap) { detailMap.remove(); detailMap = null; }
+      detailMap = L.map(elId, { zoomControl: zoomControl, attributionControl: false }).setView([n.lat, n.lon], 13);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(detailMap);
+      L.marker([n.lat, n.lon]).addTo(detailMap).bindPopup(n.name || n.public_key.slice(0, 12));
+      setTimeout(() => detailMap.invalidateSize(), 100);
+    } catch {}
+  }
+
+  // Shared QR renderer — meshcore://contact/add format. When the target sits
+  // inside a .node-map-qr-overlay, white QR cells are made transparent.
+  function renderNodeQr(elId, n) {
+    const qrEl = document.getElementById(elId);
+    if (!qrEl || typeof qrcode !== 'function') return;
+    try {
+      const typeMap = { companion: 1, repeater: 2, room: 3, sensor: 4 };
+      const contactType = typeMap[(n.role || '').toLowerCase()] || 2;
+      const meshcoreUrl = `meshcore://contact/add?name=${encodeURIComponent(n.name || 'Unknown')}&public_key=${n.public_key}&type=${contactType}`;
+      const qr = qrcode(0, 'M');
+      qr.addData(meshcoreUrl);
+      qr.make();
+      const isOverlay = !!qrEl.closest('.node-map-qr-overlay');
+      qrEl.innerHTML = qr.createSvgTag(3, 0);
+      const svg = qrEl.querySelector('svg');
+      if (svg) {
+        svg.style.display = 'block'; svg.style.margin = '0 auto';
+        if (isOverlay) {
+          svg.querySelectorAll('rect').forEach(r => {
+            const fill = (r.getAttribute('fill') || '').toLowerCase();
+            if (fill === '#ffffff' || fill === 'white' || fill === '#fff') {
+              r.setAttribute('fill', 'transparent');
+            }
+          });
+        }
+      }
+    } catch {}
+  }
+
+  // Shared "Directly Heard Packets" collapsible loader. Callers pass target
+  // element IDs and a per-packet renderItem(p, TYPE_LABELS); the timeframe and
+  // type-filter machinery is identical for the full view and the side panel.
+  function loadDirectPacketsInto(pubkey, opts) {
+    (function load(sinceHours, limit) {
+      const content = document.getElementById(opts.contentId);
+      const header = document.getElementById(opts.headerId);
+      if (!content) return;
+      content.innerHTML = PageState.loading('Loading…');
+      const padAttr = opts.pad ? ' style="padding:8px"' : '';
+      const qs = '?limit=' + (limit || 20) + (sinceHours ? '&since=' + sinceHours : '');
+      api('/nodes/' + encodeURIComponent(pubkey) + '/direct-packets' + qs, { ttl: CLIENT_TTL.nodeDetail }).then(res => {
+        const pkts = (res && res.packets) || [];
+        const truncated = !!(res && res.truncated);
+        const timeframes = [
+          { label: '1h',  hours: 1   },
+          { label: '6h',  hours: 6   },
+          { label: '24h', hours: 24  },
+          { label: '7d',  hours: 168 },
+        ];
+        const TYPE_LABELS = { 0:'📦 Request', 1:'📦 Response', 2:'✉️ DM', 3:'📦 ACK', 4:'📡 Advert', 5:'💬 Channel', 7:'📦 Anon', 8:'📦 Path', 9:'📦 Trace' };
+        const typeCounts = {};
+        pkts.forEach(p => { typeCounts[p.payload_type] = (typeCounts[p.payload_type] || 0) + 1; });
+        const uniqueTypes = Object.keys(typeCounts).map(Number);
+        const activeTypes = new Set(uniqueTypes);
+
+        const activeSince = sinceHours || 0;
+        const timeRow = `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;font-size:12px;">
+          <span style="color:var(--text-muted);align-self:center;">Show all in:</span>
+          ${timeframes.map(tf => `<button data-since="${tf.hours}" style="padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:${activeSince===tf.hours?'var(--accent)':'var(--surface-2)'};color:${activeSince===tf.hours?'#fff':'var(--text)'};cursor:pointer;font-size:11px;">${tf.label}</button>`).join('')}
+        </div>`;
+        const typeRow = uniqueTypes.length > 1 ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;font-size:12px;">
+          <span style="color:var(--text-muted);align-self:center;">Filter:</span>
+          ${uniqueTypes.map(t => `<button data-ptype-filter="${t}" style="padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:var(--accent);color:#fff;cursor:pointer;font-size:11px;">${TYPE_LABELS[t] || '📦 Packet'} (${typeCounts[t]})</button>`).join('')}
+        </div>` : '';
+        const truncatedRow = truncated ? `<div style="margin-bottom:8px;padding:6px 10px;background:color-mix(in srgb,var(--status-yellow,#f59e0b) 12%,transparent);border:1px solid color-mix(in srgb,var(--status-yellow,#f59e0b) 35%,transparent);border-radius:6px;font-size:12px;color:var(--text-muted);">⚠️ Showing first ${pkts.length} packets — use a shorter timeframe to see all.</div>` : '';
+
+        const updateHeader = () => {
+          if (!header) return;
+          let vis = 0; activeTypes.forEach(t => { vis += typeCounts[t] || 0; });
+          header.textContent = 'Directly Heard Packets' + (pkts.length ? ' (' + (activeTypes.size === uniqueTypes.length ? pkts.length : vis + ' of ' + pkts.length) + (truncated ? '+' : '') + ')' : '');
+        };
+
+        if (header) header.textContent = 'Directly Heard Packets' + (pkts.length ? ' (' + pkts.length + (truncated ? '+' : '') + ')' : '');
+        if (!pkts.length) {
+          content.innerHTML = timeRow + '<div class="text-muted"' + padAttr + '>No packets directly heard by this node' + (sinceHours ? ' in the last ' + (timeframes.find(t => t.hours === sinceHours) || {}).label : '') + '</div>';
+        } else {
+          const items = pkts.map(p => opts.renderItem(p, TYPE_LABELS)).join('');
+          content.innerHTML = timeRow + typeRow + truncatedRow + (opts.listClass ? '<div class="' + opts.listClass + '">' + items + '</div>' : items);
+        }
+        content.querySelectorAll('button[data-since]').forEach(btn => {
+          btn.addEventListener('click', () => load(parseInt(btn.dataset.since), 2000));
+        });
+        content.querySelectorAll('button[data-ptype-filter]').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const t = parseInt(btn.dataset.ptypeFilter);
+            if (activeTypes.has(t)) { activeTypes.delete(t); btn.style.background = 'var(--surface-2)'; btn.style.color = 'var(--text)'; }
+            else { activeTypes.add(t); btn.style.background = 'var(--accent)'; btn.style.color = '#fff'; }
+            content.querySelectorAll('[data-ptype]').forEach(row => {
+              row.style.display = activeTypes.has(parseInt(row.dataset.ptype)) ? '' : 'none';
+            });
+            updateHeader();
+          });
+        });
+      }).catch(() => {
+        if (content) content.innerHTML = '<div class="text-muted"' + padAttr + '>Failed to load direct packets</div>';
+      });
+    })(0, 20);
+  }
+
   async function loadFullNode(pubkey) {
     const body = document.getElementById('nodeFullBody');
     try {
@@ -639,15 +750,7 @@
         <div class="node-full-card skew-detail-section" id="node-clock-skew" style="display:none"></div>`;
 
       // Map
-      if (hasLoc) {
-        try {
-          if (detailMap) { detailMap.remove(); detailMap = null; }
-          detailMap = L.map('nodeFullMap', { zoomControl: true, attributionControl: false }).setView([n.lat, n.lon], 13);
-          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(detailMap);
-          L.marker([n.lat, n.lon]).addTo(detailMap).bindPopup(n.name || n.public_key.slice(0, 12));
-          setTimeout(() => detailMap.invalidateSize(), 100);
-        } catch {}
-      }
+      if (hasLoc) initNodeDetailMap('nodeFullMap', n, true);
 
       // Copy URL
       const nodeUrl = location.origin + '#/nodes/' + encodeURIComponent(n.public_key);
@@ -680,20 +783,7 @@
       }
 
       // QR code for full-screen view
-      const qrFullEl = document.getElementById('nodeFullQrCode');
-      if (qrFullEl && typeof qrcode === 'function') {
-        try {
-          const typeMap = { companion: 1, repeater: 2, room: 3, sensor: 4 };
-          const contactType = typeMap[(n.role || '').toLowerCase()] || 2;
-          const meshcoreUrl = `meshcore://contact/add?name=${encodeURIComponent(n.name || 'Unknown')}&public_key=${n.public_key}&type=${contactType}`;
-          const qr = qrcode(0, 'M');
-          qr.addData(meshcoreUrl);
-          qr.make();
-          qrFullEl.innerHTML = qr.createSvgTag(3, 0);
-          const svg = qrFullEl.querySelector('svg');
-          if (svg) { svg.style.display = 'block'; svg.style.margin = '0 auto'; }
-        } catch {}
-      }
+      renderNodeQr('nodeFullQrCode', n);
 
       // Initialize TableSort on observer table (full detail page)
       var observerTable = document.querySelector('#node-observers .observer-sort-table');
@@ -706,79 +796,24 @@
 
       // Directly Heard Packets section (full-screen view) — collapsible list
       // of packets this node heard first-hop, with timeframe + per-type filters.
-      (function loadDirectPackets(sinceHours, limit) {
-        const content = document.getElementById('fullDirectPacketsContent');
-        const header = document.getElementById('fullDirectPacketsHeader');
-        if (!content) return;
-        content.innerHTML = PageState.loading('Loading…');
-        const qs = '?limit=' + (limit || 20) + (sinceHours ? '&since=' + sinceHours : '');
-        api('/nodes/' + encodeURIComponent(n.public_key) + '/direct-packets' + qs, { ttl: CLIENT_TTL.nodeDetail }).then(res => {
-          const pkts = (res && res.packets) || [];
-          const truncated = !!(res && res.truncated);
-          const timeframes = [
-            { label: '1h',  hours: 1   },
-            { label: '6h',  hours: 6   },
-            { label: '24h', hours: 24  },
-            { label: '7d',  hours: 168 },
-          ];
-          const TYPE_LABELS = { 0:'📦 Request', 1:'📦 Response', 2:'✉️ DM', 3:'📦 ACK', 4:'📡 Advert', 5:'💬 Channel', 7:'📦 Anon', 8:'📦 Path', 9:'📦 Trace' };
-          const typeCounts = {};
-          pkts.forEach(p => { typeCounts[p.payload_type] = (typeCounts[p.payload_type] || 0) + 1; });
-          const uniqueTypes = Object.keys(typeCounts).map(Number);
-          const activeTypes = new Set(uniqueTypes);
-
-          const activeSince = sinceHours || 0;
-          const timeRow = `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;font-size:12px;">
-            <span style="color:var(--text-muted);align-self:center;">Show all in:</span>
-            ${timeframes.map(tf => `<button data-since="${tf.hours}" style="padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:${activeSince===tf.hours?'var(--accent)':'var(--surface-2)'};color:${activeSince===tf.hours?'#fff':'var(--text)'};cursor:pointer;font-size:11px;">${tf.label}</button>`).join('')}
-          </div>`;
-          const typeRow = uniqueTypes.length > 1 ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;font-size:12px;">
-            <span style="color:var(--text-muted);align-self:center;">Filter:</span>
-            ${uniqueTypes.map(t => `<button data-ptype-filter="${t}" style="padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:var(--accent);color:#fff;cursor:pointer;font-size:11px;">${TYPE_LABELS[t] || '📦 Packet'} (${typeCounts[t]})</button>`).join('')}
-          </div>` : '';
-          const truncatedRow = truncated ? `<div style="margin-bottom:8px;padding:6px 10px;background:color-mix(in srgb,var(--status-yellow,#f59e0b) 12%,transparent);border:1px solid color-mix(in srgb,var(--status-yellow,#f59e0b) 35%,transparent);border-radius:6px;font-size:12px;color:var(--text-muted);">⚠️ Showing first ${pkts.length} packets — use a shorter timeframe to see all.</div>` : '';
-
-          const updateHeader = () => {
-            if (!header) return;
-            let vis = 0; activeTypes.forEach(t => { vis += typeCounts[t] || 0; });
-            header.textContent = 'Directly Heard Packets' + (pkts.length ? ' (' + (activeTypes.size === uniqueTypes.length ? pkts.length : vis + ' of ' + pkts.length) + (truncated ? '+' : '') + ')' : '');
-          };
-
-          if (header) header.textContent = 'Directly Heard Packets' + (pkts.length ? ' (' + pkts.length + (truncated ? '+' : '') + ')' : '');
-          if (!pkts.length) {
-            content.innerHTML = timeRow + '<div class="text-muted">No packets directly heard by this node' + (sinceHours ? ' in the last ' + (timeframes.find(t => t.hours === sinceHours) || {}).label : '') + '</div>';
-          } else {
-            content.innerHTML = timeRow + typeRow + truncatedRow + '<div class="node-activity-list">' + pkts.map(p => {
-              let decoded; try { decoded = JSON.parse(p.decoded_json); } catch {}
-              const typeLabel = TYPE_LABELS[p.payload_type] || '📦 Packet';
-              const detail = decoded?.text ? ': ' + escapeHtml(truncate(decoded.text, 50)) : decoded?.name ? ' — ' + escapeHtml(decoded.name) : '';
-              const obs = p.observer_name || p.observer_id;
-              const obsBadge = p.observation_count > 1 ? ` <span class="badge badge-obs" title="Seen ${p.observation_count} times">👁 ${p.observation_count}</span>` : '';
-              return `<div class="node-activity-item" data-ptype="${p.payload_type}">
+      loadDirectPacketsInto(n.public_key, {
+        contentId: 'fullDirectPacketsContent',
+        headerId: 'fullDirectPacketsHeader',
+        listClass: 'node-activity-list',
+        pad: false,
+        renderItem: function(p, TYPE_LABELS) {
+          let decoded; try { decoded = JSON.parse(p.decoded_json); } catch {}
+          const typeLabel = TYPE_LABELS[p.payload_type] || '📦 Packet';
+          const detail = decoded?.text ? ': ' + escapeHtml(truncate(decoded.text, 50)) : decoded?.name ? ' — ' + escapeHtml(decoded.name) : '';
+          const obs = p.observer_name || p.observer_id;
+          const obsBadge = p.observation_count > 1 ? ` <span class="badge badge-obs" title="Seen ${p.observation_count} times">👁 ${p.observation_count}</span>` : '';
+          return `<div class="node-activity-item" data-ptype="${p.payload_type}">
                 <span class="node-activity-time">${renderNodeTimestampHtml(p.timestamp)}</span>
                 <span>${typeLabel}${detail}${obsBadge}${obs ? ' via ' + escapeHtml(obs) : ''}${p.snr != null ? ' · SNR ' + p.snr + 'dB' : ''}${p.rssi != null ? ' · RSSI ' + p.rssi + 'dBm' : ''}</span>
                 <a href="#/packets/${p.hash}" class="ch-analyze-link" style="margin-left:8px;font-size:0.8em">Analyze →</a>
               </div>`;
-            }).join('') + '</div>';
-          }
-          content.querySelectorAll('button[data-since]').forEach(btn => {
-            btn.addEventListener('click', () => loadDirectPackets(parseInt(btn.dataset.since), 2000));
-          });
-          content.querySelectorAll('button[data-ptype-filter]').forEach(btn => {
-            btn.addEventListener('click', () => {
-              const t = parseInt(btn.dataset.ptypeFilter);
-              if (activeTypes.has(t)) { activeTypes.delete(t); btn.style.background = 'var(--surface-2)'; btn.style.color = 'var(--text)'; }
-              else { activeTypes.add(t); btn.style.background = 'var(--accent)'; btn.style.color = '#fff'; }
-              content.querySelectorAll('[data-ptype]').forEach(row => {
-                row.style.display = activeTypes.has(parseInt(row.dataset.ptype)) ? '' : 'none';
-              });
-              updateHeader();
-            });
-          });
-        }).catch(() => {
-          if (content) content.innerHTML = '<div class="text-muted">Failed to load direct packets</div>';
-        });
-      })(0, 20);
+        }
+      });
 
       // Fetch neighbors for this node (full-screen view)
       fetchAndRenderNeighbors(n.public_key, 'fullNeighborsContent', {
@@ -1546,44 +1581,11 @@
       </div>`;
 
     // Init map
-    if (hasLoc) {
-      try {
-        if (detailMap) { detailMap.remove(); detailMap = null; }
-        detailMap = L.map('nodeMap', { zoomControl: false, attributionControl: false }).setView([n.lat, n.lon], 13);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(detailMap);
-        L.marker([n.lat, n.lon]).addTo(detailMap).bindPopup(n.name || n.public_key.slice(0, 12));
-        setTimeout(() => detailMap.invalidateSize(), 100);
-      } catch {}
-    }
+    if (hasLoc) initNodeDetailMap('nodeMap', n, false);
 
 
     // QR code — meshcore://contact/add format (scannable by MeshCore app)
-    const qrEl = document.getElementById('nodeQrCode');
-    if (qrEl && typeof qrcode === 'function') {
-      try {
-        const typeMap = { companion: 1, repeater: 2, room: 3, sensor: 4 };
-        const contactType = typeMap[(n.role || '').toLowerCase()] || 2;
-        const meshcoreUrl = `meshcore://contact/add?name=${encodeURIComponent(n.name || 'Unknown')}&public_key=${n.public_key}&type=${contactType}`;
-        const qr = qrcode(0, 'M');
-        qr.addData(meshcoreUrl);
-        qr.make();
-        const isOverlay = !!qrEl.closest('.node-map-qr-overlay');
-        qrEl.innerHTML = qr.createSvgTag(3, 0);
-        const svg = qrEl.querySelector('svg');
-        if (svg) {
-          svg.style.display = 'block'; svg.style.margin = '0 auto';
-          // Make QR background transparent for map overlay
-          if (isOverlay) {
-            svg.querySelectorAll('rect').forEach(r => {
-              const fill = (r.getAttribute('fill') || '').toLowerCase();
-              if (fill === '#ffffff' || fill === 'white' || fill === '#fff') {
-                r.setAttribute('fill', 'transparent');
-              }
-            });
-          }
-        }
-      } catch {}
-    }
+    renderNodeQr('nodeQrCode', n);
 
     // Wire "Details" button via the unified navigateToNode helper
     var detailBtn = panel.querySelector('.node-detail-btn');
@@ -1595,55 +1597,18 @@
 
     // Directly Heard Packets section (detail panel) — collapsible list with
     // timeframe + per-type filters; mirrors the full-screen view.
-    (function loadDirectPackets(sinceHours, limit) {
-      const content = document.getElementById('directPacketsContent');
-      const header = document.getElementById('directPacketsHeader');
-      if (!content) return;
-      content.innerHTML = PageState.loading('Loading…');
-      const qs = '?limit=' + (limit || 20) + (sinceHours ? '&since=' + sinceHours : '');
-      api('/nodes/' + encodeURIComponent(n.public_key) + '/direct-packets' + qs, { ttl: CLIENT_TTL.nodeDetail }).then(res => {
-        const pkts = (res && res.packets) || [];
-        const truncated = !!(res && res.truncated);
-        const timeframes = [
-          { label: '1h',  hours: 1   },
-          { label: '6h',  hours: 6   },
-          { label: '24h', hours: 24  },
-          { label: '7d',  hours: 168 },
-        ];
-        const TYPE_LABELS = { 0:'📦 Request', 1:'📦 Response', 2:'✉️ DM', 3:'📦 ACK', 4:'📡 Advert', 5:'💬 Channel', 7:'📦 Anon', 8:'📦 Path', 9:'📦 Trace' };
-        const typeCounts = {};
-        pkts.forEach(p => { typeCounts[p.payload_type] = (typeCounts[p.payload_type] || 0) + 1; });
-        const uniqueTypes = Object.keys(typeCounts).map(Number);
-        const activeTypes = new Set(uniqueTypes);
-
-        const activeSince = sinceHours || 0;
-        const timeRow = `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;font-size:12px;">
-          <span style="color:var(--text-muted);align-self:center;">Show all in:</span>
-          ${timeframes.map(tf => `<button data-since="${tf.hours}" style="padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:${activeSince===tf.hours?'var(--accent)':'var(--surface-2)'};color:${activeSince===tf.hours?'#fff':'var(--text)'};cursor:pointer;font-size:11px;">${tf.label}</button>`).join('')}
-        </div>`;
-        const typeRow = uniqueTypes.length > 1 ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;font-size:12px;">
-          <span style="color:var(--text-muted);align-self:center;">Filter:</span>
-          ${uniqueTypes.map(t => `<button data-ptype-filter="${t}" style="padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:var(--accent);color:#fff;cursor:pointer;font-size:11px;">${TYPE_LABELS[t] || '📦 Packet'} (${typeCounts[t]})</button>`).join('')}
-        </div>` : '';
-        const truncatedRow = truncated ? `<div style="margin-bottom:8px;padding:6px 10px;background:color-mix(in srgb,var(--status-yellow,#f59e0b) 12%,transparent);border:1px solid color-mix(in srgb,var(--status-yellow,#f59e0b) 35%,transparent);border-radius:6px;font-size:12px;color:var(--text-muted);">⚠️ Showing first ${pkts.length} packets — use a shorter timeframe to see all.</div>` : '';
-
-        const updateHeader = () => {
-          if (!header) return;
-          let vis = 0; activeTypes.forEach(t => { vis += typeCounts[t] || 0; });
-          header.textContent = 'Directly Heard Packets' + (pkts.length ? ' (' + (activeTypes.size === uniqueTypes.length ? pkts.length : vis + ' of ' + pkts.length) + (truncated ? '+' : '') + ')' : '');
-        };
-
-        if (header) header.textContent = 'Directly Heard Packets' + (pkts.length ? ' (' + pkts.length + (truncated ? '+' : '') + ')' : '');
-        if (!pkts.length) {
-          content.innerHTML = timeRow + '<div class="text-muted" style="padding:8px">No packets directly heard by this node' + (sinceHours ? ' in the last ' + (timeframes.find(t => t.hours === sinceHours) || {}).label : '') + '</div>';
-        } else {
-          content.innerHTML = timeRow + typeRow + truncatedRow + pkts.map(a => {
-            let decoded; try { decoded = JSON.parse(a.decoded_json); } catch {}
-            const icon = a.payload_type === 4 ? '📡' : a.payload_type === 5 ? '💬' : a.payload_type === 2 ? '✉️' : '📦';
-            const pType = PAYLOAD_TYPES[a.payload_type] || 'Packet';
-            const detail = decoded?.text ? ': ' + escapeHtml(truncate(decoded.text, 50)) : decoded?.name ? ' — ' + escapeHtml(decoded.name) : '';
-            const obs = a.observer_name || a.observer_id;
-            return `<div class="advert-entry" data-ptype="${a.payload_type}">
+    loadDirectPacketsInto(n.public_key, {
+      contentId: 'directPacketsContent',
+      headerId: 'directPacketsHeader',
+      listClass: null,
+      pad: true,
+      renderItem: function(a) {
+        let decoded; try { decoded = JSON.parse(a.decoded_json); } catch {}
+        const icon = a.payload_type === 4 ? '📡' : a.payload_type === 5 ? '💬' : a.payload_type === 2 ? '✉️' : '📦';
+        const pType = PAYLOAD_TYPES[a.payload_type] || 'Packet';
+        const detail = decoded?.text ? ': ' + escapeHtml(truncate(decoded.text, 50)) : decoded?.name ? ' — ' + escapeHtml(decoded.name) : '';
+        const obs = a.observer_name || a.observer_id;
+        return `<div class="advert-entry" data-ptype="${a.payload_type}">
               <span class="advert-dot" style="background:${roleColor}"></span>
               <div class="advert-info">
                 <strong>${renderNodeTimestampHtml(a.timestamp)}</strong> ${icon} ${pType}${detail}
@@ -1653,26 +1618,8 @@
                 <br><a href="#/packets/${a.hash}" class="ch-analyze-link">Analyze →</a>
               </div>
             </div>`;
-          }).join('');
-        }
-        content.querySelectorAll('button[data-since]').forEach(btn => {
-          btn.addEventListener('click', () => loadDirectPackets(parseInt(btn.dataset.since), 2000));
-        });
-        content.querySelectorAll('button[data-ptype-filter]').forEach(btn => {
-          btn.addEventListener('click', () => {
-            const t = parseInt(btn.dataset.ptypeFilter);
-            if (activeTypes.has(t)) { activeTypes.delete(t); btn.style.background = 'var(--surface-2)'; btn.style.color = 'var(--text)'; }
-            else { activeTypes.add(t); btn.style.background = 'var(--accent)'; btn.style.color = '#fff'; }
-            content.querySelectorAll('[data-ptype]').forEach(row => {
-              row.style.display = activeTypes.has(parseInt(row.dataset.ptype)) ? '' : 'none';
-            });
-            updateHeader();
-          });
-        });
-      }).catch(() => {
-        if (content) content.innerHTML = '<div class="text-muted" style="padding:8px">Failed to load direct packets</div>';
-      });
-    })(0, 20);
+      }
+    });
 
     // Fetch neighbors for this node (condensed panel — top 5)
     fetchAndRenderNeighbors(n.public_key, 'panelNeighborsContent', {
