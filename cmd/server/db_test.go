@@ -92,6 +92,8 @@ func setupTestDB(t *testing.T) *DB {
 			battery_mv INTEGER,
 			packets_sent INTEGER,
 			packets_recv INTEGER,
+			uptime_secs INTEGER,
+			queue_len INTEGER,
 			PRIMARY KEY (observer_id, timestamp)
 		);
 
@@ -2067,6 +2069,56 @@ func TestLastValuePreservesReboot(t *testing.T) {
 		t.Error("second bucket should have non-nil tx_airtime_pct")
 	}
 	_ = reboots // reboots list is informational
+}
+
+func TestObserverMetricsUptimeQueueLen(t *testing.T) {
+	db := setupTestDB(t)
+	seedTestData(t, db)
+
+	// uptime_secs and queue_len are instantaneous gauges — they pass through
+	// computeDeltas unchanged (no delta math) at every resolution.
+	db.conn.Exec("INSERT INTO observer_metrics (observer_id, timestamp, noise_floor, uptime_secs, queue_len) VALUES (?, ?, ?, ?, ?)",
+		"obs_uq", "2026-04-05T10:00:00Z", -110.0, 3600, 2)
+	db.conn.Exec("INSERT INTO observer_metrics (observer_id, timestamp, noise_floor, uptime_secs, queue_len) VALUES (?, ?, ?, ?, ?)",
+		"obs_uq", "2026-04-05T11:00:00Z", -108.0, 7200, 5)
+
+	t.Run("5m raw", func(t *testing.T) {
+		m, _, err := db.GetObserverMetrics("obs_uq", "2026-04-04T00:00:00Z", "", "5m", 300)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(m) != 2 {
+			t.Fatalf("expected 2 rows, got %d", len(m))
+		}
+		if m[0].UptimeSecs == nil || *m[0].UptimeSecs != 3600 {
+			t.Errorf("row 0 uptime_secs: want 3600, got %v", m[0].UptimeSecs)
+		}
+		if m[0].QueueLen == nil || *m[0].QueueLen != 2 {
+			t.Errorf("row 0 queue_len: want 2, got %v", m[0].QueueLen)
+		}
+		if m[1].UptimeSecs == nil || *m[1].UptimeSecs != 7200 {
+			t.Errorf("row 1 uptime_secs: want 7200, got %v", m[1].UptimeSecs)
+		}
+		if m[1].QueueLen == nil || *m[1].QueueLen != 5 {
+			t.Errorf("row 1 queue_len: want 5, got %v", m[1].QueueLen)
+		}
+	})
+
+	t.Run("1h aggregated keeps last value per bucket", func(t *testing.T) {
+		m, _, err := db.GetObserverMetrics("obs_uq", "2026-04-04T00:00:00Z", "", "1h", 300)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(m) != 2 {
+			t.Fatalf("expected 2 rows, got %d", len(m))
+		}
+		if m[1].UptimeSecs == nil || *m[1].UptimeSecs != 7200 {
+			t.Errorf("1h row 1 uptime_secs: want 7200, got %v", m[1].UptimeSecs)
+		}
+		if m[1].QueueLen == nil || *m[1].QueueLen != 5 {
+			t.Errorf("1h row 1 queue_len: want 5, got %v", m[1].QueueLen)
+		}
+	})
 }
 
 func TestParseWindowDuration(t *testing.T) {

@@ -421,6 +421,16 @@ func applySchema(db *sql.DB) error {
 		log.Println("[migration] packets_sent/packets_recv columns added")
 	}
 
+	// Migration: add uptime_secs and queue_len columns to observer_metrics
+	row = db.QueryRow("SELECT 1 FROM _migrations WHERE name = 'observer_metrics_uptime_queue_v1'")
+	if row.Scan(&migDone) != nil {
+		log.Println("[migration] Adding uptime_secs/queue_len columns to observer_metrics...")
+		db.Exec(`ALTER TABLE observer_metrics ADD COLUMN uptime_secs INTEGER`)
+		db.Exec(`ALTER TABLE observer_metrics ADD COLUMN queue_len INTEGER`)
+		db.Exec(`INSERT INTO _migrations (name) VALUES ('observer_metrics_uptime_queue_v1')`)
+		log.Println("[migration] uptime_secs/queue_len columns added")
+	}
+
 	// Migration: add channel_hash column for fast channel queries (#762)
 	row = db.QueryRow("SELECT 1 FROM _migrations WHERE name = 'channel_hash_v1'")
 	if row.Scan(&migDone) != nil {
@@ -661,8 +671,8 @@ func (s *Store) prepareStatements() error {
 	}
 
 	s.stmtUpsertMetrics, err = s.db.Prepare(`
-		INSERT OR REPLACE INTO observer_metrics (observer_id, timestamp, noise_floor, tx_air_secs, rx_air_secs, recv_errors, battery_mv, packets_sent, packets_recv)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT OR REPLACE INTO observer_metrics (observer_id, timestamp, noise_floor, tx_air_secs, rx_air_secs, recv_errors, battery_mv, packets_sent, packets_recv, uptime_secs, queue_len)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`)
 	if err != nil {
 		return err
@@ -867,6 +877,7 @@ type ObserverMeta struct {
 	RecvErrors    *int     // cumulative CRC/decode failures since boot
 	PacketsSent   *int     // cumulative packets sent since boot
 	PacketsRecv   *int     // cumulative packets received since boot
+	QueueLen      *int     // current TX queue length (instantaneous gauge)
 }
 
 // UpsertObserver inserts or updates an observer using the current wall-clock
@@ -965,6 +976,8 @@ type MetricsData struct {
 	BatteryMv   *int
 	PacketsSent *int
 	PacketsRecv *int
+	UptimeSecs  *int64
+	QueueLen    *int
 }
 
 // InsertMetrics inserts a metrics sample for an observer using ingestor wall clock.
@@ -972,7 +985,7 @@ func (s *Store) InsertMetrics(data *MetricsData) error {
 	ts := RoundToInterval(time.Now().UTC(), s.sampleIntervalSec)
 	tsStr := ts.Format(time.RFC3339)
 
-	var nf, txAir, rxAir, recvErr, batt, pktSent, pktRecv interface{}
+	var nf, txAir, rxAir, recvErr, batt, pktSent, pktRecv, uptime, queueLen interface{}
 	if data.NoiseFloor != nil {
 		nf = *data.NoiseFloor
 	}
@@ -994,8 +1007,14 @@ func (s *Store) InsertMetrics(data *MetricsData) error {
 	if data.PacketsRecv != nil {
 		pktRecv = *data.PacketsRecv
 	}
+	if data.UptimeSecs != nil {
+		uptime = *data.UptimeSecs
+	}
+	if data.QueueLen != nil {
+		queueLen = *data.QueueLen
+	}
 
-	_, err := s.stmtUpsertMetrics.Exec(data.ObserverID, tsStr, nf, txAir, rxAir, recvErr, batt, pktSent, pktRecv)
+	_, err := s.stmtUpsertMetrics.Exec(data.ObserverID, tsStr, nf, txAir, rxAir, recvErr, batt, pktSent, pktRecv, uptime, queueLen)
 	if err != nil {
 		s.Stats.WriteErrors.Add(1)
 		return fmt.Errorf("insert metrics: %w", err)

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"regexp"
 	"runtime"
@@ -2322,6 +2323,8 @@ func (s *Server) handleObserverAnalytics(w http.ResponseWriter, r *http.Request)
 	timelineCounts := map[int64]int{}
 	nodeBucketSets := map[int64]map[string]struct{}{}
 	snrBuckets := map[int]*SnrDistributionEntry{}
+	rssiSum := map[int64]float64{}
+	rssiCount := map[int64]int{}
 	recentPackets := make([]map[string]interface{}, 0, 20)
 
 	for i, obs := range filtered {
@@ -2337,6 +2340,10 @@ func (s *Server) handleObserverAnalytics(w http.ResponseWriter, r *http.Request)
 		}
 		bucketStart := ts.UTC().Truncate(bucketDur).Unix()
 		timelineCounts[bucketStart]++
+		if obs.RSSI != nil {
+			rssiSum[bucketStart] += *obs.RSSI
+			rssiCount[bucketStart]++
+		}
 		if nodeBucketSets[bucketStart] == nil {
 			nodeBucketSets[bucketStart] = map[string]struct{}{}
 		}
@@ -2404,11 +2411,27 @@ func (s *Server) handleObserverAnalytics(w http.ResponseWriter, r *http.Request)
 		snrDistribution = append(snrDistribution, *snrBuckets[k])
 	}
 
+	rssiKeys := make([]int64, 0, len(rssiSum))
+	for k := range rssiSum {
+		rssiKeys = append(rssiKeys, k)
+	}
+	sort.Slice(rssiKeys, func(i, j int) bool { return rssiKeys[i] < rssiKeys[j] })
+	rssiTimeline := make([]RSSITimelineEntry, 0, len(rssiKeys))
+	for _, k := range rssiKeys {
+		cnt := rssiCount[k]
+		if cnt == 0 {
+			continue
+		}
+		avg := math.Round(rssiSum[k]/float64(cnt)*10) / 10
+		rssiTimeline = append(rssiTimeline, RSSITimelineEntry{Label: formatLabel(time.Unix(k, 0)), Avg: avg})
+	}
+
 	writeJSON(w, ObserverAnalyticsResponse{
 		Timeline:        buildTimeline(timelineCounts),
 		PacketTypes:     packetTypes,
 		NodesTimeline:   buildTimeline(nodeCounts),
 		SnrDistribution: snrDistribution,
+		RSSITimeline:    rssiTimeline,
 		RecentPackets:   recentPackets,
 	})
 }
