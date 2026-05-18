@@ -3,8 +3,11 @@ package main
 import (
 	"encoding/json"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
+
+	"github.com/gorilla/mux"
 )
 
 // SiteTemplate is a named bundle of branding/optical/help overrides loaded from
@@ -25,6 +28,22 @@ type SiteTemplate struct {
 	// Dir is the resolved templates/<name> directory. Empty for the built-in
 	// fallback. Used to serve templates/<name>/assets/ at /template-assets/.
 	Dir string `json:"-"`
+}
+
+// registerTemplateAssets serves the active template's assets/ directory at
+// /template-assets/. No-op when the template has no resolved Dir (built-in
+// fallback). Must be registered before the catch-all static handler.
+func (s *Server) registerTemplateAssets(r *mux.Router) {
+	if s.tmpl == nil || s.tmpl.Dir == "" {
+		return
+	}
+	assetsDir := filepath.Join(s.tmpl.Dir, "assets")
+	if _, err := os.Stat(assetsDir); err != nil {
+		return
+	}
+	fs := http.FileServer(http.Dir(assetsDir))
+	r.PathPrefix("/template-assets/").Handler(
+		http.StripPrefix("/template-assets/", fs))
 }
 
 // LoadTemplate loads templates/<name>/template.json from the first baseDir that

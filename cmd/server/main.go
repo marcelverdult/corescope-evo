@@ -113,6 +113,10 @@ func main() {
 		log.Printf("[security] WARNING: API key is weak or a known default — write endpoints are vulnerable")
 	}
 
+	// Load the active branding template (templates/<name>/template.json).
+	tmpl := LoadTemplate(cfg.Template, configDir, ".")
+	log.Printf("[template] active template: %s", tmpl.Name)
+
 	// Apply Go runtime soft memory limit (#836).
 	// Honors GOMEMLIMIT if set; otherwise derives from packetStore.maxMemoryMB.
 	{
@@ -319,6 +323,7 @@ func main() {
 
 	// HTTP server
 	srv := NewServer(database, cfg, hub)
+	srv.tmpl = tmpl
 	srv.store = store
 	srv.channelKeys = loadServerChannelKeys(cfg, configDir)
 
@@ -352,6 +357,9 @@ func main() {
 
 	// WebSocket endpoint
 	router.HandleFunc("/ws", hub.ServeWS)
+
+	// Template assets (must be registered before the catch-all static handler)
+	srv.registerTemplateAssets(router)
 
 	// Static files + SPA fallback
 	absPublic, _ := filepath.Abs(publicDir)

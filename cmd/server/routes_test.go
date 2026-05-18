@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -4012,5 +4014,29 @@ func TestBuildThemeResponseNilTemplateUsesDefaults(t *testing.T) {
 	tr := s.buildThemeResponse()
 	if tr.Branding["siteName"] != "CoreScope" {
 		t.Errorf("siteName = %v, want built-in default CoreScope", tr.Branding["siteName"])
+	}
+}
+
+func TestTemplateAssetsRouteServesFiles(t *testing.T) {
+	base := t.TempDir()
+	assetsDir := filepath.Join(base, "templates", "acme", "assets")
+	if err := os.MkdirAll(assetsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(assetsDir, "logo.svg"), []byte("<svg/>"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{cfg: &Config{}, tmpl: &SiteTemplate{Name: "acme", Dir: filepath.Join(base, "templates", "acme")}}
+	router := mux.NewRouter()
+	s.registerTemplateAssets(router)
+
+	req := httptest.NewRequest("GET", "/template-assets/logo.svg", nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != 200 {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	if rr.Body.String() != "<svg/>" {
+		t.Errorf("body = %q, want <svg/>", rr.Body.String())
 	}
 }
