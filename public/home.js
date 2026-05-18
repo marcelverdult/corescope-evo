@@ -51,6 +51,7 @@
     // as the config arrives, without requiring the user to navigate away and
     // back.  If config IS already set (subsequent navigations), skip the
     // listener entirely to avoid any double-render.
+    if (_themeReadyHandler) { window.removeEventListener('theme-changed', _themeReadyHandler); _themeReadyHandler = null; }
     if (!window.SITE_CONFIG) {
       _themeReadyHandler = function () {
         window.removeEventListener('theme-changed', _themeReadyHandler);
@@ -630,6 +631,7 @@
   }
 
   function maybeShowAnnouncement() {
+    if (_announcementCleanup) return; // modal already open — prevent duplicate overlay
     var a = window.SITE_CONFIG && window.SITE_CONFIG.sections && window.SITE_CONFIG.sections.announcement;
     if (!a || !a.enabled || !a.modal) return;
     var m = a.modal;

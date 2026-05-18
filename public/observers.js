@@ -184,6 +184,7 @@
     // Cold-load fix: if SITE_CONFIG wasn't set when init() ran, observerSetupHelp()
     // returned '' above.  Register a one-shot listener so the help block is injected
     // once config arrives, without disrupting the live data already loading.
+    if (_obsThemeReadyHandler) { window.removeEventListener('theme-changed', _obsThemeReadyHandler); _obsThemeReadyHandler = null; }
     if (!window.SITE_CONFIG) {
       _obsThemeReadyHandler = function () {
         window.removeEventListener('theme-changed', _obsThemeReadyHandler);
