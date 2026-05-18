@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"flag"
 	"fmt"
+	"html"
 	"log"
 	"net/http"
 	_ "net/http/pprof"
@@ -669,19 +670,20 @@ func buildThemeStyleTag(tr ThemeResponse) string {
 	return b.String()
 }
 
-// metaStr safely reads a string value from a meta map, returning fallback when
-// absent or when the value contains characters that could break out of an HTML
-// attribute or tag context.
+// metaStr safely reads a string value from a meta map for embedding in HTML.
+// It HTML-escapes the value (via html.EscapeString) so it cannot break out of
+// a tag or double-quoted attribute context. Absent keys, non-strings, empty
+// strings, or values containing newlines fall back to the supplied default.
 func metaStr(m map[string]interface{}, key, fallback string) string {
 	raw, ok := m[key]
 	if !ok {
 		return fallback
 	}
 	s, ok := raw.(string)
-	if !ok || s == "" || strings.ContainsAny(s, "<>\"\n\r") {
+	if !ok || s == "" || strings.ContainsAny(s, "\n\r") {
 		return fallback
 	}
-	return s
+	return html.EscapeString(s)
 }
 
 // buildSiteMetaTag renders the <title> and OpenGraph/Twitter meta tags from the
@@ -731,8 +733,9 @@ func (s *Server) spaHandler(root string, fs http.Handler) http.Handler {
 	}
 	bustValue := fmt.Sprintf("%d", time.Now().Unix())
 	processed := strings.ReplaceAll(string(rawHTML), "__BUST__", bustValue)
-	processed = strings.ReplaceAll(processed, "__THEME_STYLE__", buildThemeStyleTag(s.buildThemeResponse()))
-	processed = strings.ReplaceAll(processed, "__SITE_META__", buildSiteMetaTag(s.buildThemeResponse()))
+	tr := s.buildThemeResponse()
+	processed = strings.ReplaceAll(processed, "__THEME_STYLE__", buildThemeStyleTag(tr))
+	processed = strings.ReplaceAll(processed, "__SITE_META__", buildSiteMetaTag(tr))
 	indexHTML := []byte(processed)
 	log.Printf("[static] cache-bust value: %s", bustValue)
 

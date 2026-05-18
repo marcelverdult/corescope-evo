@@ -536,6 +536,53 @@ func TestSpaHandlerInjectsSiteMeta(t *testing.T) {
 	}
 }
 
+func TestSpaHandlerEscapesSiteMeta(t *testing.T) {
+	dir := t.TempDir()
+	html := `<!DOCTYPE html><html><head>__SITE_META__</head><body></body></html>`
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte(html), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{
+		cfg: &Config{},
+		tmpl: &SiteTemplate{
+			Name: "adversarial",
+			Meta: map[string]interface{}{
+				"title":       "</title><script>alert(1)</script>",
+				"description": `a"b & c`,
+			},
+		},
+	}
+	fs := http.FileServer(http.Dir(dir))
+	handler := s.spaHandler(dir, fs)
+	req := httptest.NewRequest("GET", "/", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	body := rr.Body.String()
+
+	// The raw breakout sequence must not appear verbatim.
+	if strings.Contains(body, "</title><script>") {
+		t.Errorf("XSS breakout not escaped; body contains raw </title><script>: %q", body)
+	}
+
+	// Raw unescaped <script> tag must not appear.
+	if strings.Contains(body, "<script>alert(1)</script>") {
+		t.Errorf("raw <script> injection present in body: %q", body)
+	}
+
+	// The escaped form of the adversarial title should be present.
+	if !strings.Contains(body, "&lt;/title&gt;") {
+		t.Errorf("expected escaped &lt;/title&gt; in body: %q", body)
+	}
+	if !strings.Contains(body, "&lt;script&gt;") {
+		t.Errorf("expected escaped &lt;script&gt; in body: %q", body)
+	}
+
+	// At least one OpenGraph tag should be present.
+	if !strings.Contains(body, `og:title`) {
+		t.Errorf("expected og:title meta tag in body: %q", body)
+	}
+}
+
 func TestHaversineKm(t *testing.T) {
 	// Same point should be 0
 	if d := haversineKm(37.0, -122.0, 37.0, -122.0); d != 0 {
