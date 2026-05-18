@@ -366,6 +366,28 @@ func TestPropagationBufferMs(t *testing.T) {
 	})
 }
 
+func TestConfigParsesTemplateField(t *testing.T) {
+	dir := t.TempDir()
+	js := `{"port":3000,"template":"cornmeister",
+	"meta":{"title":"X"},"sections":{"donate":{"enabled":true}}}`
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(js), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfig(dir)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.Template != "cornmeister" {
+		t.Errorf("Template = %q, want cornmeister", cfg.Template)
+	}
+	if cfg.Meta["title"] != "X" {
+		t.Errorf("Meta[title] = %v, want X", cfg.Meta["title"])
+	}
+	if cfg.Sections["donate"] == nil {
+		t.Errorf("Sections[donate] missing")
+	}
+}
+
 func TestObserverDaysOrDefault(t *testing.T) {
 	tests := []struct {
 		name string

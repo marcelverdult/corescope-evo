@@ -36,6 +36,14 @@ type Config struct {
 	TypeColors map[string]interface{} `json:"typeColors"`
 	Home       map[string]interface{} `json:"home"`
 
+	// Template is the name of a bundled branding template under templates/.
+	// Empty or "default" = built-in look. See cmd/server/template.go.
+	Template string                 `json:"template,omitempty"`
+	// Meta overrides <title>/OpenGraph tags. Merged below template, above defaults.
+	Meta     map[string]interface{} `json:"meta,omitempty"`
+	// Sections toggles structural home-page blocks (donate, announcement, etc.).
+	Sections map[string]interface{} `json:"sections,omitempty"`
+
 	MapDefaults struct {
 		Center []float64 `json:"center"`
 		Zoom   int       `json:"zoom"`
