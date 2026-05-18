@@ -531,8 +531,8 @@ console.log('\n=== hop-resolver.js ===');
 
   test('resolve single unique prefix', () => {
     HR.init([
-      { public_key: 'abcdef1234567890', name: 'NodeA', lat: 37.3, lon: -122.0 },
-      { public_key: '123456abcdef0000', name: 'NodeB', lat: 37.4, lon: -122.1 },
+      { public_key: 'abcdef1234567890', name: 'NodeA', lat: 37.3, lon: -122.0, role: 'repeater' },
+      { public_key: '123456abcdef0000', name: 'NodeB', lat: 37.4, lon: -122.1, role: 'repeater' },
     ]);
     const result = HR.resolve(['ab'], null, null, null, null);
     assert.strictEqual(result['ab'].name, 'NodeA');
@@ -540,8 +540,8 @@ console.log('\n=== hop-resolver.js ===');
 
   test('resolve ambiguous prefix', () => {
     HR.init([
-      { public_key: 'abcdef1234567890', name: 'NodeA', lat: 37.3, lon: -122.0 },
-      { public_key: 'abcd001234567890', name: 'NodeC', lat: 38.0, lon: -121.0 },
+      { public_key: 'abcdef1234567890', name: 'NodeA', lat: 37.3, lon: -122.0, role: 'repeater' },
+      { public_key: 'abcd001234567890', name: 'NodeC', lat: 38.0, lon: -121.0, role: 'repeater' },
     ]);
     const result = HR.resolve(['ab'], null, null, null, null);
     assert.ok(result['ab'].ambiguous);
@@ -561,8 +561,8 @@ console.log('\n=== hop-resolver.js ===');
 
   test('geo disambiguation with origin anchor', () => {
     HR.init([
-      { public_key: 'abcdef1234567890', name: 'NearNode', lat: 37.31, lon: -122.01 },
-      { public_key: 'abcd001234567890', name: 'FarNode', lat: 50.0, lon: 10.0 },
+      { public_key: 'abcdef1234567890', name: 'NearNode', lat: 37.31, lon: -122.01, role: 'repeater' },
+      { public_key: 'abcd001234567890', name: 'FarNode', lat: 50.0, lon: 10.0, role: 'repeater' },
     ]);
     const result = HR.resolve(['ab'], 37.3, -122.0, null, null);
     // Should prefer the nearer node
@@ -572,8 +572,8 @@ console.log('\n=== hop-resolver.js ===');
   test('regional filtering with IATA', () => {
     HR.init(
       [
-        { public_key: 'abcdef1234567890', name: 'SFONode', lat: 37.6, lon: -122.4 },
-        { public_key: 'abcd001234567890', name: 'LHRNode', lat: 51.5, lon: -0.1 },
+        { public_key: 'abcdef1234567890', name: 'SFONode', lat: 37.6, lon: -122.4, role: 'repeater' },
+        { public_key: 'abcd001234567890', name: 'LHRNode', lat: 51.5, lon: -0.1, role: 'repeater' },
       ],
       {
         observers: [{ id: 'obs1', iata: 'SFO' }],
@@ -717,12 +717,12 @@ console.log('\n=== pickByAffinity neighbor-graph scoring (#874) ===');
 
   // Two nodes sharing prefix "ab", hundreds of km apart.
   // NodeSF is near San Francisco, NodeDEN is near Denver.
-  const nodeSF = { public_key: 'ab11111111111111', name: 'NodeSF', lat: 37.7, lon: -122.4 };
-  const nodeDEN = { public_key: 'ab22222222222222', name: 'NodeDEN', lat: 39.7, lon: -104.9 };
+  const nodeSF = { public_key: 'ab11111111111111', name: 'NodeSF', lat: 37.7, lon: -122.4, role: 'repeater' };
+  const nodeDEN = { public_key: 'ab22222222222222', name: 'NodeDEN', lat: 39.7, lon: -104.9, role: 'repeater' };
   // A known neighbor of NodeSF (in the graph)
-  const nodeNeighbor = { public_key: 'cc33333333333333', name: 'SFNeighbor', lat: 37.8, lon: -122.3 };
+  const nodeNeighbor = { public_key: 'cc33333333333333', name: 'SFNeighbor', lat: 37.8, lon: -122.3, role: 'repeater' };
   // Another known node near Denver
-  const nodeDenNeighbor = { public_key: 'dd44444444444444', name: 'DENNeighbor', lat: 39.8, lon: -105.0 };
+  const nodeDenNeighbor = { public_key: 'dd44444444444444', name: 'DENNeighbor', lat: 39.8, lon: -105.0, role: 'repeater' };
 
   test('#874: graph edge scoring picks correct regional candidate (SF)', () => {
     HR.init([nodeSF, nodeDEN, nodeNeighbor, nodeDenNeighbor]);
@@ -768,7 +768,7 @@ console.log('\n=== pickByAffinity neighbor-graph scoring (#874) ===');
   test('#874: centroid uses average of prev+next positions', () => {
     // Prev near SF, next near Denver → centroid is midpoint (~Nevada)
     // NodeDEN is closer to Nevada midpoint than NodeSF
-    const nodeMid = { public_key: 'ee55555555555555', name: 'MidNode', lat: 38.5, lon: -114.0 };
+    const nodeMid = { public_key: 'ee55555555555555', name: 'MidNode', lat: 38.5, lon: -114.0, role: 'repeater' };
     HR.init([nodeSF, nodeDEN, nodeNeighbor, nodeDenNeighbor, nodeMid]);
     HR.setAffinity({ edges: [] });
     // Path: SFNeighbor → [ab??] → DENNeighbor
@@ -2660,7 +2660,7 @@ console.log('\n=== channels.js: WS batch + region snapshot integration ===');
       innerHTML: '',
       querySelector(sel) {
         if (sel === '.ch-sidebar' || sel === '.ch-sidebar-resize' || sel === '.ch-main') return makeEl(sel);
-        if (sel === '.ch-layout') return { classList: { add() {}, remove() {}, contains() { return false; } } };
+        if (sel === '.ch-layout') return { classList: { add() {}, remove() {}, contains() { return false; } }, getBoundingClientRect() { return { width: 0 }; } };
         return makeEl(sel);
       },
       addEventListener() {},
@@ -2668,7 +2668,7 @@ console.log('\n=== channels.js: WS batch + region snapshot integration ===');
 
     ctx.document.getElementById = makeEl;
     ctx.document.querySelector = (sel) => {
-      if (sel === '.ch-layout') return { classList: { add() {}, remove() {}, contains() { return false; } } };
+      if (sel === '.ch-layout') return { classList: { add() {}, remove() {}, contains() { return false; } }, getBoundingClientRect() { return { width: 0 }; } };
       return null;
     };
     ctx.document.querySelectorAll = () => [];
@@ -2704,7 +2704,9 @@ console.log('\n=== channels.js: WS batch + region snapshot integration ===');
 
     ctx.crypto = { subtle: require('crypto').webcrypto.subtle }; ctx.TextEncoder = TextEncoder; ctx.TextDecoder = TextDecoder; ctx.Uint8Array = Uint8Array;
     loadInCtx(ctx, 'public/channel-decrypt.js');
+    loadInCtx(ctx, 'public/page-state.js');
     loadInCtx(ctx, 'public/channels.js');
+    ctx.app = appEl;
     ctx._pageHandlers.init(appEl);
     return { ctx, dom };
   }
@@ -2782,7 +2784,7 @@ console.log('\n=== channels.js: WS batch + region snapshot integration ===');
       innerHTML: '',
       querySelector(sel) {
         if (sel === '.ch-sidebar' || sel === '.ch-sidebar-resize' || sel === '.ch-main') return makeEl(sel);
-        if (sel === '.ch-layout') return { classList: { add() {}, remove() {}, contains() { return false; } } };
+        if (sel === '.ch-layout') return { classList: { add() {}, remove() {}, contains() { return false; } }, getBoundingClientRect() { return { width: 0 }; } };
         return makeEl(sel);
       },
       addEventListener() {},
@@ -2791,7 +2793,7 @@ console.log('\n=== channels.js: WS batch + region snapshot integration ===');
     let resolver = null;
     ctx.document.getElementById = makeEl;
     ctx.document.querySelector = (sel) => {
-      if (sel === '.ch-layout') return { classList: { add() {}, remove() {}, contains() { return false; } } };
+      if (sel === '.ch-layout') return { classList: { add() {}, remove() {}, contains() { return false; } }, getBoundingClientRect() { return { width: 0 }; } };
       return null;
     };
     ctx.document.querySelectorAll = () => [];
@@ -2825,7 +2827,9 @@ console.log('\n=== channels.js: WS batch + region snapshot integration ===');
 
     ctx.crypto = { subtle: require('crypto').webcrypto.subtle }; ctx.TextEncoder = TextEncoder; ctx.TextDecoder = TextDecoder; ctx.Uint8Array = Uint8Array;
     loadInCtx(ctx, 'public/channel-decrypt.js');
+    loadInCtx(ctx, 'public/page-state.js');
     loadInCtx(ctx, 'public/channels.js');
+    ctx.app = appEl;
     ctx._pageHandlers.init(appEl);
     await Promise.resolve();
     const selectPromise = ctx.window._channelsSelectChannelForTest('general');
@@ -2877,7 +2881,7 @@ console.log('\n=== channels.js: WS batch + region snapshot integration ===');
       innerHTML: '',
       querySelector(sel) {
         if (sel === '.ch-sidebar' || sel === '.ch-sidebar-resize' || sel === '.ch-main') return makeEl(sel);
-        if (sel === '.ch-layout') return { classList: { add() {}, remove() {}, contains() { return false; } } };
+        if (sel === '.ch-layout') return { classList: { add() {}, remove() {}, contains() { return false; } }, getBoundingClientRect() { return { width: 0 }; } };
         return makeEl(sel);
       },
       addEventListener() {},
@@ -2886,7 +2890,7 @@ console.log('\n=== channels.js: WS batch + region snapshot integration ===');
     let channelCall = 0;
     ctx.document.getElementById = makeEl;
     ctx.document.querySelector = (sel) => {
-      if (sel === '.ch-layout') return { classList: { add() {}, remove() {}, contains() { return false; } } };
+      if (sel === '.ch-layout') return { classList: { add() {}, remove() {}, contains() { return false; } }, getBoundingClientRect() { return { width: 0 }; } };
       return null;
     };
     ctx.document.querySelectorAll = () => [];
@@ -2922,7 +2926,9 @@ console.log('\n=== channels.js: WS batch + region snapshot integration ===');
 
     ctx.crypto = { subtle: require('crypto').webcrypto.subtle }; ctx.TextEncoder = TextEncoder; ctx.TextDecoder = TextDecoder; ctx.Uint8Array = Uint8Array;
     loadInCtx(ctx, 'public/channel-decrypt.js');
+    loadInCtx(ctx, 'public/page-state.js');
     loadInCtx(ctx, 'public/channels.js');
+    ctx.app = appEl;
     ctx._pageHandlers.init(appEl);
     await Promise.resolve();
     await ctx.window._channelsSelectChannelForTest('general');
@@ -2975,7 +2981,7 @@ console.log('\n=== channels.js: encrypted channel without key shows lock message
       innerHTML: '',
       querySelector(sel) {
         if (sel === '.ch-sidebar' || sel === '.ch-sidebar-resize' || sel === '.ch-main') return makeEl(sel);
-        if (sel === '.ch-layout') return { classList: { add() {}, remove() {}, contains() { return false; } } };
+        if (sel === '.ch-layout') return { classList: { add() {}, remove() {}, contains() { return false; } }, getBoundingClientRect() { return { width: 0 }; } };
         return makeEl(sel);
       },
       addEventListener() {},
@@ -2983,7 +2989,7 @@ console.log('\n=== channels.js: encrypted channel without key shows lock message
     let apiCallPaths = [];
     ctx.document.getElementById = makeEl;
     ctx.document.querySelector = (sel) => {
-      if (sel === '.ch-layout') return { classList: { add() {}, remove() {}, contains() { return false; } } };
+      if (sel === '.ch-layout') return { classList: { add() {}, remove() {}, contains() { return false; } }, getBoundingClientRect() { return { width: 0 }; } };
       return null;
     };
     ctx.document.querySelectorAll = () => [];
@@ -3024,7 +3030,9 @@ console.log('\n=== channels.js: encrypted channel without key shows lock message
 
     ctx.crypto = { subtle: require('crypto').webcrypto.subtle }; ctx.TextEncoder = TextEncoder; ctx.TextDecoder = TextDecoder; ctx.Uint8Array = Uint8Array;
     loadInCtx(ctx, 'public/channel-decrypt.js');
+    loadInCtx(ctx, 'public/page-state.js');
     loadInCtx(ctx, 'public/channels.js');
+    ctx.app = appEl;
     ctx._pageHandlers.init(appEl);
     // Wait for loadChannels() to resolve (async in init)
     for (let i = 0; i < 10; i++) await Promise.resolve();
@@ -3036,7 +3044,7 @@ console.log('\n=== channels.js: encrypted channel without key shows lock message
     // Should show lock message, NOT fetch messages API
     const msgEl = dom['chMessages'];
     assert.ok(msgEl.innerHTML.includes('🔒'), 'should show lock emoji for encrypted channel without key');
-    assert.ok(msgEl.innerHTML.includes('no decryption key'), 'should mention no decryption key');
+    assert.ok(msgEl.innerHTML.includes('no key configured'), 'should mention no key configured');
     const messageApiFetched = apiCallPaths.some(p => p.indexOf('/messages') !== -1);
     assert.ok(!messageApiFetched, 'should NOT fetch messages API for encrypted channel without key');
   });
@@ -3069,7 +3077,7 @@ console.log('\n=== channels.js: encrypted channel without key shows lock message
       innerHTML: '',
       querySelector(sel) {
         if (sel === '.ch-sidebar' || sel === '.ch-sidebar-resize' || sel === '.ch-main') return makeEl(sel);
-        if (sel === '.ch-layout') return { classList: { add() {}, remove() {}, contains() { return false; } } };
+        if (sel === '.ch-layout') return { classList: { add() {}, remove() {}, contains() { return false; } }, getBoundingClientRect() { return { width: 0 }; } };
         return makeEl(sel);
       },
       addEventListener() {},
@@ -3077,7 +3085,7 @@ console.log('\n=== channels.js: encrypted channel without key shows lock message
     let apiCallPaths = [];
     ctx.document.getElementById = makeEl;
     ctx.document.querySelector = (sel) => {
-      if (sel === '.ch-layout') return { classList: { add() {}, remove() {}, contains() { return false; } } };
+      if (sel === '.ch-layout') return { classList: { add() {}, remove() {}, contains() { return false; } }, getBoundingClientRect() { return { width: 0 }; } };
       return null;
     };
     ctx.document.querySelectorAll = () => [];
@@ -3117,7 +3125,9 @@ console.log('\n=== channels.js: encrypted channel without key shows lock message
     ctx.crypto = { subtle: require('crypto').webcrypto.subtle };
     ctx.TextEncoder = TextEncoder; ctx.TextDecoder = TextDecoder; ctx.Uint8Array = Uint8Array;
     loadInCtx(ctx, 'public/channel-decrypt.js');
+    loadInCtx(ctx, 'public/page-state.js');
     loadInCtx(ctx, 'public/channels.js');
+    ctx.app = appEl;
     if (opts.storedKey) {
       ctx.ChannelDecrypt.saveKey(opts.storedKey.name, opts.storedKey.hex);
     }
@@ -3146,7 +3156,7 @@ console.log('\n=== channels.js: encrypted channel without key shows lock message
       storedKey: null,
     });
     assert.ok(r.msgHtml.includes('🔒'), 'encrypted #channel without key must show lock affordance');
-    assert.ok(r.msgHtml.includes('no decryption key'), 'lock should mention no decryption key');
+    assert.ok(r.msgHtml.includes('no key configured'), 'lock should mention no key configured');
     const messageApiFetched = r.apiCallPaths.some(p => p.indexOf('/messages') !== -1);
     assert.ok(!messageApiFetched, 'must NOT fetch /messages REST for encrypted channel without key');
   });
@@ -4309,9 +4319,9 @@ console.log('\n=== app.js: payloadTypeColor ===');
   test('payloadTypeColor(99) = unknown', () => assert.strictEqual(payloadTypeColor(99), 'unknown'));
   test('payloadTypeColor(null) = unknown', () => assert.strictEqual(payloadTypeColor(null), 'unknown'));
   test('payloadTypeColor(undefined) = unknown', () => assert.strictEqual(payloadTypeColor(undefined), 'unknown'));
-  test('payloadTypeColor(6) = unknown (no mapping for 6)', () => assert.strictEqual(payloadTypeColor(6), 'unknown'));
+  test('payloadTypeColor(6) = grp-data', () => assert.strictEqual(payloadTypeColor(6), 'grp-data'));
   test('all defined payload types return a non-unknown string', () => {
-    const definedTypes = [0, 1, 2, 3, 4, 5, 7, 8, 9];
+    const definedTypes = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
     for (const t of definedTypes) {
       const result = payloadTypeColor(t);
       assert.strictEqual(typeof result, 'string', `type ${t} should return a string`);
@@ -4319,7 +4329,7 @@ console.log('\n=== app.js: payloadTypeColor ===');
     }
   });
   test('all defined payload types return distinct values', () => {
-    const definedTypes = [0, 1, 2, 3, 4, 5, 7, 8, 9];
+    const definedTypes = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
     const values = new Set(definedTypes.map(t => payloadTypeColor(t)));
     assert.strictEqual(values.size, definedTypes.length, 'each type should map to a unique color class');
   });
