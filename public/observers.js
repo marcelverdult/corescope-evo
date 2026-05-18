@@ -11,6 +11,7 @@
   let appKeydownHandler = null;
   let boundApp = null;
   let sortState = { col: null, dir: 'asc' };
+  let _obsThemeReadyHandler = null; // one-shot theme-changed handler (cold-load fix)
 
   var STATS_OPEN_KEY = 'meshcore-obs-stats-open';
 
@@ -179,6 +180,30 @@
     wsHandler = debouncedOnWS(function (msgs) {
       if (msgs.some(function (m) { return m.type === 'packet'; })) loadObservers();
     });
+
+    // Cold-load fix: if SITE_CONFIG wasn't set when init() ran, observerSetupHelp()
+    // returned '' above.  Register a one-shot listener so the help block is injected
+    // once config arrives, without disrupting the live data already loading.
+    if (!window.SITE_CONFIG) {
+      _obsThemeReadyHandler = function () {
+        window.removeEventListener('theme-changed', _obsThemeReadyHandler);
+        _obsThemeReadyHandler = null;
+        var helpHtml = observerSetupHelp();
+        if (!helpHtml) return; // section not configured — nothing to do
+        var page = document.querySelector('.observers-page');
+        if (!page) return;
+        // Only inject if the block is not already present (idempotency guard)
+        if (page.querySelector('.observer-setup-help')) return;
+        var header = page.querySelector('.page-header');
+        if (header) {
+          // Insert right after the page header, mirroring the init() template
+          header.insertAdjacentHTML('afterend', helpHtml);
+        } else {
+          page.insertAdjacentHTML('afterbegin', helpHtml);
+        }
+      };
+      window.addEventListener('theme-changed', _obsThemeReadyHandler);
+    }
   }
 
   function destroy() {
@@ -198,6 +223,10 @@
     appKeydownHandler = null;
     observers = [];
     obsSkewMap = {};
+    if (_obsThemeReadyHandler) {
+      window.removeEventListener('theme-changed', _obsThemeReadyHandler);
+      _obsThemeReadyHandler = null;
+    }
   }
 
   async function loadObservers() {

@@ -6,6 +6,7 @@
   let miniMap = null;
   let searchAbort = null; // AbortController for document-level listeners
   var _announcementCleanup = null; // teardown fn for any open announcement modal
+  var _themeReadyHandler = null;   // one-shot theme-changed handler (cold-load fix)
 
   const PREF_KEY = 'meshcore-user-level';
   const MY_NODES_KEY = 'meshcore-my-nodes'; // [{pubkey, name, addedAt}]
@@ -30,7 +31,9 @@
   function isExperienced() { return localStorage.getItem(PREF_KEY) !== 'new'; }
   function setLevel(level) { localStorage.setItem(PREF_KEY, level); }
 
-  function init(container) {
+  // Core render logic extracted so both the immediate call and the one-shot
+  // theme-changed re-render share exactly the same code path.
+  function renderHomeFlow(container) {
     var chooser = window.SITE_CONFIG && window.SITE_CONFIG.sections && window.SITE_CONFIG.sections.firstVisitChooser;
     var levelChosen = localStorage.getItem(PREF_KEY) !== null;
     if (chooser && chooser.enabled && !levelChosen) {
@@ -39,6 +42,24 @@
     }
     renderHome(container);
     maybeShowAnnouncement();
+  }
+
+  function init(container) {
+    // If SITE_CONFIG is not yet set (cold page load — theme fetch hasn't
+    // resolved yet), register a one-shot listener so config-gated sections
+    // (donate block, announcement modal, first-visit chooser) appear as soon
+    // as the config arrives, without requiring the user to navigate away and
+    // back.  If config IS already set (subsequent navigations), skip the
+    // listener entirely to avoid any double-render.
+    if (!window.SITE_CONFIG) {
+      _themeReadyHandler = function () {
+        window.removeEventListener('theme-changed', _themeReadyHandler);
+        _themeReadyHandler = null;
+        renderHomeFlow(container);
+      };
+      window.addEventListener('theme-changed', _themeReadyHandler);
+    }
+    renderHomeFlow(container);
   }
 
   function showChooser(container) {
@@ -255,6 +276,10 @@
     if (searchAbort) { searchAbort.abort(); searchAbort = null; }
     if (miniMap) { miniMap.remove(); miniMap = null; }
     if (_announcementCleanup) { _announcementCleanup(); _announcementCleanup = null; }
+    if (_themeReadyHandler) {
+      window.removeEventListener('theme-changed', _themeReadyHandler);
+      _themeReadyHandler = null;
+    }
   }
 
   // ==================== MY NODES DASHBOARD ====================
