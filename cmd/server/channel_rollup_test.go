@@ -16,6 +16,38 @@ func TestEnsureChannelRollupTable(t *testing.T) {
 	}
 }
 
+func TestChannelRollupMaintenance(t *testing.T) {
+	db := setupTestDBFile(t)
+	if err := ensureChannelRollupTable(db.path); err != nil {
+		t.Fatal(err)
+	}
+	mustExec(t, db, `INSERT INTO transmissions(id,raw_hex,hash,first_seen,payload_type,decoded_json)
+		VALUES (1,'aa','h1','2026-05-18T10:00:00Z',5,'{"channel_hash":"7","channel":"#t","sender":"a","text":"x"}')`)
+	mustExec(t, db, `INSERT INTO observations(transmission_id,observer_idx,timestamp) VALUES (1,1,1779098400)`)
+	rw, err := cachedRW(db.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runChannelRollupMaintenance(rw); err != nil {
+		t.Fatalf("maintenance 1: %v", err)
+	}
+	var n int
+	rw.QueryRow(`SELECT COALESCE(SUM(msg_count),0) FROM channel_rollup`).Scan(&n)
+	if n != 1 {
+		t.Fatalf("after run 1 msg_count=%d want 1", n)
+	}
+	mustExec(t, db, `INSERT INTO transmissions(id,raw_hex,hash,first_seen,payload_type,decoded_json)
+		VALUES (2,'bb','h2','2026-05-18T10:05:00Z',5,'{"channel_hash":"7","channel":"#t","sender":"b","text":"y"}')`)
+	mustExec(t, db, `INSERT INTO observations(transmission_id,observer_idx,timestamp) VALUES (2,1,1779098700)`)
+	if err := runChannelRollupMaintenance(rw); err != nil {
+		t.Fatalf("maintenance 2: %v", err)
+	}
+	rw.QueryRow(`SELECT COALESCE(SUM(msg_count),0) FROM channel_rollup`).Scan(&n)
+	if n != 2 {
+		t.Fatalf("after run 2 msg_count=%d want 2", n)
+	}
+}
+
 func TestRecomputeChannelRollupHour(t *testing.T) {
 	db := setupTestDBFile(t)
 	if err := ensureChannelRollupTable(db.path); err != nil {
