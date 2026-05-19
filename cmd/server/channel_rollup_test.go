@@ -195,7 +195,7 @@ func TestChannelRollupPerf(t *testing.T) {
 	}
 	base := int64(1779000000)
 	for i := 1; i <= 200000; i++ {
-		ts := base + int64(i)*120
+		ts := base + int64(i)*9
 		first := time.Unix(ts, 0).UTC().Format(time.RFC3339)
 		dj := fmt.Sprintf(`{"channel_hash":"%d","channel":"#c%d","sender":"s%d","text":"msg"}`,
 			i%8, i%8, i%500)
