@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -3970,5 +3972,70 @@ func TestPacketDetailPrefersStoreOverDB(t *testing.T) {
 	// observation_count comes from store observations (2 seeded for tx 1).
 	if cnt, _ := body["observation_count"].(float64); cnt != 2 {
 		t.Errorf("expected observation_count=2 (from store), got %v", body["observation_count"])
+	}
+}
+
+func TestBuildThemeResponseAppliesTemplate(t *testing.T) {
+	s := &Server{
+		cfg: &Config{},
+		tmpl: &SiteTemplate{
+			Name:     "acme",
+			Branding: map[string]interface{}{"siteName": "Acme Mesh"},
+			Meta:     map[string]interface{}{"title": "Acme"},
+			Sections: map[string]interface{}{"donate": map[string]interface{}{"enabled": true}},
+		},
+	}
+	tr := s.buildThemeResponse()
+	if tr.Branding["siteName"] != "Acme Mesh" {
+		t.Errorf("siteName = %v, want Acme Mesh", tr.Branding["siteName"])
+	}
+	if tr.Meta["title"] != "Acme" {
+		t.Errorf("meta.title = %v, want Acme", tr.Meta["title"])
+	}
+	if tr.Sections["donate"] == nil {
+		t.Errorf("sections.donate missing")
+	}
+}
+
+func TestBuildThemeResponseConfigOverridesTemplate(t *testing.T) {
+	s := &Server{
+		cfg:  &Config{Branding: map[string]interface{}{"siteName": "Operator Override"}},
+		tmpl: &SiteTemplate{Name: "acme", Branding: map[string]interface{}{"siteName": "Acme Mesh"}},
+	}
+	tr := s.buildThemeResponse()
+	if tr.Branding["siteName"] != "Operator Override" {
+		t.Errorf("siteName = %v, want Operator Override (config beats template)", tr.Branding["siteName"])
+	}
+}
+
+func TestBuildThemeResponseNilTemplateUsesDefaults(t *testing.T) {
+	s := &Server{cfg: &Config{}, tmpl: nil}
+	tr := s.buildThemeResponse()
+	if tr.Branding["siteName"] != "CoreScope" {
+		t.Errorf("siteName = %v, want built-in default CoreScope", tr.Branding["siteName"])
+	}
+}
+
+func TestTemplateAssetsRouteServesFiles(t *testing.T) {
+	base := t.TempDir()
+	assetsDir := filepath.Join(base, "templates", "acme", "assets")
+	if err := os.MkdirAll(assetsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(assetsDir, "logo.svg"), []byte("<svg/>"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{cfg: &Config{}, tmpl: &SiteTemplate{Name: "acme", Dir: filepath.Join(base, "templates", "acme")}}
+	router := mux.NewRouter()
+	s.registerTemplateAssets(router)
+
+	req := httptest.NewRequest("GET", "/template-assets/logo.svg", nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != 200 {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	if rr.Body.String() != "<svg/>" {
+		t.Errorf("body = %q, want <svg/>", rr.Body.String())
 	}
 }

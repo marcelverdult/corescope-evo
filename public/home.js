@@ -5,6 +5,8 @@
   let searchTimeout = null;
   let miniMap = null;
   let searchAbort = null; // AbortController for document-level listeners
+  var _announcementCleanup = null; // teardown fn for any open announcement modal
+  var _themeReadyHandler = null;   // one-shot theme-changed handler (cold-load fix)
 
   const PREF_KEY = 'meshcore-user-level';
   const MY_NODES_KEY = 'meshcore-my-nodes'; // [{pubkey, name, addedAt}]
@@ -29,10 +31,68 @@
   function isExperienced() { return localStorage.getItem(PREF_KEY) !== 'new'; }
   function setLevel(level) { localStorage.setItem(PREF_KEY, level); }
 
-  function init(container) {
-    // First-visit experience chooser removed — users default to "experienced"
-    // (no setup guides). The in-page #toggleLevel link still reveals guides.
+  // Core render logic extracted so both the immediate call and the one-shot
+  // theme-changed re-render share exactly the same code path.
+  function renderHomeFlow(container) {
+    var chooser = window.SITE_CONFIG && window.SITE_CONFIG.sections && window.SITE_CONFIG.sections.firstVisitChooser;
+    var levelChosen = localStorage.getItem(PREF_KEY) !== null;
+    if (chooser && chooser.enabled && !levelChosen) {
+      showChooser(container);
+      return;
+    }
     renderHome(container);
+    maybeShowAnnouncement();
+  }
+
+  function init(container) {
+    // If SITE_CONFIG is not yet set (cold page load — theme fetch hasn't
+    // resolved yet), register a one-shot listener so config-gated sections
+    // (donate block, announcement modal, first-visit chooser) appear as soon
+    // as the config arrives, without requiring the user to navigate away and
+    // back.  If config IS already set (subsequent navigations), skip the
+    // listener entirely to avoid any double-render.
+    if (_themeReadyHandler) { window.removeEventListener('theme-changed', _themeReadyHandler); _themeReadyHandler = null; }
+    if (!window.SITE_CONFIG) {
+      _themeReadyHandler = function () {
+        window.removeEventListener('theme-changed', _themeReadyHandler);
+        _themeReadyHandler = null;
+        renderHomeFlow(container);
+      };
+      window.addEventListener('theme-changed', _themeReadyHandler);
+    }
+    renderHomeFlow(container);
+  }
+
+  function showChooser(container) {
+    var siteName = window.SITE_CONFIG && window.SITE_CONFIG.branding && window.SITE_CONFIG.branding.siteName
+      ? window.SITE_CONFIG.branding.siteName
+      : 'CoreScope';
+    container.innerHTML = '<section class="home-chooser">' +
+      '<h1>Welcome to ' + escapeHtml(siteName) + '</h1>' +
+      '<p>How familiar are you with MeshCore?</p>' +
+      '<div class="chooser-options">' +
+        '<button class="chooser-btn" id="chooseNew" type="button">' +
+          '<span class="chooser-icon">🌱</span>' +
+          '<strong>I’m new</strong>' +
+          '<span>Show me setup guides and tips</span>' +
+        '</button>' +
+        '<button class="chooser-btn" id="chooseExp" type="button">' +
+          '<span class="chooser-icon">⚡</span>' +
+          '<strong>I know what I’m doing</strong>' +
+          '<span>Just the analyzer, skip the guides</span>' +
+        '</button>' +
+      '</div>' +
+    '</section>';
+    container.querySelector('#chooseNew').addEventListener('click', function () {
+      setLevel('new');
+      renderHome(container);
+      maybeShowAnnouncement();
+    });
+    container.querySelector('#chooseExp').addEventListener('click', function () {
+      setLevel('experienced');
+      renderHome(container);
+      maybeShowAnnouncement();
+    });
   }
 
   function renderHome(container) {
@@ -87,6 +147,8 @@
         <h2>🚀 Getting on the mesh${homeCfg?.steps ? '' : ' — SF Bay Area'}</h2>
         ${checklist(homeCfg)}
       </section>`}
+
+      ${donateSection()}
 
       <section class="home-footer">
         <div class="home-footer-links">
@@ -214,6 +276,11 @@
     clearTimeout(searchTimeout);
     if (searchAbort) { searchAbort.abort(); searchAbort = null; }
     if (miniMap) { miniMap.remove(); miniMap = null; }
+    if (_announcementCleanup) { _announcementCleanup(); _announcementCleanup = null; }
+    if (_themeReadyHandler) {
+      window.removeEventListener('theme-changed', _themeReadyHandler);
+      _themeReadyHandler = null;
+    }
   }
 
   // ==================== MY NODES DASHBOARD ====================
@@ -546,6 +613,151 @@
       html = items.map(i => `<div class="checklist-item"><div class="checklist-q" role="button" tabindex="0" aria-expanded="false">${i.q}</div><div class="checklist-a">${i.a}</div></div>`).join('');
     }
     return html;
+  }
+
+  // ==================== ANNOUNCEMENT MODAL ====================
+  // Config-gated, dismiss-once modal driven by window.SITE_CONFIG.sections.announcement.
+  // Dismissed state is persisted in localStorage so it survives page reloads.
+  var ANNOUNCEMENT_LANG_KEY = 'home-announcement-lang';
+
+  // Fix 3: Only allow safe URL schemes in config-sourced hrefs.
+  // Accepts absolute http/https, root-relative paths, and hash routes.
+  function isSafeUrl(u) {
+    if (typeof u !== 'string' || !u) return false;
+    return u.indexOf('http://') === 0 ||
+           u.indexOf('https://') === 0 ||
+           u.charAt(0) === '/' ||
+           u.charAt(0) === '#';
+  }
+
+  function maybeShowAnnouncement() {
+    if (_announcementCleanup) return; // modal already open — prevent duplicate overlay
+    var a = window.SITE_CONFIG && window.SITE_CONFIG.sections && window.SITE_CONFIG.sections.announcement;
+    if (!a || !a.enabled || !a.modal) return;
+    var m = a.modal;
+    var key = 'meshcore-announcement-dismissed-' + (m.id || 'default');
+    if (localStorage.getItem(key) === '1') return;
+
+    // Determine initial language (NL default, same as fork)
+    var lang = localStorage.getItem(ANNOUNCEMENT_LANG_KEY) === 'en' ? 'en' : 'nl';
+
+    // Build overlay + card via innerHTML (matches home.js style for other sections)
+    var overlay = document.createElement('div');
+    overlay.className = 'ann-overlay';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-labelledby', 'annTitle');
+    overlay.dataset.lang = lang;
+
+    var logoHtml = m.logoUrl
+      ? '<img class="ann-logo" src="' + escapeAttr(m.logoUrl) + '" alt="' + escapeHtml(m.logoAlt || '') + '" loading="lazy">'
+      : '';
+
+    // Fix 3: guard config URLs before emitting href attributes
+    var primaryLink = (m.primaryUrl && isSafeUrl(m.primaryUrl))
+      ? '<a class="ann-primary" href="' + escapeAttr(m.primaryUrl) + '" target="_blank" rel="noopener">' +
+          '<span data-ann-action="nl">' + escapeHtml(m.primaryUrlNl || '') + '</span>' +
+          '<span data-ann-action="en">' + escapeHtml(m.primaryUrlEn || '') + '</span>' +
+        '</a>'
+      : '';
+    var discordLink = (m.discordUrl && isSafeUrl(m.discordUrl))
+      ? '<a class="ann-secondary" href="' + escapeAttr(m.discordUrl) + '" target="_blank" rel="noopener">' +
+          '<span data-ann-discord="nl">' + escapeHtml(m.discordUrlNl || '') + '</span>' +
+          '<span data-ann-discord="en">' + escapeHtml(m.discordUrlEn || '') + '</span>' +
+        '</a>'
+      : '';
+
+    overlay.innerHTML = '<div class="ann-card">' +
+      '<div class="ann-head">' +
+        '<div class="ann-head-left">' +
+          logoHtml +
+          '<div>' +
+            (m.kicker ? '<p class="ann-kicker">' + escapeHtml(m.kicker) + '</p>' : '') +
+            '<h2 class="ann-title" id="annTitle">' +
+              '<span data-ann-title="nl">' + escapeHtml(m.titleNl || '') + '</span>' +
+              '<span data-ann-title="en">' + escapeHtml(m.titleEn || '') + '</span>' +
+            '</h2>' +
+          '</div>' +
+        '</div>' +
+        '<div class="ann-controls">' +
+          '<div class="ann-lang" role="group" aria-label="Language">' +
+            '<button type="button" class="ann-lang-btn" data-ann-lang="nl" aria-pressed="' + (lang === 'nl' ? 'true' : 'false') + '">NL</button>' +
+            '<button type="button" class="ann-lang-btn" data-ann-lang="en" aria-pressed="' + (lang === 'en' ? 'true' : 'false') + '">EN</button>' +
+          '</div>' +
+          '<button type="button" class="ann-close" aria-label="Dismiss">×</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="ann-body">' +
+        '<p data-ann-body="nl">' + escapeHtml(m.bodyNl || '') + '</p>' +
+        '<p data-ann-body="en">' + escapeHtml(m.bodyEn || '') + '</p>' +
+        '<div class="ann-actions">' + primaryLink + discordLink + '</div>' +
+      '</div>' +
+    '</div>';
+
+    document.body.appendChild(overlay);
+
+    // Helper: update lang state on overlay and toggle aria-pressed
+    function setLang(newLang) {
+      lang = newLang;
+      localStorage.setItem(ANNOUNCEMENT_LANG_KEY, lang);
+      overlay.dataset.lang = lang;
+      overlay.querySelectorAll('.ann-lang-btn').forEach(function (b) {
+        b.setAttribute('aria-pressed', b.dataset.annLang === lang ? 'true' : 'false');
+      });
+    }
+
+    // Fix 1 + 2: shared teardown — removes overlay node and keydown listener.
+    // Called by both dismiss() and _announcementCleanup (navigate-away path).
+    function teardown() {
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      document.removeEventListener('keydown', handleKey);
+    }
+
+    // Helper: dismiss (persists the "seen" flag, then tears down)
+    function dismiss() {
+      localStorage.setItem(key, '1');
+      teardown();
+      _announcementCleanup = null; // prevent double-call from destroy()
+    }
+
+    // Fix 2: register teardown so destroy() can clean up on navigation away
+    _announcementCleanup = teardown;
+
+    // Lang toggle buttons
+    overlay.querySelectorAll('.ann-lang-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        setLang(btn.dataset.annLang === 'en' ? 'en' : 'nl');
+      });
+    });
+
+    // Close/dismiss button
+    var closeBtn = overlay.querySelector('.ann-close');
+    if (closeBtn) closeBtn.addEventListener('click', dismiss);
+
+    // Click on the dim overlay background (outside the card) also dismisses
+    overlay.addEventListener('click', function (e) {
+      if (e.target === overlay) dismiss();
+    });
+
+    // Fix 1: named function reference so removeEventListener in teardown() works
+    function handleKey(e) {
+      if (e.key === 'Escape') dismiss();
+    }
+    document.addEventListener('keydown', handleKey);
+  }
+
+  function donateSection() {
+    var d = window.SITE_CONFIG && window.SITE_CONFIG.sections && window.SITE_CONFIG.sections.donate;
+    if (!d || !d.enabled) return '';
+    var links = (d.links || []).map(function (l) {
+      if (!l.url || !isSafeUrl(l.url)) return '';
+      return '<a class="home-donate-link" href="' + escapeAttr(l.url) + '" target="_blank" rel="noopener">' + escapeHtml(l.label) + '</a>';
+    }).join('');
+    var img = d.image ? '<img class="home-donate-img" src="' + escapeAttr(d.image) + '" alt="" loading="lazy">' : '';
+    if (!d.title && !img && !links) return '';
+    return '<section class="home-donate">' +
+      (d.title ? '<h2>' + escapeHtml(d.title) + '</h2>' : '') +
+      img + '<div class="home-donate-links">' + links + '</div></section>';
   }
 
   registerPage('home', { init, destroy });

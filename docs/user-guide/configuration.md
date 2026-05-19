@@ -1,0 +1,255 @@
+# Configuration
+
+CoreScope is configured via `config.json` in the server's working directory. Copy `config.example.json` to get started.
+
+## Core settings
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `port` | `3000` | HTTP server port |
+| `apiKey` | — | Secret key for admin API endpoints (POST/PUT routes) |
+| `dbPath` | — | Path to SQLite database file (optional, defaults to `meshcore.db`) |
+
+## MQTT
+
+```json
+"mqtt": {
+  "broker": "mqtt://localhost:1883",
+  "topic": "meshcore/+/+/packets"
+}
+```
+
+The ingestor connects to this MQTT broker and subscribes to the topic pattern.
+
+### Multiple MQTT sources
+
+Use `mqttSources` for multiple brokers:
+
+```json
+"mqttSources": [
+  {
+    "name": "local",
+    "broker": "mqtt://localhost:1883",
+    "topics": ["meshcore/#"]
+  },
+  {
+    "name": "remote",
+    "broker": "mqtts://mqtt.example.com:8883",
+    "username": "user",
+    "password": "pass",
+    "topics": ["meshcore/SJC/#"]
+  }
+]
+```
+
+## Branding
+
+| Field | Description |
+|-------|-------------|
+| `branding.siteName` | Site title shown in the nav bar |
+| `branding.tagline` | Subtitle on the home page |
+| `branding.logoUrl` | URL to a custom logo image |
+| `branding.faviconUrl` | URL to a custom favicon |
+
+## Theme
+
+Colors used throughout the UI. All values are hex color codes.
+
+| Field | Description |
+|-------|-------------|
+| `theme.accent` | Primary accent color (links, buttons) |
+| `theme.navBg` | Navigation bar background |
+| `theme.navBg2` | Secondary nav background |
+| `theme.statusGreen` | Healthy status color |
+| `theme.statusYellow` | Degraded status color |
+| `theme.statusRed` | Silent/error status color |
+
+See [Customization](customization.md) for the full list — the theme customizer exposes every color.
+
+## Node colors
+
+Default marker colors by role:
+
+```json
+"nodeColors": {
+  "repeater": "#dc2626",
+  "companion": "#2563eb",
+  "room": "#16a34a",
+  "sensor": "#d97706",
+  "observer": "#8b5cf6"
+}
+```
+
+## Health thresholds
+
+How long (in hours) before a node is marked degraded or silent:
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `healthThresholds.infraDegradedHours` | `24` | Repeaters/rooms → degraded after this many hours |
+| `healthThresholds.infraSilentHours` | `72` | Repeaters/rooms → silent after this many hours |
+| `healthThresholds.nodeDegradedHours` | `1` | Companions/others → degraded |
+| `healthThresholds.nodeSilentHours` | `24` | Companions/others → silent |
+
+## Retention
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `retention.nodeDays` | `7` | Nodes not seen in N days move to inactive |
+| `retention.packetDays` | `30` | Packets older than N days are deleted daily |
+
+> **Note:** Lowering retention does **not** immediately shrink the database file.
+> SQLite marks deleted pages as free but does not return them to the filesystem
+> unless [incremental auto-vacuum](database.md) is enabled. New databases created
+> after v0.x.x have auto-vacuum enabled automatically. Existing databases require
+> a one-time migration — see the [Database](database.md) guide.
+
+## Database
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `db.vacuumOnStartup` | `false` | Run a one-time full `VACUUM` on startup to enable incremental auto-vacuum (blocks for minutes on large DBs) |
+| `db.incrementalVacuumPages` | `1024` | Free pages returned to the OS after each retention reaper cycle |
+
+See [Database](database.md) for details on SQLite auto-vacuum, WAL, and manual maintenance.
+See [#919](https://github.com/Kpa-clawbot/CoreScope/issues/919) for background.
+
+## Channel decryption
+
+| Field | Description |
+|-------|-------------|
+| `channelKeys` | Object of `"label": "hex-key"` pairs for decrypting channel messages |
+| `hashChannels` | Array of channel names (e.g., `"#LongFast"`) to match by hash |
+
+See [Channels](channels.md) for details.
+
+## Map defaults
+
+```json
+"mapDefaults": {
+  "center": [37.45, -122.0],
+  "zoom": 9
+}
+```
+
+Initial map center and zoom level.
+
+## Regions
+
+```json
+"regions": {
+  "SJC": "San Jose, US",
+  "SFO": "San Francisco, US"
+}
+```
+
+Named regions for the region filter dropdown. The `defaultRegion` field sets which region is selected by default.
+
+## Cache TTL
+
+All values in seconds. Controls how long the server caches API responses:
+
+```json
+"cacheTTL": {
+  "stats": 10,
+  "nodeList": 90,
+  "nodeDetail": 300,
+  "analyticsRF": 1800
+}
+```
+
+Lower values = fresher data but more server load.
+
+## Packet store
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `packetStore.maxMemoryMB` | `1024` | Maximum RAM for in-memory packet store |
+| `packetStore.estimatedPacketBytes` | `450` | Estimated bytes per packet (for memory budgeting) |
+| `packetStore.retentionHours` | `0` | Only load packets younger than N hours on startup and keep them in memory. **Set this on any instance with a large DB.** `0` = unlimited (loads full DB history — causes OOM on cold start when the DB has hundreds of thousands of paths). Recommended: same as `retention.packetDays × 24` (e.g. `168` for 7 days). |
+
+> **Warning:** Leaving `retentionHours` at `0` on a large database will cause the server to OOM-kill itself on every cold start. The full packet history is loaded into the subpath index at startup; a DB with ~280K paths produces ~13M index entries before the process is killed.
+
+## Timestamps
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `timestamps.defaultMode` | `"ago"` | Display mode: `"ago"` (relative) or `"absolute"` |
+| `timestamps.timezone` | `"local"` | `"local"` or `"utc"` |
+| `timestamps.formatPreset` | `"iso"` | Date format preset |
+
+## Live map
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `liveMap.propagationBufferMs` | `5000` | How long to buffer observations before animating |
+
+## HTTPS
+
+```json
+"https": {
+  "cert": "/path/to/cert.pem",
+  "key": "/path/to/key.pem"
+}
+```
+
+Provide cert and key paths to enable HTTPS.
+
+## Geographic filtering
+
+```json
+"geo_filter": {
+  "polygon": [[51.55, 3.80], [51.55, 5.90], [50.65, 5.90], [50.65, 3.80]],
+  "bufferKm": 20
+}
+```
+
+Restricts ingestion and API responses to nodes within the polygon plus a buffer margin. Remove the block to disable filtering. Nodes with no GPS fix always pass through.
+
+See [Geographic Filtering](geofilter.md) for the full guide including the visual polygon builder and the prune script for cleaning up historical data.
+
+## Home page
+
+The `home` section customizes the onboarding experience. See `config.example.json` for the full structure including `steps`, `checklist`, and `footerLinks`.
+
+## Branding templates
+
+The `template` key activates a named bundle of branding, theme, home page, and UI customizations that are shipped with the server under `templates/<name>/`. Instead of specifying every `branding`, `theme`, and `home` field individually, you can select a template and get a coherent look out of the box.
+
+```json
+"template": "cornmeister"
+```
+
+Set the value in `config.json` and restart the server. An empty string or the value `"default"` both produce the built-in CoreScope-EVO appearance.
+
+### Bundled templates
+
+| Name | Description |
+|------|-------------|
+| `default` | Built-in CoreScope-EVO look. This is also the behavior when `template` is empty or unset. |
+| `cornmeister` | Dutch "Cornmeister.nl" mesh branding — blue logo, donate section, announcement modal, first-visit network chooser, and observer-setup help. |
+
+### What a template provides
+
+A template bundles any combination of:
+
+- **`branding`** — site name, tagline, and logo URL
+- **`meta`** — page title and OpenGraph/social sharing tags
+- **`theme`** — color palette
+- **`home`** — hero text, onboarding steps, FAQ, and footer links
+- **`sections`** — optional UI sections such as a donate block, announcement modal, first-visit chooser, and observer-setup help panel
+
+Static assets referenced by the template (logos, images) live in `templates/<name>/assets/` and are served at the `/template-assets/` URL path.
+
+### Override precedence
+
+Templates integrate cleanly with the rest of the configuration. Values are merged in this order, with later entries winning:
+
+1. Built-in defaults
+2. Active template
+3. Explicit keys in `config.json`
+4. `theme.json` (if present)
+
+`theme.json` participates in this chain only for the colour and branding layers — `branding`, `theme`, `themeDark`, `nodeColors`, `typeColors`, and `home`. The `meta` and `sections` keys are not read from `theme.json`; for those two layers the chain stops at step 3 (`config.json`).
+
+This means you can activate a template for the bulk of its customizations and still override individual values — for example, keep `cornmeister`'s color scheme but replace the site name with your own.

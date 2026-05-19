@@ -983,6 +983,9 @@ type ThemeResponse struct {
 	NodeColors map[string]interface{} `json:"nodeColors"`
 	TypeColors map[string]interface{} `json:"typeColors"`
 	Home       interface{}            `json:"home"`
+	Meta       map[string]interface{} `json:"meta"`
+	Sections   map[string]interface{} `json:"sections"`
+	Template   string                 `json:"template"`
 }
 
 type MapConfigResponse struct {

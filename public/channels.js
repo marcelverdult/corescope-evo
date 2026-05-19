@@ -724,6 +724,7 @@
   function init(app, routeParam) {
     var _initUrlParams = getHashParams();
     var _pendingNode = _initUrlParams.get('node');
+    var siteName = (window.SITE_CONFIG && window.SITE_CONFIG.branding && window.SITE_CONFIG.branding.siteName) || 'CoreScope';
 
     app.innerHTML = `<div class="ch-layout">
       <div class="ch-sidebar" aria-label="Channel list">
@@ -792,7 +793,7 @@
           </section>
 
           <div class="ch-modal-footer">
-            🔒 Keys stay in your browser — CoreScope is a passive observer that monitors and decrypts traffic but cannot transmit over RF. Use ✕ to remove individual channels.
+            🔒 Keys stay in your browser — ${siteName} is a passive observer that monitors and decrypts traffic but cannot transmit over RF. Use ✕ to remove individual channels.
           </div>
         </div>
       </div>

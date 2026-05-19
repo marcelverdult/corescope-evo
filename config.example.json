@@ -29,6 +29,8 @@
     "faviconUrl": null,
     "_comment": "Customize site name, tagline, logo, and favicon. logoUrl/faviconUrl can be absolute URLs or relative paths."
   },
+  "template": "",
+  "_comment_template": "Activates a bundled branding template from templates/<name>/. Empty or 'default' = built-in CoreScope-EVO look. 'cornmeister' = Dutch mesh branding. A template sets branding/theme/home/meta/sections; explicit branding/theme/home keys in this file still override the template.",
   "theme": {
     "accent": "#4a9eff",
     "accentHover": "#6db3ff",

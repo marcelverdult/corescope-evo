@@ -282,11 +282,12 @@ type PacketStore struct {
 	hashMigrationComplete atomic.Bool
 
 	// Eviction config and stats
-	retentionHours  float64        // 0 = unlimited
-	maxMemoryMB     int            // 0 = unlimited (packet store memory budget)
-	evicted         int64          // total packets evicted
-	trackedBytes    int64          // running total of estimated packet store memory
-	memoryEstimator func() float64 // injectable for tests; nil = use runtime.ReadMemStats (stats only)
+	retentionHours      float64        // 0 = unlimited
+	maxMemoryMB         int            // 0 = unlimited (packet store memory budget)
+	evicted             int64          // total packets evicted
+	trackedBytes        int64          // running total of estimated packet store memory
+	memoryEstimator     func() float64 // injectable for tests; nil = use runtime.ReadMemStats (stats only)
+	analyticsSQLBackend bool           // RF analytics uses the SQL backend (config packetStore.analyticsSqlBackend)
 }
 
 type cachedResult struct {
@@ -363,6 +364,7 @@ func NewPacketStore(db *DB, cfg *PacketStoreConfig, cacheTTLs ...map[string]inte
 		ps.retentionHours = cfg.RetentionHours
 		ps.maxMemoryMB = cfg.MaxMemoryMB
 		ps.maxResolvedPubkeyIndexEntries = cfg.MaxResolvedPubkeyIndexEntries
+		ps.analyticsSQLBackend = cfg.AnalyticsSQLBackend
 		if cfg.HotStartupHours > 0 {
 			h := cfg.HotStartupHours
 			if ps.retentionHours > 0 && h > ps.retentionHours {

@@ -36,6 +36,14 @@ type Config struct {
 	TypeColors map[string]interface{} `json:"typeColors"`
 	Home       map[string]interface{} `json:"home"`
 
+	// Template is the name of a bundled branding template under templates/.
+	// Empty or "default" = built-in look. See cmd/server/template.go.
+	Template string `json:"template,omitempty"`
+	// Meta overrides <title>/OpenGraph tags. Merged below template, above defaults.
+	Meta map[string]interface{} `json:"meta,omitempty"`
+	// Sections toggles structural home-page blocks (donate, announcement, etc.).
+	Sections map[string]interface{} `json:"sections,omitempty"`
+
 	MapDefaults struct {
 		Center []float64 `json:"center"`
 		Zoom   int       `json:"zoom"`
@@ -163,6 +171,7 @@ type PacketStoreConfig struct {
 	MaxMemoryMB                   int     `json:"maxMemoryMB"`                   // hard memory ceiling in MB (0 = unlimited)
 	MaxResolvedPubkeyIndexEntries int     `json:"maxResolvedPubkeyIndexEntries"` // warning threshold for index size (0 = 5M default)
 	HotStartupHours               float64 `json:"hotStartupHours"`               // load only this many hours synchronously; 0 = disabled
+	AnalyticsSQLBackend           bool    `json:"analyticsSqlBackend"`           // route RF analytics through the SQL backend
 }
 
 // GeoFilterConfig is an alias for the shared geofilter.Config type.

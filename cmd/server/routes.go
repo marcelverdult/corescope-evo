@@ -25,6 +25,7 @@ import (
 type Server struct {
 	db        *DB
 	cfg       *Config
+	tmpl      *SiteTemplate // active branding template (never nil after startup)
 	hub       *Hub
 	store     *PacketStore // in-memory packet store (nil = fallback to DB)
 	startedAt time.Time
@@ -393,10 +394,15 @@ func (s *Server) handleConfigTheme(w http.ResponseWriter, r *http.Request) {
 func (s *Server) buildThemeResponse() ThemeResponse {
 	theme := LoadTheme(".")
 
+	tmpl := s.tmpl
+	if tmpl == nil {
+		tmpl = &SiteTemplate{Name: "default"}
+	}
+
 	branding := mergeMap(map[string]interface{}{
 		"siteName": "CoreScope",
 		"tagline":  "Real-time MeshCore LoRa mesh network analyzer",
-	}, s.cfg.Branding, theme.Branding)
+	}, tmpl.Branding, s.cfg.Branding, theme.Branding)
 
 	themeColors := mergeMap(map[string]interface{}{
 		"accent":      "#4a9eff",
@@ -423,7 +429,7 @@ func (s *Server) buildThemeResponse() ThemeResponse {
 		"statusGreen": "#22c55e",
 		"statusYellow": "#eab308",
 		"statusRed":   "#ef4444",
-	}, s.cfg.Theme, theme.Theme)
+	}, tmpl.Theme, s.cfg.Theme, theme.Theme)
 
 	nodeColors := mergeMap(map[string]interface{}{
 		"repeater":  "#dc2626",
@@ -431,7 +437,7 @@ func (s *Server) buildThemeResponse() ThemeResponse {
 		"room":      "#16a34a",
 		"sensor":    "#d97706",
 		"observer":  "#8b5cf6",
-	}, s.cfg.NodeColors, theme.NodeColors)
+	}, tmpl.NodeColors, s.cfg.NodeColors, theme.NodeColors)
 
 	themeDark := mergeMap(map[string]interface{}{
 		"accent":      "#4a9eff",
@@ -458,7 +464,7 @@ func (s *Server) buildThemeResponse() ThemeResponse {
 		"statusRed":   "#ef4444",
 		"surface3":    "#2d2d50",
 		"sectionBg":   "#1e1e34",
-	}, s.cfg.ThemeDark, theme.ThemeDark)
+	}, tmpl.ThemeDark, s.cfg.ThemeDark, theme.ThemeDark)
 	typeColors := mergeMap(map[string]interface{}{
 		"ADVERT":   "#22c55e",
 		"GRP_TXT":  "#3b82f6",
@@ -470,7 +476,7 @@ func (s *Server) buildThemeResponse() ThemeResponse {
 		"PATH":     "#14b8a6",
 		"ANON_REQ": "#f43f5e",
 		"UNKNOWN":  "#6b7280",
-	}, s.cfg.TypeColors, theme.TypeColors)
+	}, tmpl.TypeColors, s.cfg.TypeColors, theme.TypeColors)
 
 	defaultHome := map[string]interface{}{
 		"heroTitle":    "CoreScope",
@@ -486,7 +492,16 @@ func (s *Server) buildThemeResponse() ThemeResponse {
 			map[string]interface{}{"label": "🗺️ Network Map", "url": "#/map"},
 		},
 	}
-	home := mergeMap(defaultHome, s.cfg.Home, theme.Home)
+	home := mergeMap(defaultHome, tmpl.Home, s.cfg.Home, theme.Home)
+
+	meta := mergeMap(map[string]interface{}{
+		"title":       "CoreScope-EVO",
+		"description": "Real-time MeshCore LoRa mesh network analyzer",
+		"repoUrl":     "https://github.com/marcelverdult/corescope-evo",
+		"themeColor":  "#0a0a0a",
+	}, tmpl.Meta, s.cfg.Meta)
+
+	sections := mergeMap(map[string]interface{}{}, tmpl.Sections, s.cfg.Sections)
 
 	return ThemeResponse{
 		Branding:   branding,
@@ -495,6 +510,9 @@ func (s *Server) buildThemeResponse() ThemeResponse {
 		NodeColors: nodeColors,
 		TypeColors: typeColors,
 		Home:       home,
+		Meta:       meta,
+		Sections:   sections,
+		Template:   tmpl.Name,
 	}
 }
 
