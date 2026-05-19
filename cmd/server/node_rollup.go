@@ -5,9 +5,11 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // ensureNodeRollupTable creates the node-health rollup tables. Idempotent.
@@ -40,6 +42,83 @@ func ensureNodeRollupTable(dbPath string) error {
 		}
 	}
 	return nil
+}
+
+// recomputeNodeRollupHour rebuilds node_rollup + node_rollup_total for one
+// hour bucket ("2026-05-18T10") from raw non-advert transmissions.
+// Idempotent: deletes then re-inserts. The raw read runs OUTSIDE the write
+// transaction and filters on the indexed first_seen RFC3339 range.
+func recomputeNodeRollupHour(rw *sql.DB, hour string) error {
+	ht, err := time.Parse("2006-01-02T15", hour)
+	if err != nil {
+		return fmt.Errorf("node recompute parse hour %q: %w", hour, err)
+	}
+	lo := ht.UTC().Format("2006-01-02T15:04:05Z")
+	hi := ht.UTC().Add(time.Hour).Format("2006-01-02T15:04:05Z")
+
+	rows, err := rw.Query(`
+		SELECT t.id, t.first_seen, o.path_json, o.resolved_path
+		FROM transmissions t JOIN observations o ON o.transmission_id = t.id
+		WHERE t.first_seen >= ? AND t.first_seen < ?
+		  AND (t.payload_type IS NULL OR t.payload_type != 4)`, lo, hi)
+	if err != nil {
+		return fmt.Errorf("node recompute scan: %w", err)
+	}
+	txByHop := map[string]map[int]bool{}
+	lastByHop := map[string]string{}
+	for rows.Next() {
+		var txID int
+		var firstSeen string
+		var pathJSON, resolvedPath sql.NullString
+		if err := rows.Scan(&txID, &firstSeen, &pathJSON, &resolvedPath); err != nil {
+			rows.Close()
+			return fmt.Errorf("node recompute row: %w", err)
+		}
+		for _, key := range nodeHopKeys(pathJSON.String, resolvedPath.String) {
+			if txByHop[key] == nil {
+				txByHop[key] = map[int]bool{}
+			}
+			txByHop[key][txID] = true
+			if firstSeen > lastByHop[key] {
+				lastByHop[key] = firstSeen
+			}
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("node recompute rows: %w", err)
+	}
+
+	var nNonAdvert int
+	if err := rw.QueryRow(`
+		SELECT COUNT(*) FROM transmissions
+		WHERE first_seen >= ? AND first_seen < ?
+		  AND (payload_type IS NULL OR payload_type != 4)`, lo, hi).Scan(&nNonAdvert); err != nil {
+		return fmt.Errorf("node recompute count: %w", err)
+	}
+
+	tx, err := rw.Begin()
+	if err != nil {
+		return fmt.Errorf("node recompute begin: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM node_rollup WHERE hour=?`, hour); err != nil {
+		return fmt.Errorf("node recompute delete rollup: %w", err)
+	}
+	if _, err := tx.Exec(`DELETE FROM node_rollup_total WHERE hour=?`, hour); err != nil {
+		return fmt.Errorf("node recompute delete total: %w", err)
+	}
+	for key, set := range txByHop {
+		if _, err := tx.Exec(`INSERT INTO node_rollup(hour,hop_key,relay_count,last_relayed)
+			VALUES (?,?,?,?)`, hour, key, len(set), lastByHop[key]); err != nil {
+			return fmt.Errorf("node recompute insert rollup: %w", err)
+		}
+	}
+	if _, err := tx.Exec(`INSERT INTO node_rollup_total(hour,n_nonadvert) VALUES (?,?)`,
+		hour, nNonAdvert); err != nil {
+		return fmt.Errorf("node recompute insert total: %w", err)
+	}
+	return tx.Commit()
 }
 
 // nodeHopKeys returns the lowercased hop keys for one observation: the
