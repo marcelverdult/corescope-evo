@@ -78,11 +78,11 @@ func main() {
 	}
 
 	var (
-		configDir  string
-		port       int
-		dbPath     string
-		publicDir  string
-		pollMs     int
+		configDir string
+		port      int
+		dbPath    string
+		publicDir string
+		pollMs    int
 	)
 
 	flag.StringVar(&configDir, "config-dir", ".", "Directory containing config.json")
@@ -238,6 +238,10 @@ func main() {
 	// even on prod-sized DBs (100K+ transmissions).
 	if err := ensureFromPubkeyColumn(dbPath); err != nil {
 		log.Printf("[store] warning: could not add transmissions.from_pubkey column: %v", err)
+	}
+
+	if err := ensureRFRollupTable(dbPath); err != nil {
+		log.Fatalf("ensureRFRollupTable: %v", err)
 	}
 
 	// Soft-delete observers that are in the blacklist (mark inactive=1) so
@@ -598,6 +602,28 @@ func main() {
 
 	// Migrate old content hashes in background (one-time, idempotent).
 	go migrateContentHashesAsync(store, 5000, 100*time.Millisecond)
+
+	if cfg.PacketStore != nil && cfg.PacketStore.AnalyticsSQLBackend {
+		go backfillRFRollupAsync(dbPath)
+		rfRollupTicker := time.NewTicker(5 * time.Minute)
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("[rf-rollup] maintenance panic recovered: %v", r)
+				}
+			}()
+			for range rfRollupTicker.C {
+				rw, err := cachedRW(dbPath)
+				if err != nil {
+					log.Printf("[rf-rollup] maintenance open rw: %v", err)
+					continue
+				}
+				if err := runRFRollupMaintenance(rw); err != nil {
+					log.Printf("[rf-rollup] maintenance: %v", err)
+				}
+			}
+		}()
+	}
 
 	if err := httpServer.ListenAndServe(); err != http.ErrServerClosed {
 		log.Fatalf("[server] %v", err)
