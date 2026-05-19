@@ -2,6 +2,8 @@ package main
 
 import (
 	"database/sql"
+	"fmt"
+	"math"
 	"path/filepath"
 	"testing"
 
@@ -250,4 +252,55 @@ func TestRFFallbackWhenRollupNotReady(t *testing.T) {
 	if res == nil {
 		t.Fatal("nil result")
 	}
+}
+
+func TestRFRollupParity(t *testing.T) {
+	db := setupTestDBFile(t)
+	if err := ensureRFRollupTable(db.path); err != nil {
+		t.Fatal(err)
+	}
+	mustExec(t, db, `INSERT INTO observers(rowid,id,name,iata) VALUES
+		(1,'o1','Obs1','SJC'),(2,'o2','Obs2','SJC'),(3,'o3','Obs3','LAX')`)
+	mustExec(t, db, `INSERT INTO transmissions(id,raw_hex,hash,first_seen,payload_type) VALUES
+		(1,'aabbcc','h1','2026-05-18T10:00:00Z',1),
+		(2,'ddee','h2','2026-05-18T10:30:00Z',1),
+		(3,'ff0011','h3','2026-05-18T11:00:00Z',2)`)
+	// epoch seconds inside 2026-05-18: 1779098400=10:00, 1779100200=10:30, 1779102000=11:00
+	mustExec(t, db, `INSERT INTO observations(id,transmission_id,observer_idx,snr,rssi,timestamp) VALUES
+		(1,1,1,5.0,-80.0,1779098400),(2,1,2,7.0,-88.0,1779098400),
+		(3,2,1,6.0,-82.0,1779100200),(4,3,3,9.0,-70.0,1779102000)`)
+	rw, _ := cachedRW(db.path)
+	if err := runRFRollupMaintenance(rw); err != nil {
+		t.Fatal(err)
+	}
+	store := loadStore(t, db.path, 0)
+	win := TimeWindow{Since: "2026-05-18T00:00:00Z", Until: "2026-05-19T00:00:00Z"}
+
+	for _, region := range []string{"", "SJC"} {
+		mem := store.computeAnalyticsRF(region, win)
+		roll, err := computeRFFromRollup(db, region, win)
+		if err != nil {
+			t.Fatalf("[region=%q] rollup: %v", region, err)
+		}
+		for _, k := range []string{"totalPackets", "totalAllPackets"} {
+			if fmt.Sprint(mem[k]) != fmt.Sprint(roll[k]) {
+				t.Errorf("[region=%q] %s: mem=%v rollup=%v", region, k, mem[k], roll[k])
+			}
+		}
+		ms := mem["snr"].(map[string]interface{})
+		rs := roll["snr"].(map[string]interface{})
+		if math.Abs(rfToF(ms["avg"])-rfToF(rs["avg"])) > 1e-9 {
+			t.Errorf("[region=%q] snr.avg: mem=%v rollup=%v", region, ms["avg"], rs["avg"])
+		}
+	}
+}
+
+func rfToF(v interface{}) float64 {
+	switch n := v.(type) {
+	case float64:
+		return n
+	case int:
+		return float64(n)
+	}
+	return 0
 }
