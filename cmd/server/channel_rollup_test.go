@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 func TestEnsureChannelRollupTable(t *testing.T) {
 	db := setupTestDBFile(t)
@@ -134,4 +137,56 @@ func TestRecomputeChannelRollupHour(t *testing.T) {
 	if dtx != 2 {
 		t.Fatalf("distinct_tx=%d want 2", dtx)
 	}
+}
+
+func TestChannelRollupParity(t *testing.T) {
+	db := setupTestDBFile(t)
+	if err := ensureChannelRollupTable(db.path); err != nil {
+		t.Fatal(err)
+	}
+	mustExec(t, db, `INSERT INTO observers(rowid,id,name,iata) VALUES
+		(1,'o1','O1','SJC'),(2,'o2','O2','LAX')`)
+	mustExec(t, db, `INSERT INTO transmissions(id,raw_hex,hash,first_seen,payload_type,decoded_json) VALUES
+		(1,'aa','h1','2026-05-18T10:00:00Z',5,'{"channel_hash":"7","channel":"#test","sender":"alice","text":"hello"}'),
+		(2,'bb','h2','2026-05-18T10:30:00Z',5,'{"channel_hash":"7","channel":"#test","sender":"bob","text":"hey"}'),
+		(3,'cc','h3','2026-05-18T11:00:00Z',5,'{"channel_hash":"9","channel":"#ping","sender":"alice","text":"yo"}')`)
+	mustExec(t, db, `INSERT INTO observations(transmission_id,observer_idx,timestamp) VALUES
+		(1,1,1779098400),(2,1,1779100200),(3,2,1779102000)`)
+	rw, _ := cachedRW(db.path)
+	if err := runChannelRollupMaintenance(rw); err != nil {
+		t.Fatal(err)
+	}
+	store := loadStore(t, db.path, 0)
+	win := TimeWindow{Since: "2026-05-18T00:00:00Z", Until: "2026-05-19T00:00:00Z"}
+	for _, region := range []string{"", "SJC"} {
+		mem := store.computeAnalyticsChannels(region, win)
+		roll, err := computeChannelsFromRollup(db, region, win)
+		if err != nil {
+			t.Fatalf("[region=%q] rollup: %v", region, err)
+		}
+		if fmt.Sprint(mem["activeChannels"]) != fmt.Sprint(roll["activeChannels"]) {
+			t.Errorf("[region=%q] activeChannels: mem=%v rollup=%v",
+				region, mem["activeChannels"], roll["activeChannels"])
+		}
+		if fmt.Sprint(mem["decryptable"]) != fmt.Sprint(roll["decryptable"]) {
+			t.Errorf("[region=%q] decryptable: mem=%v rollup=%v",
+				region, mem["decryptable"], roll["decryptable"])
+		}
+		if channelMsgTotal(mem) != channelMsgTotal(roll) {
+			t.Errorf("[region=%q] total messages: mem=%d rollup=%d",
+				region, channelMsgTotal(mem), channelMsgTotal(roll))
+		}
+	}
+}
+
+func channelMsgTotal(res map[string]interface{}) int {
+	total := 0
+	if chans, ok := res["channels"].([]map[string]interface{}); ok {
+		for _, c := range chans {
+			if m, ok := c["messages"].(int); ok {
+				total += m
+			}
+		}
+	}
+	return total
 }
