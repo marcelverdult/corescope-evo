@@ -977,15 +977,16 @@ type ResolveHopsResponse struct {
 // ─── Config ────────────────────────────────────────────────────────────────────
 
 type ThemeResponse struct {
-	Branding   map[string]interface{} `json:"branding"`
-	Theme      map[string]interface{} `json:"theme"`
-	ThemeDark  map[string]interface{} `json:"themeDark"`
-	NodeColors map[string]interface{} `json:"nodeColors"`
-	TypeColors map[string]interface{} `json:"typeColors"`
-	Home       interface{}            `json:"home"`
-	Meta       map[string]interface{} `json:"meta"`
-	Sections   map[string]interface{} `json:"sections"`
-	Template   string                 `json:"template"`
+	Branding   map[string]interface{}   `json:"branding"`
+	Theme      map[string]interface{}   `json:"theme"`
+	ThemeDark  map[string]interface{}   `json:"themeDark"`
+	NodeColors map[string]interface{}   `json:"nodeColors"`
+	TypeColors map[string]interface{}   `json:"typeColors"`
+	Home       interface{}              `json:"home"`
+	Meta       map[string]interface{}   `json:"meta"`
+	Sections   map[string]interface{}   `json:"sections"`
+	Template   string                   `json:"template"`
+	Nav        []map[string]interface{} `json:"nav,omitempty"`
 }
 
 type MapConfigResponse struct {

@@ -25,6 +25,10 @@ type SiteTemplate struct {
 	Home       map[string]interface{} `json:"home"`
 	Sections   map[string]interface{} `json:"sections"`
 
+	// Nav, when non-empty, replaces the built-in top-nav links. Each entry is
+	// {route, hash, label, priority?}. Absent → the default hardcoded nav.
+	Nav []map[string]interface{} `json:"nav"`
+
 	// Dir is the resolved templates/<name> directory. Empty for the built-in
 	// fallback. Used to serve templates/<name>/assets/ at /template-assets/.
 	Dir string `json:"-"`

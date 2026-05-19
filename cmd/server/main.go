@@ -763,6 +763,57 @@ func buildSiteMetaTag(tr ThemeResponse) string {
 	return b.String()
 }
 
+// defaultNavLinks is the built-in top-nav markup, used when the active
+// template does not define its own `nav` array. Kept byte-identical to the
+// historical hardcoded nav so non-templated deploys are unchanged.
+const defaultNavLinks = `<a href="#/home" class="nav-link" data-route="home" data-priority="high">Home</a>
+        <a href="#/packets" class="nav-link" data-route="packets" data-priority="high">Packets</a>
+        <a href="#/map" class="nav-link" data-route="map" data-priority="high">Map</a>
+        <a href="#/live" class="nav-link" data-route="live" data-priority="high">🔴 Live</a>
+        <a href="#/channels" class="nav-link" data-route="channels">Channels</a>
+        <a href="#/nodes" class="nav-link" data-route="nodes" data-priority="high">Nodes</a>
+        <a href="#/tools" class="nav-link" data-route="tools">Tools</a>
+        <a href="#/observers" class="nav-link" data-route="observers">Observers</a>
+        <a href="#/analytics" class="nav-link" data-route="analytics">Analytics</a>
+        <a href="#/perf" class="nav-link" data-route="perf" data-priority="high">⚡ Perf</a>
+        <a href="#/audio-lab" class="nav-link" data-route="audio-lab">🎵 Lab</a>`
+
+// buildNavLinks renders the .nav-link anchors for the top nav. When the active
+// template supplies a `nav` array each entry {route, hash, label, priority?}
+// becomes an anchor; otherwise the built-in defaultNavLinks is used. Replaces
+// the __NAV_LINKS__ placeholder in index.html so the nav is correct on first
+// paint with no client-side reflow.
+func buildNavLinks(tr ThemeResponse) string {
+	if len(tr.Nav) == 0 {
+		return defaultNavLinks
+	}
+	var b strings.Builder
+	n := 0
+	for _, item := range tr.Nav {
+		hash := metaStr(item, "hash", "")
+		label := metaStr(item, "label", "")
+		if hash == "" || label == "" {
+			continue
+		}
+		if n > 0 {
+			b.WriteString("\n        ")
+		}
+		n++
+		b.WriteString(`<a href="` + html.EscapeString(hash) + `" class="nav-link"`)
+		if route := metaStr(item, "route", ""); route != "" {
+			b.WriteString(` data-route="` + html.EscapeString(route) + `"`)
+		}
+		if priority := metaStr(item, "priority", ""); priority != "" {
+			b.WriteString(` data-priority="` + html.EscapeString(priority) + `"`)
+		}
+		b.WriteString(`>` + html.EscapeString(label) + `</a>`)
+	}
+	if n == 0 {
+		return defaultNavLinks
+	}
+	return b.String()
+}
+
 // spaHandler serves static files, falling back to index.html for SPA routes.
 // It reads index.html once at creation time and replaces the __BUST__ placeholder
 // with a Unix timestamp so browsers fetch fresh JS/CSS after each server restart,
@@ -780,6 +831,7 @@ func (s *Server) spaHandler(root string, fs http.Handler) http.Handler {
 	tr := s.buildThemeResponse()
 	processed = strings.ReplaceAll(processed, "__THEME_STYLE__", buildThemeStyleTag(tr))
 	processed = strings.ReplaceAll(processed, "__SITE_META__", buildSiteMetaTag(tr))
+	processed = strings.ReplaceAll(processed, "__NAV_LINKS__", buildNavLinks(tr))
 	indexHTML := []byte(processed)
 	log.Printf("[static] cache-bust value: %s", bustValue)
 

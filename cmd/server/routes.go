@@ -513,6 +513,7 @@ func (s *Server) buildThemeResponse() ThemeResponse {
 		Meta:       meta,
 		Sections:   sections,
 		Template:   tmpl.Name,
+		Nav:        tmpl.Nav,
 	}
 }
 

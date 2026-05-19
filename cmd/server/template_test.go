@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -109,5 +110,53 @@ func TestLoadTemplateMalformedFirstBaseDirFallsThroughToValid(t *testing.T) {
 	}
 	if tpl.Label != "Valid" {
 		t.Errorf("Label = %q, want Valid", tpl.Label)
+	}
+}
+
+func TestLoadTemplateReadsNav(t *testing.T) {
+	base := t.TempDir()
+	writeTemplate(t, base, "withnav",
+		`{"name":"withnav","nav":[{"route":"home","hash":"#/home","label":"Home","priority":"high"}]}`)
+	tpl := LoadTemplate("withnav", base)
+	if len(tpl.Nav) != 1 {
+		t.Fatalf("Nav length = %d, want 1", len(tpl.Nav))
+	}
+	if tpl.Nav[0]["label"] != "Home" || tpl.Nav[0]["hash"] != "#/home" {
+		t.Errorf("Nav[0] = %v, want home entry", tpl.Nav[0])
+	}
+}
+
+func TestBuildNavLinksDefaultWhenNoTemplateNav(t *testing.T) {
+	out := buildNavLinks(ThemeResponse{})
+	if out != defaultNavLinks {
+		t.Errorf("empty Nav must yield defaultNavLinks")
+	}
+	if !strings.Contains(out, "🔴 Live") || !strings.Contains(out, ">Tools<") {
+		t.Errorf("default nav missing expected links: %s", out)
+	}
+	// An all-invalid Nav (no hash/label) also falls back to the default.
+	if buildNavLinks(ThemeResponse{Nav: []map[string]interface{}{{"route": "x"}}}) != defaultNavLinks {
+		t.Errorf("Nav with no valid entries must fall back to defaultNavLinks")
+	}
+}
+
+func TestBuildNavLinksFromTemplate(t *testing.T) {
+	tr := ThemeResponse{Nav: []map[string]interface{}{
+		{"route": "home", "hash": "#/home", "label": "Home", "priority": "high"},
+		{"route": "live", "hash": "#/live", "label": "Live"},
+		{"label": "skipped — no hash"},
+	}}
+	out := buildNavLinks(tr)
+	if !strings.Contains(out, `<a href="#/home" class="nav-link" data-route="home" data-priority="high">Home</a>`) {
+		t.Errorf("missing home link, got: %s", out)
+	}
+	if !strings.Contains(out, `<a href="#/live" class="nav-link" data-route="live">Live</a>`) {
+		t.Errorf("missing live link (priority omitted), got: %s", out)
+	}
+	if strings.Contains(out, "🔴") {
+		t.Errorf("template nav must not carry the default red dot")
+	}
+	if strings.Contains(out, "skipped") {
+		t.Errorf("entries without a hash must be skipped")
 	}
 }
