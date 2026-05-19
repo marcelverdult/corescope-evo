@@ -158,7 +158,7 @@ func seedTestData(t *testing.T, db *DB) {
 	db.conn.Exec(`INSERT INTO transmissions (raw_hex, hash, first_seen, route_type, payload_type, decoded_json, channel_hash, from_pubkey)
 		VALUES ('AABB', 'abc123def4567890', ?, 1, 4, '{"pubKey":"aabbccdd11223344","name":"TestRepeater","type":"ADVERT","timestamp":1700000000,"timestampISO":"2023-11-14T22:13:20.000Z","signature":"abcdef","flags":{"isRepeater":true},"lat":37.5,"lon":-122.0}', '#test', 'aabbccdd11223344')`, recent)
 	db.conn.Exec(`INSERT INTO transmissions (raw_hex, hash, first_seen, route_type, payload_type, decoded_json, channel_hash)
-		VALUES ('CCDD', '1234567890abcdef', ?, 1, 5, '{"type":"CHAN","channel":"#test","text":"Hello: World","sender":"TestUser"}', '#test')`, yesterday)
+		VALUES ('CCDD', '1234567890abcdef', ?, 1, 5, '{"type":"CHAN","channelHash":10,"channelHashHex":"0A","channel":"#test","text":"Hello: World","sender":"TestUser"}', '#test')`, yesterday)
 	// Second ADVERT for same node with different hash_size (raw_hex byte 0x1F → hs=1 vs 0xBB → hs=3)
 	db.conn.Exec(`INSERT INTO transmissions (raw_hex, hash, first_seen, route_type, payload_type, decoded_json, from_pubkey)
 		VALUES ('AA1F', 'def456abc1230099', ?, 1, 4, '{"pubKey":"aabbccdd11223344","name":"TestRepeater","type":"ADVERT","timestamp":1700000100,"timestampISO":"2023-11-14T22:14:40.000Z","signature":"fedcba","flags":{"isRepeater":true},"lat":37.5,"lon":-122.0}', 'aabbccdd11223344')`, yesterday)
@@ -623,6 +623,10 @@ func TestGetChannels(t *testing.T) {
 	}
 	if channels[0]["name"] != "#test" {
 		t.Errorf("expected #test channel, got %v", channels[0]["name"])
+	}
+	// hash is now a composite "<lowerhex>:<lowername>" key.
+	if channels[0]["hash"] != "0a:#test" {
+		t.Errorf("expected hash 0a:#test, got %v", channels[0]["hash"])
 	}
 }
 
@@ -1533,6 +1537,73 @@ func TestGetChannelsMultiple(t *testing.T) {
 	// #alpha, #beta, and "unknown" (empty channel)
 	if len(channels) < 2 {
 		t.Errorf("expected at least 2 channels, got %d", len(channels))
+	}
+}
+
+// TestGetChannelsDeduplicatesCaseVariants verifies that two channel_hash
+// values that differ only in case ("Public" vs "public") but share the same
+// channelHashHex collapse into a single channel entry with summed counts.
+func TestGetChannelsDeduplicatesCaseVariants(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	db.conn.Exec(`INSERT INTO observers (id, name, iata) VALUES ('obs1', 'Observer', 'SJC')`)
+	// "Public" — older, 2 messages.
+	db.conn.Exec(`INSERT INTO transmissions (raw_hex, hash, first_seen, route_type, payload_type, decoded_json, channel_hash)
+		VALUES ('AA', 'pubhash01', '2026-01-15T10:00:00Z', 1, 5,
+		'{"type":"CHAN","channelHash":17,"channelHashHex":"11","channel":"Public","text":"Alice: Hi","sender":"Alice"}', 'Public')`)
+	db.conn.Exec(`INSERT INTO transmissions (raw_hex, hash, first_seen, route_type, payload_type, decoded_json, channel_hash)
+		VALUES ('AB', 'pubhash02', '2026-01-15T10:01:00Z', 1, 5,
+		'{"type":"CHAN","channelHash":17,"channelHashHex":"11","channel":"Public","text":"Alice: Hi 2","sender":"Alice"}', 'Public')`)
+	// "public" — newer, 1 message. Same channelHashHex (uppercase variant
+	// here to also prove the LOWER() normalisation in SQL).
+	db.conn.Exec(`INSERT INTO transmissions (raw_hex, hash, first_seen, route_type, payload_type, decoded_json, channel_hash)
+		VALUES ('AC', 'pubhash03', '2026-01-15T10:05:00Z', 1, 5,
+		'{"type":"CHAN","channelHash":17,"channelHashHex":"11","channel":"public","text":"Bob: Newest","sender":"Bob"}', 'public')`)
+
+	db.conn.Exec(`INSERT INTO observations (transmission_id, observer_idx, snr, rssi, timestamp)
+		VALUES (1, 1, 12.0, -90, 1736935200)`)
+	db.conn.Exec(`INSERT INTO observations (transmission_id, observer_idx, snr, rssi, timestamp)
+		VALUES (2, 1, 12.0, -90, 1736935260)`)
+	db.conn.Exec(`INSERT INTO observations (transmission_id, observer_idx, snr, rssi, timestamp)
+		VALUES (3, 1, 12.0, -90, 1736935500)`)
+
+	channels, err := db.GetChannels()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(channels) != 1 {
+		t.Fatalf("expected 1 deduplicated channel, got %d: %v", len(channels), channels)
+	}
+	ch := channels[0]
+	if ch["hash"] != "11:public" {
+		t.Errorf("expected composite hash '11:public', got %v", ch["hash"])
+	}
+	// Most-recently-active cased name wins.
+	if ch["name"] != "public" {
+		t.Errorf("expected name 'public' (newest row), got %v", ch["name"])
+	}
+	if ch["messageCount"] != 3 {
+		t.Errorf("expected messageCount=3 (2+1 summed), got %v", ch["messageCount"])
+	}
+	if ch["lastMessage"] != "Newest" {
+		t.Errorf("expected lastMessage='Newest', got %v", ch["lastMessage"])
+	}
+	if ch["lastSender"] != "Bob" {
+		t.Errorf("expected lastSender='Bob', got %v", ch["lastSender"])
+	}
+
+	// GetChannelMessages with the composite key returns all 3 messages
+	// regardless of channel_hash case.
+	msgs, total, err := db.GetChannelMessages("11:public", 100, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 3 {
+		t.Errorf("expected total=3 messages for composite key, got %d", total)
+	}
+	if len(msgs) != 3 {
+		t.Errorf("expected 3 messages for composite key, got %d", len(msgs))
 	}
 }
 

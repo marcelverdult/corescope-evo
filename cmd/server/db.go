@@ -7,6 +7,7 @@ import (
 	"log"
 	"math"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -1470,7 +1471,8 @@ func (db *DB) GetChannels(region ...string) ([]map[string]interface{}, error) {
 					MAX(t.first_seen) AS last_activity,
 					(SELECT t2.decoded_json FROM transmissions t2
 					 WHERE t2.channel_hash = t.channel_hash AND t2.payload_type = 5
-					 ORDER BY t2.first_seen DESC LIMIT 1) AS sample_json
+					 ORDER BY t2.first_seen DESC LIMIT 1) AS sample_json,
+					LOWER(json_extract(t.decoded_json,'$.channelHashHex')) AS ch_hex
 				FROM transmissions t
 				JOIN observations o ON o.transmission_id = t.id
 				LEFT JOIN observers obs ON obs.rowid = o.observer_idx
@@ -1486,7 +1488,8 @@ func (db *DB) GetChannels(region ...string) ([]map[string]interface{}, error) {
 					MAX(t.first_seen) AS last_activity,
 					(SELECT t2.decoded_json FROM transmissions t2
 					 WHERE t2.channel_hash = t.channel_hash AND t2.payload_type = 5
-					 ORDER BY t2.first_seen DESC LIMIT 1) AS sample_json
+					 ORDER BY t2.first_seen DESC LIMIT 1) AS sample_json,
+					LOWER(json_extract(t.decoded_json,'$.channelHashHex')) AS ch_hex
 				FROM transmissions t
 				JOIN observations o ON o.transmission_id = t.id
 				WHERE t.payload_type = 5
@@ -1506,7 +1509,8 @@ func (db *DB) GetChannels(region ...string) ([]map[string]interface{}, error) {
 				MAX(first_seen) AS last_activity,
 				(SELECT t2.decoded_json FROM transmissions t2
 				 WHERE t2.channel_hash = t.channel_hash AND t2.payload_type = 5
-				 ORDER BY t2.first_seen DESC LIMIT 1) AS sample_json
+				 ORDER BY t2.first_seen DESC LIMIT 1) AS sample_json,
+				LOWER(json_extract(decoded_json,'$.channelHashHex')) AS ch_hex
 			FROM transmissions t
 			WHERE payload_type = 5
 			AND channel_hash IS NOT NULL
@@ -1522,13 +1526,16 @@ func (db *DB) GetChannels(region ...string) ([]map[string]interface{}, error) {
 	defer rows.Close()
 
 	channels := make([]map[string]interface{}, 0)
+	// compositeKey -> index in channels slice, so case variants of the same
+	// channel ("Public"/"public") collapse into one entry.
+	byKey := make(map[string]int)
 	for rows.Next() {
-		var chHash, lastActivity, sampleJSON sql.NullString
+		var chHash, lastActivity, sampleJSON, chHex sql.NullString
 		var msgCount int
-		if err := rows.Scan(&chHash, &msgCount, &lastActivity, &sampleJSON); err != nil {
+		if err := rows.Scan(&chHash, &msgCount, &lastActivity, &sampleJSON, &chHex); err != nil {
 			continue
 		}
-		channelName := nullStr(chHash)
+		channelName := nullStrVal(chHash)
 		if channelName == "" {
 			continue
 		}
@@ -1551,12 +1558,38 @@ func (db *DB) GetChannels(region ...string) ([]map[string]interface{}, error) {
 			}
 		}
 
+		// compositeKey = "<lowerHex>:<lowerName>"; collapses case variants.
+		compositeKey := nullStrVal(chHex) + ":" + strings.ToLower(channelName)
+		lastAct := nullStrVal(lastActivity)
+		if idx, ok := byKey[compositeKey]; ok {
+			// Merge into the existing entry: sum counts and keep the
+			// most-recently-active row's cased name + last message.
+			existing := channels[idx]
+			existing["messageCount"] = existing["messageCount"].(int) + msgCount
+			prevAct, _ := existing["lastActivity"].(string)
+			if lastAct > prevAct {
+				existing["name"] = channelName
+				existing["lastMessage"] = lastMessage
+				existing["lastSender"] = lastSender
+				existing["lastActivity"] = lastAct
+			}
+			continue
+		}
+		byKey[compositeKey] = len(channels)
 		channels = append(channels, map[string]interface{}{
-			"hash": channelName, "name": channelName,
+			"hash": compositeKey, "name": channelName,
 			"lastMessage": lastMessage, "lastSender": lastSender,
-			"messageCount": msgCount, "lastActivity": nullStr(lastActivity),
+			"messageCount": msgCount, "lastActivity": lastAct,
 		})
 	}
+
+	// Re-sort by lastActivity descending: the SQL ORDER BY was per
+	// channel_hash group, but the in-Go merge can change relative order.
+	sort.SliceStable(channels, func(i, j int) bool {
+		ai, _ := channels[i]["lastActivity"].(string)
+		aj, _ := channels[j]["lastActivity"].(string)
+		return ai > aj
+	})
 
 	// Store in cache (60s TTL)
 	db.channelsCacheMu.Lock()
@@ -1704,10 +1737,23 @@ func (db *DB) GetChannelMessages(channelHash string, limit, offset int, region .
 		}
 	}
 
+	// The channelHash parameter may be a composite "<hex>:<lowername>" key
+	// (decrypted CHAN channels) or a plain key (enc_XX, or a legacy name).
+	// channelHashFilter builds the WHERE fragment + args for a given
+	// table-qualifier prefix ("t." for aliased queries, "" for bare ones).
+	channelHashFilter := func(qual string) (string, []interface{}) {
+		if hexPart, namePart, ok := parseCompositeChannelKey(channelHash); ok {
+			frag := fmt.Sprintf("LOWER(%schannel_hash) = ? AND LOWER(json_extract(%sdecoded_json,'$.channelHashHex')) = ?", qual, qual)
+			return frag, []interface{}{strings.ToLower(namePart), strings.ToLower(hexPart)}
+		}
+		return qual + "channel_hash = ?", []interface{}{channelHash}
+	}
+
 	// 1) Total count (after region filter, before pagination).
+	countFilter, countFilterArgs := channelHashFilter("t.")
 	countSQL := `SELECT COUNT(*) FROM transmissions t
-		WHERE t.channel_hash = ? AND t.payload_type = 5` + regionFilter
-	countArgs := []interface{}{channelHash}
+		WHERE ` + countFilter + ` AND t.payload_type = 5` + regionFilter
+	countArgs := append([]interface{}{}, countFilterArgs...)
 	countArgs = append(countArgs, regionArgs...)
 	var total int
 	if err := db.conn.QueryRow(countSQL, countArgs...).Scan(&total); err != nil {
@@ -1716,27 +1762,34 @@ func (db *DB) GetChannelMessages(channelHash string, limit, offset int, region .
 
 	// 2) Page of transmission IDs — newest LIMIT msgs minus OFFSET, returned
 	//    in ASC order to match prior API contract (tail of message log).
-	pageSQL := `SELECT t.id FROM (
-			SELECT id FROM transmissions
-			WHERE channel_hash = ? AND payload_type = 5
-			ORDER BY first_seen DESC
-			LIMIT ? OFFSET ?
-		) t`
+	var pageSQL string
+	var pageFilterArgs []interface{}
 	// When a region filter is in play, we must filter on the inner subquery
 	// against the transmissions table — re-use the same EXISTS form but
 	// wrap so we still get DESC-then-ASC pagination.
 	if len(regionCodes) > 0 {
+		var pageFilter string
+		pageFilter, pageFilterArgs = channelHashFilter("t.")
 		pageSQL = `SELECT id FROM (
 				SELECT t.id, t.first_seen FROM transmissions t
-				WHERE t.channel_hash = ? AND t.payload_type = 5` + regionFilter + `
+				WHERE ` + pageFilter + ` AND t.payload_type = 5` + regionFilter + `
 				ORDER BY t.first_seen DESC
 				LIMIT ? OFFSET ?
 			) sub
 			ORDER BY first_seen ASC`
 	} else {
-		pageSQL += ` ORDER BY (SELECT first_seen FROM transmissions WHERE id = t.id) ASC`
+		// Inner subquery aliases the table as t so the composite-key
+		// filter (which uses decoded_json) can be table-qualified.
+		var pageFilter string
+		pageFilter, pageFilterArgs = channelHashFilter("t.")
+		pageSQL = `SELECT t.id FROM (
+				SELECT t.id FROM transmissions t
+				WHERE ` + pageFilter + ` AND t.payload_type = 5
+				ORDER BY t.first_seen DESC
+				LIMIT ? OFFSET ?
+			) t ORDER BY (SELECT first_seen FROM transmissions WHERE id = t.id) ASC`
 	}
-	pageArgs := []interface{}{channelHash}
+	pageArgs := append([]interface{}{}, pageFilterArgs...)
 	pageArgs = append(pageArgs, regionArgs...)
 	pageArgs = append(pageArgs, limit, offset)
 
@@ -2069,6 +2122,36 @@ func (db *DB) QueryMultiNodePackets(pubkeys []string, limit, offset int, order, 
 }
 
 // --- Helpers ---
+
+// parseCompositeChannelKey splits a channel key of the form "<hex>:<name>"
+// into its hex and name parts. It returns ok=true only when a ":" exists and
+// the prefix before the first ":" is 1-2 hex digits — that is the composite
+// form produced for decrypted CHAN channels. Plain keys (enc_XX, legacy
+// names) return ok=false and should be matched against channel_hash directly.
+func parseCompositeChannelKey(key string) (hexPart, namePart string, ok bool) {
+	idx := strings.Index(key, ":")
+	if idx < 0 {
+		return "", "", false
+	}
+	prefix := key[:idx]
+	if !isHexByteString(prefix) {
+		return "", "", false
+	}
+	return prefix, key[idx+1:], true
+}
+
+// isHexByteString reports whether s is 1 or 2 hexadecimal digits.
+func isHexByteString(s string) bool {
+	if len(s) < 1 || len(s) > 2 {
+		return false
+	}
+	for _, c := range s {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+			return false
+		}
+	}
+	return true
+}
 
 func scanNodeRow(rows *sql.Rows) map[string]interface{} {
 	var pk string

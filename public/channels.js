@@ -1417,8 +1417,19 @@
         // For live-decrypted user-added (PSK) channels, decryptLivePSKBatch
         // also stamps payload.channelKey ("user:<name>") so we route the
         // message to the correct sidebar row and to the open chat view.
-        // Falls back to channelName for server-known CHAN packets.
-        var channelKey = payload.channelKey || channelName;
+        // For server-known CHAN packets, build the composite key
+        // "<hex>:<lowername>" matching the backend so case variants
+        // ("Public"/"public") collapse into one sidebar row and DB-loaded
+        // entries (which use the same composite) merge correctly.
+        var channelKey = payload.channelKey;
+        if (!channelKey) {
+          var chHex = '';
+          if (typeof payload.channelHash === 'number') {
+            chHex = (payload.channelHash & 0xff).toString(16);
+            if (chHex.length < 2) chHex = '0' + chHex;
+          }
+          channelKey = chHex + ':' + channelName.toLowerCase();
+        }
         var rawText = payload.text || '';
         var sender = payload.sender || null;
         var displayText = rawText;
