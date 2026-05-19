@@ -186,6 +186,66 @@ func TestComputeNodeRelayFromRollup(t *testing.T) {
 	}
 }
 
+func TestNodeRollupPerf(t *testing.T) {
+	if testing.Short() {
+		t.Skip("perf test skipped in -short mode")
+	}
+	db := setupTestDBFile(t)
+	if err := ensureNodeRollupTable(db.path); err != nil {
+		t.Fatal(err)
+	}
+	rw, err := cachedRW(db.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// ~60k non-advert transmissions spread over ~7 days, each routed through
+	// one of 200 distinct 1-byte hop prefixes.
+	base := time.Now().UTC().Add(-6 * 24 * time.Hour)
+	tx, err := rw.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i <= 60000; i++ {
+		fs := base.Add(time.Duration(i) * 9 * time.Second).Format("2006-01-02T15:04:05Z")
+		hop := fmt.Sprintf("%02x", i%200)
+		if _, err := tx.Exec(`INSERT INTO transmissions(id,raw_hex,hash,first_seen,payload_type)
+			VALUES (?,?,?,?,1)`, i, "aa", fmt.Sprintf("h%d", i), fs); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.Exec(`INSERT INTO observations(transmission_id,observer_idx,timestamp,path_json)
+			VALUES (?,1,?,?)`, i, base.Add(time.Duration(i)*9*time.Second).Unix(),
+			`["`+hop+`"]`); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if err := runNodeRollupMaintenance(rw); err != nil {
+		t.Fatal(err)
+	}
+
+	// Build 50 pubkeys whose prefixes are in the rolled-up set.
+	pubkeys := make([]string, 50)
+	for i := range pubkeys {
+		pubkeys[i] = fmt.Sprintf("%02x", i) +
+			"00000000000000000000000000000000000000000000000000000000000000"
+	}
+	start := time.Now()
+	res, err := computeNodeRelayFromRollup(db, pubkeys, 24)
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res) != 50 {
+		t.Fatalf("got %d results want 50", len(res))
+	}
+	if elapsed > 500*time.Millisecond {
+		t.Fatalf("bulk read took %s, want < 500ms", elapsed)
+	}
+	t.Logf("bulk read of 50 pubkeys over 60k-tx rollup: %s", elapsed)
+}
+
 func TestNodeRollupParity(t *testing.T) {
 	db := setupTestDBFile(t)
 	if err := ensureNodeRollupTable(db.path); err != nil {
