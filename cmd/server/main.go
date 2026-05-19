@@ -246,6 +246,9 @@ func main() {
 	if err := ensureChannelRollupTable(dbPath); err != nil {
 		log.Fatalf("ensureChannelRollupTable: %v", err)
 	}
+	if err := ensureNodeRollupTable(dbPath); err != nil {
+		log.Fatalf("ensureNodeRollupTable: %v", err)
+	}
 
 	// Soft-delete observers that are in the blacklist (mark inactive=1) so
 	// historical data from a prior unblocked window is hidden too.
@@ -639,6 +642,23 @@ func main() {
 					continue
 				}
 				runChannelRollupMaintenanceGuarded(rw)
+			}
+		}()
+		go backfillNodeRollupAsync(dbPath)
+		nodeRollupTicker := time.NewTicker(5 * time.Minute)
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("[node-rollup] maintenance panic recovered: %v", r)
+				}
+			}()
+			for range nodeRollupTicker.C {
+				rw, err := cachedRW(dbPath)
+				if err != nil {
+					log.Printf("[node-rollup] maintenance open rw: %v", err)
+					continue
+				}
+				runNodeRollupMaintenanceGuarded(rw)
 			}
 		}()
 	}
