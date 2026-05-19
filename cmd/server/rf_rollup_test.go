@@ -253,6 +253,9 @@ func TestRFFallbackWhenRollupNotReady(t *testing.T) {
 	if res == nil {
 		t.Fatal("nil result")
 	}
+	if got := res["totalAllPackets"].(int); got != 1 {
+		t.Fatalf("expected in-memory fallback to report totalAllPackets=1, got %d", got)
+	}
 }
 
 func TestRFRollupParity(t *testing.T) {

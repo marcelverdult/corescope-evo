@@ -355,8 +355,12 @@ func rfAssembleRollupResult(tot *agg, byType map[int]*agg,
 	}
 
 	timeSpanHours := 0.0
-	if len(packetsPerHour) > 1 {
-		timeSpanHours = float64(len(packetsPerHour) - 1)
+	if len(packetsPerHour) >= 2 {
+		first, errF := time.Parse("2006-01-02T15", packetsPerHour[0].Hour)
+		last, errL := time.Parse("2006-01-02T15", packetsPerHour[len(packetsPerHour)-1].Hour)
+		if errF == nil && errL == nil {
+			timeSpanHours = last.Sub(first).Hours()
+		}
 	}
 
 	scatter := scatterAll

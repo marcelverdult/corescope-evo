@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 )
 
@@ -33,7 +34,24 @@ func rfSetRollupWatermark(rw *sql.DB, id int64) error {
 	if err != nil {
 		return fmt.Errorf("set watermark: %w", err)
 	}
-	return err
+	return nil
+}
+
+// rfRollupMaintMu serializes backfill vs the periodic maintenance job so a
+// long backfill is not duplicated by a ticker firing mid-run.
+var rfRollupMaintMu sync.Mutex
+
+// runRFRollupMaintenanceGuarded runs maintenance only if no backfill/maintenance
+// run is already in progress; otherwise it skips this cycle.
+func runRFRollupMaintenanceGuarded(rw *sql.DB) {
+	if !rfRollupMaintMu.TryLock() {
+		log.Printf("[rf-rollup] maintenance skipped — run already in progress")
+		return
+	}
+	defer rfRollupMaintMu.Unlock()
+	if err := runRFRollupMaintenance(rw); err != nil {
+		log.Printf("[rf-rollup] maintenance: %v", err)
+	}
 }
 
 // runRFRollupMaintenance recomputes every hour bucket that has observations
@@ -87,6 +105,8 @@ func backfillRFRollupAsync(dbPath string) {
 		log.Printf("[rf-rollup] backfill open rw: %v", err)
 		return
 	}
+	rfRollupMaintMu.Lock()
+	defer rfRollupMaintMu.Unlock()
 	start := time.Now()
 	if err := runRFRollupMaintenance(rw); err != nil {
 		log.Printf("[rf-rollup] backfill failed: %v", err)

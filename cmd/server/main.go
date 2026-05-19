@@ -618,9 +618,7 @@ func main() {
 					log.Printf("[rf-rollup] maintenance open rw: %v", err)
 					continue
 				}
-				if err := runRFRollupMaintenance(rw); err != nil {
-					log.Printf("[rf-rollup] maintenance: %v", err)
-				}
+				runRFRollupMaintenanceGuarded(rw)
 			}
 		}()
 	}
