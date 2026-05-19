@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"testing"
 	"time"
 )
@@ -182,5 +183,49 @@ func TestComputeNodeRelayFromRollup(t *testing.T) {
 	want := 3.0 / 12.0
 	if r.Usefulness < want-0.0001 || r.Usefulness > want+0.0001 {
 		t.Errorf("Usefulness=%v want %v", r.Usefulness, want)
+	}
+}
+
+func TestNodeRollupParity(t *testing.T) {
+	db := setupTestDBFile(t)
+	if err := ensureNodeRollupTable(db.path); err != nil {
+		t.Fatal(err)
+	}
+	// Three non-advert transmissions in the current hour, each routed
+	// through hop "ab" (the 1-byte prefix of the node under test).
+	hour := time.Now().UTC()
+	for i := 1; i <= 3; i++ {
+		fs := hour.Add(time.Duration(i) * time.Minute).Format("2006-01-02T15:04:05Z")
+		ts := hour.Add(time.Duration(i) * time.Minute).Unix()
+		mustExec(t, db, `INSERT INTO transmissions(id,raw_hex,hash,first_seen,payload_type)
+			VALUES (?,?,?,?,1)`, i, "aa", fmt.Sprintf("h%d", i), fs)
+		mustExec(t, db, `INSERT INTO observations(transmission_id,observer_idx,timestamp,path_json)
+			VALUES (?,1,?,'["ab"]')`, i, ts)
+	}
+	rw, err := cachedRW(db.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runNodeRollupMaintenance(rw); err != nil {
+		t.Fatal(err)
+	}
+
+	pk := "ab00000000000000000000000000000000000000000000000000000000000000"
+
+	// In-memory reference.
+	ps := loadStore(t, db.path, 0)
+	memInfo := ps.GetRepeaterRelayInfo(pk, 24)
+
+	// Rollup path.
+	ps.analyticsSQLBackend = true
+	bulk := ps.GetBulkNodeRelay([]string{pk}, 24)
+	rollupInfo := bulk[pk].Relay
+
+	if rollupInfo.RelayCount24h != memInfo.RelayCount24h {
+		t.Fatalf("RelayCount24h rollup=%d in-memory=%d",
+			rollupInfo.RelayCount24h, memInfo.RelayCount24h)
+	}
+	if rollupInfo.RelayCount24h != 3 {
+		t.Fatalf("RelayCount24h=%d want 3", rollupInfo.RelayCount24h)
 	}
 }
