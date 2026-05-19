@@ -230,3 +230,24 @@ func TestComputeRFFromRollupShape(t *testing.T) {
 		t.Errorf("totalAllPackets=%v want 2", res["totalAllPackets"])
 	}
 }
+
+func TestRFFallbackWhenRollupNotReady(t *testing.T) {
+	db := setupTestDBFile(t)
+	if err := ensureRFRollupTable(db.path); err != nil {
+		t.Fatal(err)
+	}
+	mustExec(t, db, `INSERT INTO transmissions(id,raw_hex,hash,first_seen,payload_type)
+		VALUES (1,'aabb','h1','2026-05-18T10:00:00Z',1)`)
+	mustExec(t, db, `INSERT INTO observations(id,transmission_id,observer_idx,snr,rssi,timestamp)
+		VALUES (1,1,1,5.0,-80.0,1779098400)`)
+	// rollup NOT populated (no maintenance run) -> rfRollupReady is false
+	ps := loadStore(t, db.path, 0)
+	ps.analyticsSQLBackend = true
+	res, err := ps.GetAnalyticsRFWithWindow("", TimeWindow{})
+	if err != nil {
+		t.Fatalf("expected in-memory fallback, got error: %v", err)
+	}
+	if res == nil {
+		t.Fatal("nil result")
+	}
+}

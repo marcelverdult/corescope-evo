@@ -35,7 +35,7 @@ func (s *PacketStore) GetAnalyticsRFWithWindow(region string, window TimeWindow)
 	s.cacheMu.Unlock()
 
 	var result map[string]interface{}
-	if s.analyticsSQLBackend {
+	if s.analyticsSQLBackend && s.db != nil && rfRollupReady(s.db.conn) {
 		r, err := computeAnalyticsRFSQL(s.db, region, window)
 		if err != nil {
 			return nil, err
