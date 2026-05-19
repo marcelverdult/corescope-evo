@@ -141,3 +141,35 @@ func TestRecomputeRFRollupHour(t *testing.T) {
 		t.Fatalf("distinct_tx=%d want 2", distinctTx)
 	}
 }
+
+func TestRFRollupMaintenance(t *testing.T) {
+	db := setupTestDBFile(t)
+	if err := ensureRFRollupTable(db.path); err != nil {
+		t.Fatal(err)
+	}
+	mustExec(t, db, `INSERT INTO transmissions(id,raw_hex,hash,first_seen,payload_type)
+		VALUES (1,'aabb','h1','2026-05-18T10:00:00Z',1)`)
+	mustExec(t, db, `INSERT INTO observations(id,transmission_id,observer_idx,snr,rssi,timestamp)
+		VALUES (1,1,1,5.0,-80.0,1779098400)`)
+	rw, err := cachedRW(db.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runRFRollupMaintenance(rw); err != nil {
+		t.Fatalf("maintenance 1: %v", err)
+	}
+	var n int
+	rw.QueryRow(`SELECT SUM(n_obs) FROM rf_rollup`).Scan(&n)
+	if n != 1 {
+		t.Fatalf("after first run n_obs=%d want 1", n)
+	}
+	mustExec(t, db, `INSERT INTO observations(id,transmission_id,observer_idx,snr,rssi,timestamp)
+		VALUES (2,1,2,6.0,-81.0,1779098500)`)
+	if err := runRFRollupMaintenance(rw); err != nil {
+		t.Fatalf("maintenance 2: %v", err)
+	}
+	rw.QueryRow(`SELECT SUM(n_obs) FROM rf_rollup`).Scan(&n)
+	if n != 2 {
+		t.Fatalf("after second run n_obs=%d want 2", n)
+	}
+}
