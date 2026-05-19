@@ -61,6 +61,7 @@ COPY --from=builder /corescope-server /corescope-ingestor /corescope-decrypt /ap
 
 # Frontend assets + config
 COPY public/ ./public/
+COPY templates/ ./templates/
 COPY config.example.json channel-rainbow.json ./
 
 # Bake git commit SHA — manage.sh and CI write .git-commit before build
