@@ -45,15 +45,23 @@
   }
 
   function init(container) {
-    // If SITE_CONFIG is not yet set (cold page load — theme fetch hasn't
-    // resolved yet), register a one-shot listener so config-gated sections
-    // (donate block, announcement modal, first-visit chooser) appear as soon
-    // as the config arrives, without requiring the user to navigate away and
-    // back.  If config IS already set (subsequent navigations), skip the
-    // listener entirely to avoid any double-render.
+    // On a cold page load the /api/config/theme fetch hasn't resolved yet, so
+    // SITE_CONFIG is either unset or carries only client defaults — config-gated
+    // sections (donate block, announcement modal, first-visit chooser) and the
+    // branded hero would render with placeholder data. Register a theme-changed
+    // listener that re-renders once the *server* config has actually been
+    // applied. Earlier pipeline runs (a dark-mode toggle, an override-only CSS
+    // pass) also fire theme-changed but before the server config lands — those
+    // are ignored via the initDone guard so the one-shot isn't consumed early.
+    // On subsequent navigations the server config is already in, so no listener
+    // is registered and there is no double-render.
     if (_themeReadyHandler) { window.removeEventListener('theme-changed', _themeReadyHandler); _themeReadyHandler = null; }
-    if (!window.SITE_CONFIG) {
+    var serverReady = window._customizerV2 ? window._customizerV2.initDone : !!window.SITE_CONFIG;
+    if (!serverReady) {
       _themeReadyHandler = function () {
+        // Ignore premature theme-changed events fired before the server config
+        // is in — keep listening so the real config still triggers a re-render.
+        if (window._customizerV2 && !window._customizerV2.initDone) return;
         window.removeEventListener('theme-changed', _themeReadyHandler);
         _themeReadyHandler = null;
         renderHomeFlow(container);
