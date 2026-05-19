@@ -299,6 +299,29 @@ func TestRFRollupParity(t *testing.T) {
 	}
 }
 
+func TestRecomputeRFRollupHourRangeBoundary(t *testing.T) {
+	db := setupTestDBFile(t)
+	if err := ensureRFRollupTable(db.path); err != nil {
+		t.Fatal(err)
+	}
+	mustExec(t, db, `INSERT INTO transmissions(id,raw_hex,hash,first_seen,payload_type)
+		VALUES (1,'aabb','h1','2026-05-18T10:00:00Z',1)`)
+	// 1779098400 = 2026-05-18T10:00:00Z. In-hour: +0, +3599. Out: -1, +3600.
+	mustExec(t, db, `INSERT INTO observations(transmission_id,observer_idx,snr,rssi,timestamp)
+		VALUES (1,1,5.0,-80.0,1779098399),(1,1,5.0,-80.0,1779098400),
+		       (1,1,5.0,-80.0,1779101999),(1,1,5.0,-80.0,1779102000)`)
+	rw, _ := cachedRW(db.path)
+	if err := recomputeRFRollupHour(rw, "2026-05-18T10"); err != nil {
+		t.Fatal(err)
+	}
+	var nObs int
+	rw.QueryRow(`SELECT COALESCE(SUM(n_obs),0) FROM rf_rollup WHERE hour=?`,
+		"2026-05-18T10").Scan(&nObs)
+	if nObs != 2 {
+		t.Fatalf("hour 2026-05-18T10 n_obs=%d, want 2 (only the two in-range rows)", nObs)
+	}
+}
+
 func rfToF(v interface{}) float64 {
 	switch n := v.(type) {
 	case float64:

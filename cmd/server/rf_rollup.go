@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"time"
 )
 
 // Fixed histogram bins. Values outside the range clamp to the end bin.
@@ -129,25 +130,21 @@ func newRFCell() *rfCell {
 
 // recomputeRFRollupHour rebuilds all rollup rows for the given hour bucket
 // ("2026-05-18T10") from raw observations. Idempotent: deletes then re-inserts.
+// The raw read runs outside the write transaction and uses an indexed
+// timestamp range so it does not hold the write lock or full-scan.
 func recomputeRFRollupHour(rw *sql.DB, hour string) error {
-	tx, err := rw.Begin()
+	ht, err := time.Parse("2006-01-02T15", hour)
 	if err != nil {
-		return fmt.Errorf("recompute begin: %w", err)
+		return fmt.Errorf("recompute parse hour %q: %w", hour, err)
 	}
-	defer tx.Rollback()
+	hourStart := ht.UTC().Unix()
+	hourEnd := hourStart + 3600
 
-	if _, err := tx.Exec(`DELETE FROM rf_rollup WHERE hour=?`, hour); err != nil {
-		return fmt.Errorf("recompute delete rollup: %w", err)
-	}
-	if _, err := tx.Exec(`DELETE FROM rf_rollup_tx WHERE hour=?`, hour); err != nil {
-		return fmt.Errorf("recompute delete rollup_tx: %w", err)
-	}
-
-	rows, err := tx.Query(`
+	rows, err := rw.Query(`
 		SELECT t.payload_type, o.observer_idx, o.snr, o.rssi, o.transmission_id,
 		       length(t.raw_hex)/2
 		FROM observations o JOIN transmissions t ON t.id = o.transmission_id
-		WHERE strftime('%Y-%m-%dT%H', o.timestamp, 'unixepoch') = ?`, hour)
+		WHERE o.timestamp >= ? AND o.timestamp < ?`, hourStart, hourEnd)
 	if err != nil {
 		return fmt.Errorf("recompute scan: %w", err)
 	}
@@ -224,7 +221,21 @@ func recomputeRFRollupHour(rw *sql.DB, hour string) error {
 		txByType[pt][txID] = true
 	}
 	rows.Close()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("recompute rows: %w", err)
+	}
 
+	tx, err := rw.Begin()
+	if err != nil {
+		return fmt.Errorf("recompute begin: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM rf_rollup WHERE hour=?`, hour); err != nil {
+		return fmt.Errorf("recompute delete rollup: %w", err)
+	}
+	if _, err := tx.Exec(`DELETE FROM rf_rollup_tx WHERE hour=?`, hour); err != nil {
+		return fmt.Errorf("recompute delete rollup_tx: %w", err)
+	}
 	for key, c := range cells {
 		if err := rfInsertCell(tx, hour, key[0], key[1], c); err != nil {
 			return err

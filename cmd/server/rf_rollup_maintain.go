@@ -81,6 +81,7 @@ func runRFRollupMaintenance(rw *sql.DB) error {
 		if err := recomputeRFRollupHour(rw, h); err != nil {
 			return err
 		}
+		time.Sleep(50 * time.Millisecond)
 	}
 	var maxID sql.NullInt64
 	if err := rw.QueryRow(`SELECT MAX(id) FROM observations`).Scan(&maxID); err != nil {
