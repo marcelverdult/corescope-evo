@@ -48,6 +48,47 @@ func TestNodeHopKeys(t *testing.T) {
 	}
 }
 
+func TestNodeRollupMaintenance(t *testing.T) {
+	db := setupTestDBFile(t)
+	if err := ensureNodeRollupTable(db.path); err != nil {
+		t.Fatal(err)
+	}
+	mustExec(t, db, `INSERT INTO transmissions(id,raw_hex,hash,first_seen,payload_type)
+		VALUES (1,'aa','h1','2026-05-18T10:00:00Z',1)`)
+	mustExec(t, db, `INSERT INTO observations(transmission_id,observer_idx,timestamp,path_json)
+		VALUES (1,1,1779098400,'["ab"]')`)
+	rw, err := cachedRW(db.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !(!nodeRollupReady(rw)) {
+		t.Fatal("rollup should not be ready before first run")
+	}
+	if err := runNodeRollupMaintenance(rw); err != nil {
+		t.Fatalf("maintenance 1: %v", err)
+	}
+	if !nodeRollupReady(rw) {
+		t.Fatal("rollup should be ready after first run")
+	}
+	var ab int
+	rw.QueryRow(`SELECT COALESCE(relay_count,0) FROM node_rollup WHERE hop_key='ab'`).Scan(&ab)
+	if ab != 1 {
+		t.Fatalf("after run 1 relay_count=%d want 1", ab)
+	}
+	// New observation on a new transmission in the same hour.
+	mustExec(t, db, `INSERT INTO transmissions(id,raw_hex,hash,first_seen,payload_type)
+		VALUES (2,'bb','h2','2026-05-18T10:20:00Z',1)`)
+	mustExec(t, db, `INSERT INTO observations(transmission_id,observer_idx,timestamp,path_json)
+		VALUES (2,1,1779099600,'["ab"]')`)
+	if err := runNodeRollupMaintenance(rw); err != nil {
+		t.Fatalf("maintenance 2: %v", err)
+	}
+	rw.QueryRow(`SELECT COALESCE(relay_count,0) FROM node_rollup WHERE hop_key='ab'`).Scan(&ab)
+	if ab != 2 {
+		t.Fatalf("after run 2 relay_count=%d want 2", ab)
+	}
+}
+
 func TestRecomputeNodeRollupHour(t *testing.T) {
 	db := setupTestDBFile(t)
 	if err := ensureNodeRollupTable(db.path); err != nil {
