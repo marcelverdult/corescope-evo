@@ -48,6 +48,40 @@ func TestChannelRollupMaintenance(t *testing.T) {
 	}
 }
 
+func TestComputeChannelsFromRollup(t *testing.T) {
+	db := setupTestDBFile(t)
+	if err := ensureChannelRollupTable(db.path); err != nil {
+		t.Fatal(err)
+	}
+	mustExec(t, db, `INSERT INTO transmissions(id,raw_hex,hash,first_seen,payload_type,decoded_json) VALUES
+		(1,'aa','h1','2026-05-18T10:00:00Z',5,'{"channel_hash":"7","channel":"#test","sender":"alice","text":"hello"}'),
+		(2,'bb','h2','2026-05-18T10:30:00Z',5,'{"channel_hash":"7","channel":"#test","sender":"bob","text":"hi"}')`)
+	mustExec(t, db, `INSERT INTO observations(transmission_id,observer_idx,timestamp)
+		VALUES (1,1,1779098400),(2,1,1779100200)`)
+	rw, _ := cachedRW(db.path)
+	if err := runChannelRollupMaintenance(rw); err != nil {
+		t.Fatal(err)
+	}
+	win := TimeWindow{Since: "2026-05-18T00:00:00Z", Until: "2026-05-19T00:00:00Z"}
+	res, err := computeChannelsFromRollup(db, "", win)
+	if err != nil {
+		t.Fatalf("computeChannelsFromRollup: %v", err)
+	}
+	for _, k := range []string{"activeChannels", "decryptable", "channels", "topSenders",
+		"channelTimeline", "msgLengths"} {
+		if _, ok := res[k]; !ok {
+			t.Errorf("missing key %q", k)
+		}
+	}
+	if res["activeChannels"].(int) != 1 {
+		t.Errorf("activeChannels=%v want 1", res["activeChannels"])
+	}
+	chans := res["channels"].([]map[string]interface{})
+	if len(chans) != 1 || chans[0]["messages"].(int) != 2 || chans[0]["senders"].(int) != 2 {
+		t.Errorf("channels wrong: %#v", chans)
+	}
+}
+
 func TestRecomputeChannelRollupHour(t *testing.T) {
 	db := setupTestDBFile(t)
 	if err := ensureChannelRollupTable(db.path); err != nil {
