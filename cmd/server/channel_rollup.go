@@ -74,14 +74,12 @@ type chChanCell struct {
 	haveMsglen               bool
 	msglenBins               []int
 	senders                  map[string]int
-	txSeen                   map[int]bool
 }
 
 func newChChanCell() *chChanCell {
 	return &chChanCell{
 		msglenBins: make([]int, chMsgLenBinCount),
 		senders:    map[string]int{},
-		txSeen:     map[int]bool{},
 	}
 }
 
@@ -194,7 +192,6 @@ func recomputeChannelRollupHour(rw *sql.DB, hour string) error {
 			c.haveMsglen = true
 			c.msglenBins[rfBinIndex(n, chMsgLenBinMin, chMsgLenBinWidth, chMsgLenBinCount)]++
 		}
-		c.txSeen[txID] = true
 		if txByChan[hash] == nil {
 			txByChan[hash] = map[int]bool{}
 		}

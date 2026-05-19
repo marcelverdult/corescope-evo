@@ -172,6 +172,9 @@ func computeChannelsFromRollup(db *DB, region string, window TimeWindow) (map[st
 		return channels[i]["messages"].(int) > channels[j]["messages"].(int)
 	})
 
+	// NOTE: msgLengths here is a pre-binned histogram {bins,min,max}; the
+	// in-memory computeAnalyticsChannels returns it as a raw []int. The
+	// frontend handles both shapes; any Go consumer must not type-assert.
 	return map[string]interface{}{
 		"activeChannels":  len(channels),
 		"decryptable":     decryptable,
