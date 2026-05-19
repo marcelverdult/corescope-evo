@@ -173,3 +173,36 @@ func TestRFRollupMaintenance(t *testing.T) {
 		t.Fatalf("after second run n_obs=%d want 2", n)
 	}
 }
+
+func TestComputeRFFromRollupShape(t *testing.T) {
+	db := setupTestDBFile(t)
+	if err := ensureRFRollupTable(db.path); err != nil {
+		t.Fatal(err)
+	}
+	mustExec(t, db, `INSERT INTO transmissions(id,raw_hex,hash,first_seen,payload_type)
+		VALUES (1,'aabb','h1','2026-05-18T10:00:00Z',1)`)
+	// 1779098400 / 1779098410 are real UTC epoch seconds inside hour 2026-05-18T10.
+	mustExec(t, db, `INSERT INTO observations(id,transmission_id,observer_idx,snr,rssi,timestamp)
+		VALUES (1,1,1,5.0,-80.0,1779098400),(2,1,2,7.0,-90.0,1779098410)`)
+	rw, _ := cachedRW(db.path)
+	if err := runRFRollupMaintenance(rw); err != nil {
+		t.Fatal(err)
+	}
+	// Explicit window covering the fixture (do NOT use TimeWindow{} — its 24h
+	// default is relative to wall-clock now and would exclude fixed past data).
+	win := TimeWindow{Since: "2026-05-18T00:00:00Z", Until: "2026-05-19T00:00:00Z"}
+	res, err := computeRFFromRollup(db, "", win)
+	if err != nil {
+		t.Fatalf("computeRFFromRollup: %v", err)
+	}
+	for _, k := range []string{"totalPackets", "totalAllPackets", "totalTransmissions",
+		"snr", "rssi", "snrValues", "rssiValues", "packetSizes", "packetsPerHour",
+		"payloadTypes", "snrByType", "signalOverTime", "scatterData", "timeSpanHours"} {
+		if _, ok := res[k]; !ok {
+			t.Errorf("missing key %q", k)
+		}
+	}
+	if res["totalAllPackets"].(int) != 2 {
+		t.Errorf("totalAllPackets=%v want 2", res["totalAllPackets"])
+	}
+}
