@@ -29,6 +29,7 @@ func ensureServerIndexes(dbPath string) error {
 		// already creates them; see cmd/ingestor/db.go applySchema).
 		`CREATE INDEX IF NOT EXISTS idx_observations_timestamp ON observations(timestamp)`,
 		`CREATE INDEX IF NOT EXISTS idx_observations_transmission_id ON observations(transmission_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_observations_ts_snr_rssi ON observations(timestamp, snr, rssi)`,
 	}
 	for _, s := range stmts {
 		if _, err := rw.Exec(s); err != nil {

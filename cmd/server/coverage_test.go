@@ -2410,13 +2410,19 @@ func TestStoreGetAnalyticsRFCacheHit(t *testing.T) {
 	store.Load()
 
 	// First call — cache miss
-	result1 := store.GetAnalyticsRF("")
+	result1, err := store.GetAnalyticsRF("")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if result1["totalPackets"] == nil {
 		t.Error("expected totalPackets")
 	}
 
 	// Second call — should hit cache
-	result2 := store.GetAnalyticsRF("")
+	result2, err := store.GetAnalyticsRF("")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if result2["totalPackets"] == nil {
 		t.Error("expected cached totalPackets")
 	}

@@ -14,13 +14,13 @@ import (
 )
 
 // GetAnalyticsRF returns full RF analytics computed from in-memory observations.
-func (s *PacketStore) GetAnalyticsRF(region string) map[string]interface{} {
+func (s *PacketStore) GetAnalyticsRF(region string) (map[string]interface{}, error) {
 	return s.GetAnalyticsRFWithWindow(region, TimeWindow{})
 }
 
 // GetAnalyticsRFWithWindow returns RF analytics bounded by an optional
 // time window (issue #842). Zero TimeWindow = all data (backwards compatible).
-func (s *PacketStore) GetAnalyticsRFWithWindow(region string, window TimeWindow) map[string]interface{} {
+func (s *PacketStore) GetAnalyticsRFWithWindow(region string, window TimeWindow) (map[string]interface{}, error) {
 	cacheKey := region
 	if !window.IsZero() {
 		cacheKey = region + "|" + window.CacheKey()
@@ -29,18 +29,26 @@ func (s *PacketStore) GetAnalyticsRFWithWindow(region string, window TimeWindow)
 	if cached, ok := s.rfCache[cacheKey]; ok && time.Now().Before(cached.expiresAt) {
 		s.cacheHits++
 		s.cacheMu.Unlock()
-		return cached.data
+		return cached.data, nil
 	}
 	s.cacheMisses++
 	s.cacheMu.Unlock()
 
-	result := s.computeAnalyticsRF(region, window)
+	var result map[string]interface{}
+	if s.analyticsSQLBackend {
+		r, err := computeAnalyticsRFSQL(s.db, region, window)
+		if err != nil {
+			return nil, err
+		}
+		result = r
+	} else {
+		result = s.computeAnalyticsRF(region, window)
+	}
 
 	s.cacheMu.Lock()
 	s.rfCache[cacheKey] = &cachedResult{data: result, expiresAt: time.Now().Add(s.rfCacheTTL)}
 	s.cacheMu.Unlock()
-
-	return result
+	return result, nil
 }
 
 func (s *PacketStore) computeAnalyticsRF(region string, window TimeWindow) map[string]interface{} {
@@ -283,17 +291,6 @@ func (s *PacketStore) computeAnalyticsRF(region string, window TimeWindow) map[s
 	}
 
 	// Stats helpers
-	stddevF64 := func(arr []float64, avg float64) float64 {
-		if len(arr) == 0 {
-			return 0
-		}
-		sum := 0.0
-		for _, v := range arr {
-			d := v - avg
-			sum += d * d
-		}
-		return math.Sqrt(sum / float64(len(arr)))
-	}
 	minF64 := func(arr []float64) float64 {
 		if len(arr) == 0 {
 			return 0
@@ -456,58 +453,9 @@ func (s *PacketStore) computeAnalyticsRF(region string, window TimeWindow) map[s
 	}
 
 	// Histograms
-	buildHistogramF64 := func(values []float64, bins int) map[string]interface{} {
-		if len(values) == 0 {
-			return map[string]interface{}{"bins": []interface{}{}, "min": 0, "max": 0}
-		}
-		mn, mx := minF64(values), maxF64(values)
-		rng := mx - mn
-		if rng == 0 {
-			rng = 1
-		}
-		binWidth := rng / float64(bins)
-		counts := make([]int, bins)
-		for _, v := range values {
-			idx := int((v - mn) / binWidth)
-			if idx >= bins {
-				idx = bins - 1
-			}
-			counts[idx]++
-		}
-		binArr := make([]map[string]interface{}, bins)
-		for i, c := range counts {
-			binArr[i] = map[string]interface{}{"x": mn + float64(i)*binWidth, "w": binWidth, "count": c}
-		}
-		return map[string]interface{}{"bins": binArr, "min": mn, "max": mx}
-	}
-	buildHistogramInt := func(values []int, bins int) map[string]interface{} {
-		if len(values) == 0 {
-			return map[string]interface{}{"bins": []interface{}{}, "min": 0, "max": 0}
-		}
-		mn, mx := float64(minInt(values)), float64(maxInt(values))
-		rng := mx - mn
-		if rng == 0 {
-			rng = 1
-		}
-		binWidth := rng / float64(bins)
-		counts := make([]int, bins)
-		for _, v := range values {
-			idx := int((float64(v) - mn) / binWidth)
-			if idx >= bins {
-				idx = bins - 1
-			}
-			counts[idx]++
-		}
-		binArr := make([]map[string]interface{}, bins)
-		for i, c := range counts {
-			binArr[i] = map[string]interface{}{"x": mn + float64(i)*binWidth, "w": binWidth, "count": c}
-		}
-		return map[string]interface{}{"bins": binArr, "min": mn, "max": mx}
-	}
-
-	snrHistogram := buildHistogramF64(snrVals, 20)
-	rssiHistogram := buildHistogramF64(rssiVals, 20)
-	sizeHistogram := buildHistogramInt(packetSizes, 25)
+	snrHistogram := rfBuildHistogramF64(snrVals, 20)
+	rssiHistogram := rfBuildHistogramF64(rssiVals, 20)
+	sizeHistogram := rfBuildHistogramInt(packetSizes, 25)
 
 	// Time span from min/max timestamps tracked during first pass
 	timeSpanHours := 0.0
@@ -546,7 +494,7 @@ func (s *PacketStore) computeAnalyticsRF(region string, window TimeWindow) map[s
 		snrStats = map[string]interface{}{
 			"min": snrVals[0], "max": snrVals[len(snrVals)-1],
 			"avg": snrAvg, "median": snrVals[len(snrVals)/2],
-			"stddev": stddevF64(snrVals, snrAvg),
+			"stddev": rfStddevF64(snrVals, snrAvg),
 		}
 	}
 	rssiStats := map[string]interface{}{"min": 0.0, "max": 0.0, "avg": 0.0, "median": 0.0, "stddev": 0.0}
@@ -554,7 +502,7 @@ func (s *PacketStore) computeAnalyticsRF(region string, window TimeWindow) map[s
 		rssiStats = map[string]interface{}{
 			"min": rssiVals[0], "max": rssiVals[len(rssiVals)-1],
 			"avg": rssiAvg, "median": rssiVals[len(rssiVals)/2],
-			"stddev": stddevF64(rssiVals, rssiAvg),
+			"stddev": rfStddevF64(rssiVals, rssiAvg),
 		}
 	}
 

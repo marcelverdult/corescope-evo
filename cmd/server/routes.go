@@ -1777,7 +1777,13 @@ func (s *Server) handleAnalyticsRF(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 503, "Packet store unavailable")
 		return
 	}
-	writeJSON(w, s.store.GetAnalyticsRFWithWindow(region, window))
+	res, err := s.store.GetAnalyticsRFWithWindow(region, window)
+	if err != nil {
+		log.Printf("[analytics] RF SQL backend error: %v", err)
+		writeError(w, 500, "analytics query failed")
+		return
+	}
+	writeJSON(w, res)
 }
 
 func (s *Server) handleAnalyticsTopology(w http.ResponseWriter, r *http.Request) {
