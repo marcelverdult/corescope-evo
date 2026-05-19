@@ -322,6 +322,41 @@ func TestRecomputeRFRollupHourRangeBoundary(t *testing.T) {
 	}
 }
 
+func TestRecomputeRFRollupHourNullObserver(t *testing.T) {
+	db := setupTestDBFile(t)
+	if err := ensureRFRollupTable(db.path); err != nil {
+		t.Fatal(err)
+	}
+	mustExec(t, db, `INSERT INTO transmissions(id,raw_hex,hash,first_seen,payload_type)
+		VALUES (1,'aabb','h1','2026-05-18T10:00:00Z',1)`)
+	// One observation with a real observer_idx, one with NULL observer_idx.
+	// 1779098400 = 2026-05-18T10:00:00Z.
+	mustExec(t, db, `INSERT INTO observations(transmission_id,observer_idx,snr,rssi,timestamp)
+		VALUES (1,5,7.0,-80.0,1779098400),(1,NULL,9.0,-70.0,1779098400)`)
+	rw, err := cachedRW(db.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := recomputeRFRollupHour(rw, "2026-05-18T10"); err != nil {
+		t.Fatalf("recompute must not fail on NULL observer_idx: %v", err)
+	}
+	var nObs int
+	if err := rw.QueryRow(`SELECT COALESCE(SUM(n_obs),0) FROM rf_rollup WHERE hour=?`,
+		"2026-05-18T10").Scan(&nObs); err != nil {
+		t.Fatal(err)
+	}
+	if nObs != 2 {
+		t.Fatalf("n_obs=%d, want 2 (both observations counted, NULL-observer included)", nObs)
+	}
+	// The NULL-observer row is stored under observer_idx = -1.
+	var nNull int
+	rw.QueryRow(`SELECT COALESCE(SUM(n_obs),0) FROM rf_rollup WHERE hour=? AND observer_idx=-1`,
+		"2026-05-18T10").Scan(&nNull)
+	if nNull != 1 {
+		t.Fatalf("expected 1 obs under observer_idx=-1 sentinel, got %d", nNull)
+	}
+}
+
 func rfToF(v interface{}) float64 {
 	switch n := v.(type) {
 	case float64:

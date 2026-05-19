@@ -152,16 +152,20 @@ func recomputeRFRollupHour(rw *sql.DB, hour string) error {
 	txByType := map[int]map[int]bool{}
 	for rows.Next() {
 		var ptN sql.NullInt64
-		var obsIdx int
+		var obsIdxN sql.NullInt64
 		var snr, rssi sql.NullFloat64
 		var txID, size int
-		if err := rows.Scan(&ptN, &obsIdx, &snr, &rssi, &txID, &size); err != nil {
+		if err := rows.Scan(&ptN, &obsIdxN, &snr, &rssi, &txID, &size); err != nil {
 			rows.Close()
 			return fmt.Errorf("recompute row: %w", err)
 		}
 		pt := -1
 		if ptN.Valid {
 			pt = int(ptN.Int64)
+		}
+		obsIdx := -1
+		if obsIdxN.Valid {
+			obsIdx = int(obsIdxN.Int64)
 		}
 		key := [2]int{pt, obsIdx}
 		c := cells[key]
