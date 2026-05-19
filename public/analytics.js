@@ -1015,7 +1015,8 @@
 
     var timelineHtml = renderChannelTimeline(ch.channelTimeline);
     var topSendersHtml = renderTopSenders(ch.topSenders);
-    var histoHtml = ch.msgLengths.length ? histogram(ch.msgLengths, 20, '#8b5cf6').svg : '<div class="text-muted">No decrypted messages</div>';
+    var msgLengthsHasData = ch.msgLengths && (ch.msgLengths.bins ? ch.msgLengths.bins.length > 0 : ch.msgLengths.length > 0);
+    var histoHtml = msgLengthsHasData ? histogram(ch.msgLengths, 20, '#8b5cf6').svg : '<div class="text-muted">No decrypted messages</div>';
 
     el.innerHTML =
       '<div class="analytics-card">' +
