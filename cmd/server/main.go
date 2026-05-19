@@ -243,6 +243,9 @@ func main() {
 	if err := ensureRFRollupTable(dbPath); err != nil {
 		log.Fatalf("ensureRFRollupTable: %v", err)
 	}
+	if err := ensureChannelRollupTable(dbPath); err != nil {
+		log.Fatalf("ensureChannelRollupTable: %v", err)
+	}
 
 	// Soft-delete observers that are in the blacklist (mark inactive=1) so
 	// historical data from a prior unblocked window is hidden too.
@@ -619,6 +622,23 @@ func main() {
 					continue
 				}
 				runRFRollupMaintenanceGuarded(rw)
+			}
+		}()
+		go backfillChannelRollupAsync(dbPath)
+		chRollupTicker := time.NewTicker(5 * time.Minute)
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("[channel-rollup] maintenance panic recovered: %v", r)
+				}
+			}()
+			for range chRollupTicker.C {
+				rw, err := cachedRW(dbPath)
+				if err != nil {
+					log.Printf("[channel-rollup] maintenance open rw: %v", err)
+					continue
+				}
+				runChannelRollupMaintenanceGuarded(rw)
 			}
 		}()
 	}
