@@ -174,6 +174,30 @@ func TestRFRollupMaintenance(t *testing.T) {
 	}
 }
 
+func TestComputeAnalyticsRFSQLUsesRollup(t *testing.T) {
+	db := setupTestDBFile(t)
+	if err := ensureRFRollupTable(db.path); err != nil {
+		t.Fatal(err)
+	}
+	mustExec(t, db, `INSERT INTO transmissions(id,raw_hex,hash,first_seen,payload_type)
+		VALUES (1,'aabb','h1','2026-05-18T10:00:00Z',1)`)
+	// 1779098400 = real UTC epoch inside hour 2026-05-18T10
+	mustExec(t, db, `INSERT INTO observations(id,transmission_id,observer_idx,snr,rssi,timestamp)
+		VALUES (1,1,1,5.0,-80.0,1779098400)`)
+	rw, _ := cachedRW(db.path)
+	if err := runRFRollupMaintenance(rw); err != nil {
+		t.Fatal(err)
+	}
+	res, err := computeAnalyticsRFSQL(db, "",
+		TimeWindow{Since: "2026-05-18T00:00:00Z", Until: "2026-05-19T00:00:00Z"})
+	if err != nil {
+		t.Fatalf("computeAnalyticsRFSQL: %v", err)
+	}
+	if res["totalAllPackets"].(int) != 1 {
+		t.Fatalf("totalAllPackets=%v want 1", res["totalAllPackets"])
+	}
+}
+
 func TestComputeRFFromRollupShape(t *testing.T) {
 	db := setupTestDBFile(t)
 	if err := ensureRFRollupTable(db.path); err != nil {
