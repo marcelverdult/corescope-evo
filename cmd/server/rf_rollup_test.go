@@ -60,13 +60,14 @@ func setupTestDBFile(t *testing.T) *DB {
 		conn.Close()
 		t.Fatalf("setupTestDBFile schema: %v", err)
 	}
-	conn.Close()
-
-	db, err := OpenDB(dbPath)
-	if err != nil {
-		t.Fatalf("setupTestDBFile OpenDB: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
+	// Keep the writable connection open so mustExec (which writes via db.conn)
+	// can insert test fixtures. OpenDB would open read-only, which is fine for
+	// querying but blocks writes needed by test helpers.
+	db := &DB{conn: conn, path: dbPath, isV3: true, hasResolvedPath: true, hasObsRawHex: true}
+	t.Cleanup(func() {
+		conn.Close()
+		closeRWCache()
+	})
 	return db
 }
 
@@ -102,5 +103,41 @@ func TestEnsureRFRollupTable(t *testing.T) {
 		).Scan(&n); err != nil {
 			t.Fatalf("table %s not created: %v", tbl, err)
 		}
+	}
+}
+
+func TestRecomputeRFRollupHour(t *testing.T) {
+	db := setupTestDBFile(t)
+	if err := ensureRFRollupTable(db.path); err != nil {
+		t.Fatal(err)
+	}
+	mustExec(t, db, `INSERT INTO transmissions(id,raw_hex,hash,first_seen,payload_type)
+		VALUES (1,'aabb','h1','2026-05-18T10:00:00Z',1),(2,'ccddee','h2','2026-05-18T10:05:00Z',1)`)
+	mustExec(t, db, `INSERT INTO observations(transmission_id,observer_idx,snr,rssi,timestamp)
+		VALUES (1,1,5.0,-80.0,1779098400),(1,2,7.0,-90.0,1779098400),(2,1,9.0,-70.0,1779098700)`)
+	rw, err := cachedRW(db.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := recomputeRFRollupHour(rw, "2026-05-18T10"); err != nil {
+		t.Fatalf("recompute: %v", err)
+	}
+	var nObs, nSnr int
+	var snrSum float64
+	err = rw.QueryRow(`SELECT SUM(n_obs),SUM(n_snr),SUM(snr_sum) FROM rf_rollup WHERE hour=?`,
+		"2026-05-18T10").Scan(&nObs, &nSnr, &snrSum)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if nObs != 3 || nSnr != 3 || snrSum != 21.0 {
+		t.Fatalf("rollup wrong: nObs=%d nSnr=%d snrSum=%v", nObs, nSnr, snrSum)
+	}
+	var distinctTx int
+	if err := rw.QueryRow(`SELECT SUM(distinct_tx) FROM rf_rollup_tx WHERE hour=?`,
+		"2026-05-18T10").Scan(&distinctTx); err != nil {
+		t.Fatal(err)
+	}
+	if distinctTx != 2 {
+		t.Fatalf("distinct_tx=%d want 2", distinctTx)
 	}
 }
