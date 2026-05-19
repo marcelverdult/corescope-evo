@@ -2,6 +2,7 @@ package main
 
 import (
 	"testing"
+	"time"
 )
 
 func TestEnsureNodeRollupTable(t *testing.T) {
@@ -136,5 +137,50 @@ func TestRecomputeNodeRollupHour(t *testing.T) {
 	rw.QueryRow(`SELECT relay_count FROM node_rollup WHERE hour=? AND hop_key='ab'`, "2026-05-18T10").Scan(&ab)
 	if ab != 2 {
 		t.Fatalf("after rerun ab=%d want 2", ab)
+	}
+}
+
+func TestComputeNodeRelayFromRollup(t *testing.T) {
+	db := setupTestDBFile(t)
+	if err := ensureNodeRollupTable(db.path); err != nil {
+		t.Fatal(err)
+	}
+	// Current hour so the 24h/7d windows include it.
+	hour := time.Now().UTC().Format("2006-01-02T15")
+	fs := time.Now().UTC().Format("2006-01-02T15:04:05Z")
+	// node "ab00...": appears as hop "ab" in 3 non-advert tx this hour.
+	rw, err := cachedRW(db.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rw.Exec(`INSERT INTO node_rollup(hour,hop_key,relay_count,last_relayed)
+		VALUES (?,?,?,?)`, hour, "ab", 3, fs); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rw.Exec(`INSERT INTO node_rollup_total(hour,n_nonadvert) VALUES (?,?)`,
+		hour, 12); err != nil {
+		t.Fatal(err)
+	}
+	pk := "ab00000000000000000000000000000000000000000000000000000000000000"
+	res, err := computeNodeRelayFromRollup(db, []string{pk}, 24)
+	if err != nil {
+		t.Fatalf("computeNodeRelayFromRollup: %v", err)
+	}
+	r, ok := res[pk]
+	if !ok {
+		t.Fatalf("missing pubkey result")
+	}
+	if r.Relay.RelayCount24h != 3 {
+		t.Errorf("RelayCount24h=%d want 3", r.Relay.RelayCount24h)
+	}
+	if !r.Relay.RelayActive {
+		t.Errorf("RelayActive=false want true")
+	}
+	if r.Relay.LastRelayed != fs {
+		t.Errorf("LastRelayed=%q want %q", r.Relay.LastRelayed, fs)
+	}
+	want := 3.0 / 12.0
+	if r.Usefulness < want-0.0001 || r.Usefulness > want+0.0001 {
+		t.Errorf("Usefulness=%v want %v", r.Usefulness, want)
 	}
 }
