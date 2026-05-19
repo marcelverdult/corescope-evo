@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # Build stage always runs natively on the builder's arch ($BUILDPLATFORM)
 # and cross-compiles to $TARGETOS/$TARGETARCH via Go toolchain. No QEMU.
 # BUILDPLATFORM is auto-set by buildx; default to linux/amd64 so plain
@@ -21,9 +22,11 @@ COPY internal/packetpath/ ../../internal/packetpath/
 COPY internal/dbconfig/ ../../internal/dbconfig/
 COPY internal/perfio/ ../../internal/perfio/
 COPY internal/meshdecode/ ../../internal/meshdecode/
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY cmd/server/ ./
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -ldflags "-X main.Version=${APP_VERSION} -X main.Commit=${GIT_COMMIT} -X main.BuildTime=${BUILD_TIME}" -o /corescope-server .
 
 # Build ingestor
@@ -35,18 +38,22 @@ COPY internal/packetpath/ ../../internal/packetpath/
 COPY internal/dbconfig/ ../../internal/dbconfig/
 COPY internal/perfio/ ../../internal/perfio/
 COPY internal/meshdecode/ ../../internal/meshdecode/
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY cmd/ingestor/ ./
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -o /corescope-ingestor .
 
 # Build decrypt CLI
 WORKDIR /build/decrypt
 COPY cmd/decrypt/go.mod cmd/decrypt/go.sum ./
 COPY internal/channel/ ../../internal/channel/
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY cmd/decrypt/ ./
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -ldflags="-s -w" -o /corescope-decrypt .
 
 # Runtime image

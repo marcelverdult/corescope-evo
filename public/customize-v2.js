@@ -1750,10 +1750,15 @@
     init: function (serverConfig) {
       _serverDefaults = serverConfig || {};
       _cleanPhantomOverrides();
-      _runPipeline();
+      // Mark init done BEFORE running the pipeline: _runPipeline() dispatches
+      // theme-changed, and listeners (e.g. home.js cold-load re-render) gate
+      // on initDone to tell the real server config apart from earlier pipeline
+      // passes. Setting it afterwards would make them miss this very event.
       _initDone = true;
+      _runPipeline();
     },
-    /** True after init() has been called with server config and pipeline has run */
+    /** True once init() has been called with server config (set before the
+     *  first pipeline run so theme-changed listeners can rely on it). */
     get initDone() { return _initDone; },
     readOverrides: readOverrides,
     writeOverrides: writeOverrides,
