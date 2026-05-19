@@ -82,6 +82,27 @@ func TestComputeChannelsFromRollup(t *testing.T) {
 	}
 }
 
+func TestGetAnalyticsChannelsUsesRollup(t *testing.T) {
+	db := setupTestDBFile(t)
+	if err := ensureChannelRollupTable(db.path); err != nil {
+		t.Fatal(err)
+	}
+	mustExec(t, db, `INSERT INTO transmissions(id,raw_hex,hash,first_seen,payload_type,decoded_json)
+		VALUES (1,'aa','h1','2026-05-18T10:00:00Z',5,'{"channel_hash":"7","channel":"#t","sender":"a","text":"x"}')`)
+	mustExec(t, db, `INSERT INTO observations(transmission_id,observer_idx,timestamp) VALUES (1,1,1779098400)`)
+	rw, _ := cachedRW(db.path)
+	if err := runChannelRollupMaintenance(rw); err != nil {
+		t.Fatal(err)
+	}
+	ps := loadStore(t, db.path, 0)
+	ps.analyticsSQLBackend = true
+	res := ps.GetAnalyticsChannelsWithWindow("",
+		TimeWindow{Since: "2026-05-18T00:00:00Z", Until: "2026-05-19T00:00:00Z"})
+	if res["activeChannels"].(int) != 1 {
+		t.Fatalf("activeChannels=%v want 1", res["activeChannels"])
+	}
+}
+
 func TestRecomputeChannelRollupHour(t *testing.T) {
 	db := setupTestDBFile(t)
 	if err := ensureChannelRollupTable(db.path); err != nil {

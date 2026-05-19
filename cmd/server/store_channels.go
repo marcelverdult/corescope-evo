@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"log"
 	"sort"
 	"strconv"
 	"strings"
@@ -453,7 +454,18 @@ func (s *PacketStore) GetAnalyticsChannelsWithWindow(region string, window TimeW
 	s.cacheMisses++
 	s.cacheMu.Unlock()
 
-	result := s.computeAnalyticsChannels(region, window)
+	var result map[string]interface{}
+	if s.analyticsSQLBackend && s.db != nil && chRollupReady(s.db.conn) {
+		r, err := computeChannelsFromRollup(s.db, region, window)
+		if err != nil {
+			log.Printf("[channel-rollup] read error, falling back to in-memory: %v", err)
+			result = s.computeAnalyticsChannels(region, window)
+		} else {
+			result = r
+		}
+	} else {
+		result = s.computeAnalyticsChannels(region, window)
+	}
 
 	s.cacheMu.Lock()
 	s.chanCache[cacheKey] = &cachedResult{data: result, expiresAt: time.Now().Add(s.rfCacheTTL)}
