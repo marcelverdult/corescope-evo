@@ -54,3 +54,52 @@ func rfUnpackBins(b []byte, count int) []int {
 }
 
 var _ = fmt.Sprintf // kept for later tasks in this file
+
+// ensureRFRollupTable creates the rollup tables. Idempotent (IF NOT EXISTS).
+func ensureRFRollupTable(dbPath string) error {
+	rw, err := cachedRW(dbPath)
+	if err != nil {
+		return fmt.Errorf("open rw for rf_rollup: %w", err)
+	}
+	stmts := []string{
+		`CREATE TABLE IF NOT EXISTS rf_rollup (
+			hour TEXT NOT NULL,
+			payload_type INTEGER NOT NULL,
+			observer_idx INTEGER NOT NULL,
+			n_obs INTEGER NOT NULL DEFAULT 0,
+			n_snr INTEGER NOT NULL DEFAULT 0,
+			snr_sum REAL NOT NULL DEFAULT 0,
+			snr_sumsq REAL NOT NULL DEFAULT 0,
+			snr_min REAL, snr_max REAL,
+			n_rssi INTEGER NOT NULL DEFAULT 0,
+			rssi_sum REAL NOT NULL DEFAULT 0,
+			rssi_sumsq REAL NOT NULL DEFAULT 0,
+			rssi_min REAL, rssi_max REAL,
+			pkt_n INTEGER NOT NULL DEFAULT 0,
+			pkt_sum INTEGER NOT NULL DEFAULT 0,
+			pkt_min INTEGER, pkt_max INTEGER,
+			n_tx INTEGER NOT NULL DEFAULT 0,
+			snr_bins BLOB, rssi_bins BLOB, size_bins BLOB,
+			scatter BLOB,
+			PRIMARY KEY (hour, payload_type, observer_idx)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_rf_rollup_hour ON rf_rollup(hour)`,
+		`CREATE INDEX IF NOT EXISTS idx_rf_rollup_observer ON rf_rollup(observer_idx)`,
+		`CREATE TABLE IF NOT EXISTS rf_rollup_tx (
+			hour TEXT NOT NULL,
+			payload_type INTEGER NOT NULL,
+			distinct_tx INTEGER NOT NULL DEFAULT 0,
+			PRIMARY KEY (hour, payload_type)
+		)`,
+		`CREATE TABLE IF NOT EXISTS rf_rollup_meta (
+			key TEXT PRIMARY KEY,
+			value TEXT NOT NULL
+		)`,
+	}
+	for _, s := range stmts {
+		if _, err := rw.Exec(s); err != nil {
+			return fmt.Errorf("rf_rollup ddl %q: %w", s, err)
+		}
+	}
+	return nil
+}
