@@ -6,6 +6,7 @@ import (
 	"math"
 	"path/filepath"
 	"testing"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -303,4 +304,67 @@ func rfToF(v interface{}) float64 {
 		return float64(n)
 	}
 	return 0
+}
+
+func TestRFRollupPerf(t *testing.T) {
+	if testing.Short() {
+		t.Skip("perf test skipped in -short mode")
+	}
+	db := setupTestDBFile(t)
+	if err := ensureRFRollupTable(db.path); err != nil {
+		t.Fatal(err)
+	}
+	rw, _ := cachedRW(db.path)
+	gen, err := rw.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := int64(1779000000)
+	txID := 0
+	for d := 0; d < 30; d++ {
+		for n := 0; n < 1200; n++ {
+			txID++
+			ts := base + int64(d)*86400 + int64(n)*60
+			first := time.Unix(ts, 0).UTC().Format(time.RFC3339)
+			pt := txID % 4
+			if _, err := gen.Exec(`INSERT INTO transmissions(id,raw_hex,hash,first_seen,payload_type)
+				VALUES (?,?,?,?,?)`, txID, "aabbcc", fmt.Sprintf("h%d", txID), first, pt); err != nil {
+				t.Fatal(err)
+			}
+			for o := 0; o < 28; o++ {
+				if _, err := gen.Exec(`INSERT INTO observations(transmission_id,observer_idx,snr,rssi,timestamp)
+					VALUES (?,?,?,?,?)`, txID, o%100, float64(o%20-10), float64(-60-o%50), ts); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+	}
+	if err := gen.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if err := runRFRollupMaintenance(rw); err != nil {
+		t.Fatalf("backfill: %v", err)
+	}
+
+	win24 := TimeWindow{
+		Since: time.Unix(base+29*86400, 0).UTC().Format(time.RFC3339),
+		Until: time.Unix(base+30*86400, 0).UTC().Format(time.RFC3339),
+	}
+	t0 := time.Now()
+	if _, err := computeRFFromRollup(db, "", win24); err != nil {
+		t.Fatal(err)
+	}
+	if d := time.Since(t0); d > 200*time.Millisecond {
+		t.Errorf("24h query took %s, want < 200ms", d)
+	}
+
+	t1 := time.Now()
+	if _, err := computeRFFromRollup(db, "", TimeWindow{
+		Since: "2026-01-01T00:00:00Z", Until: "2027-01-01T00:00:00Z",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if d := time.Since(t1); d > 2*time.Second {
+		t.Errorf("full-history query took %s, want < 2s", d)
+	}
 }
