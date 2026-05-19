@@ -5,7 +5,9 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // ensureNodeRollupTable creates the node-health rollup tables. Idempotent.
@@ -38,4 +40,35 @@ func ensureNodeRollupTable(dbPath string) error {
 		}
 	}
 	return nil
+}
+
+// nodeHopKeys returns the lowercased hop keys for one observation: the
+// resolved full pubkey where a hop resolved, else the raw wire hop. Each
+// distinct key appears once. Resolution is positional — resolved_path[i]
+// corresponds to path_json[i]; a null or missing entry falls back to the
+// raw hop.
+func nodeHopKeys(pathJSON, resolvedPath string) []string {
+	raw := parsePathJSON(pathJSON)
+	if len(raw) == 0 {
+		return nil
+	}
+	var resolved []*string
+	if resolvedPath != "" {
+		_ = json.Unmarshal([]byte(resolvedPath), &resolved)
+	}
+	seen := make(map[string]bool, len(raw))
+	out := make([]string, 0, len(raw))
+	for i, rawHop := range raw {
+		key := rawHop
+		if i < len(resolved) && resolved[i] != nil && *resolved[i] != "" {
+			key = *resolved[i]
+		}
+		key = strings.ToLower(key)
+		if key == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, key)
+	}
+	return out
 }
