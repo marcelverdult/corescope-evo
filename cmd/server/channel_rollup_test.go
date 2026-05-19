@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"testing"
+	"time"
 )
 
 func TestEnsureChannelRollupTable(t *testing.T) {
@@ -176,6 +177,51 @@ func TestChannelRollupParity(t *testing.T) {
 			t.Errorf("[region=%q] total messages: mem=%d rollup=%d",
 				region, channelMsgTotal(mem), channelMsgTotal(roll))
 		}
+	}
+}
+
+func TestChannelRollupPerf(t *testing.T) {
+	if testing.Short() {
+		t.Skip("perf test skipped in -short mode")
+	}
+	db := setupTestDBFile(t)
+	if err := ensureChannelRollupTable(db.path); err != nil {
+		t.Fatal(err)
+	}
+	rw, _ := cachedRW(db.path)
+	gen, err := rw.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := int64(1779000000)
+	for i := 1; i <= 200000; i++ {
+		ts := base + int64(i)*120
+		first := time.Unix(ts, 0).UTC().Format(time.RFC3339)
+		dj := fmt.Sprintf(`{"channel_hash":"%d","channel":"#c%d","sender":"s%d","text":"msg"}`,
+			i%8, i%8, i%500)
+		if _, err := gen.Exec(`INSERT INTO transmissions(id,raw_hex,hash,first_seen,payload_type,decoded_json)
+			VALUES (?,?,?,?,5,?)`, i, "aa", fmt.Sprintf("h%d", i), first, dj); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := gen.Exec(`INSERT INTO observations(transmission_id,observer_idx,timestamp)
+			VALUES (?,?,?)`, i, i%50, ts); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := gen.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if err := runChannelRollupMaintenance(rw); err != nil {
+		t.Fatalf("backfill: %v", err)
+	}
+	t0 := time.Now()
+	if _, err := computeChannelsFromRollup(db, "", TimeWindow{
+		Since: "2026-01-01T00:00:00Z", Until: "2027-01-01T00:00:00Z",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if d := time.Since(t0); d > 2*time.Second {
+		t.Errorf("full-history channels query took %s, want < 2s", d)
 	}
 }
 
