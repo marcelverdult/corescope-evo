@@ -64,6 +64,183 @@ func ensureChannelRollupTable(dbPath string) error {
 	return nil
 }
 
-var _ = json.Unmarshal // used by recompute (Task 2)
-var _ = sql.ErrNoRows
-var _ = time.Now
+// chChanCell accumulates one (channel_hash, observer_idx) cell for an hour.
+type chChanCell struct {
+	msgCount, decryptedCount int
+	name                     string
+	lastActivity             string
+	msglenSum, msglenCount   int
+	msglenMin, msglenMax     int
+	haveMsglen               bool
+	msglenBins               []int
+	senders                  map[string]int
+	txSeen                   map[int]bool
+}
+
+func newChChanCell() *chChanCell {
+	return &chChanCell{
+		msglenBins: make([]int, chMsgLenBinCount),
+		senders:    map[string]int{},
+		txSeen:     map[int]bool{},
+	}
+}
+
+// chDecodedGrp mirrors the decoded_json shape computeAnalyticsChannels reads.
+type chDecodedGrp struct {
+	Channel      string      `json:"channel"`
+	ChannelHash  interface{} `json:"channelHash"`
+	ChannelHash2 string      `json:"channel_hash"`
+	Text         string      `json:"text"`
+	Sender       string      `json:"sender"`
+}
+
+func chHashStr(v interface{}) string {
+	switch val := v.(type) {
+	case nil:
+		return ""
+	case string:
+		return val
+	case float64:
+		return fmt.Sprintf("%v", val)
+	default:
+		return fmt.Sprintf("%v", val)
+	}
+}
+
+// recomputeChannelRollupHour rebuilds the channel rollup for one hour bucket
+// ("2026-05-18T10") from raw type-5 transmissions. Idempotent. The read runs
+// outside the write transaction and uses the indexed first_seen range.
+func recomputeChannelRollupHour(rw *sql.DB, hour string) error {
+	ht, err := time.Parse("2006-01-02T15", hour)
+	if err != nil {
+		return fmt.Errorf("channel recompute parse hour %q: %w", hour, err)
+	}
+	lo := ht.UTC().Format("2006-01-02T15:04:05Z")
+	hi := ht.UTC().Add(time.Hour).Format("2006-01-02T15:04:05Z")
+
+	rows, err := rw.Query(`
+		SELECT t.id, t.first_seen, t.decoded_json, o.observer_idx
+		FROM transmissions t
+		LEFT JOIN observations o ON o.transmission_id = t.id
+		WHERE t.payload_type = 5 AND t.first_seen >= ? AND t.first_seen < ?`, lo, hi)
+	if err != nil {
+		return fmt.Errorf("channel recompute scan: %w", err)
+	}
+	type ck struct {
+		hash string
+		obs  int
+	}
+	cells := map[ck]*chChanCell{}
+	txByChan := map[string]map[int]bool{}
+	for rows.Next() {
+		var txID int
+		var firstSeen, decodedJSON string
+		var obsN sql.NullInt64
+		if err := rows.Scan(&txID, &firstSeen, &decodedJSON, &obsN); err != nil {
+			rows.Close()
+			return fmt.Errorf("channel recompute row: %w", err)
+		}
+		obsIdx := -1
+		if obsN.Valid {
+			obsIdx = int(obsN.Int64)
+		}
+		var d chDecodedGrp
+		if json.Unmarshal([]byte(decodedJSON), &d) != nil {
+			continue
+		}
+		hash := chHashStr(d.ChannelHash)
+		if hash == "" {
+			hash = d.ChannelHash2
+		}
+		if hash == "" {
+			hash = "?"
+		}
+		name := d.Channel
+		if name == "" {
+			name = "ch" + hash
+		}
+		encrypted := d.Text == "" && d.Sender == ""
+		if name != "" && name != "ch"+hash && !channelNameMatchesHash(name, hash) {
+			name = "ch" + hash
+			encrypted = true
+		}
+		key := ck{hash, obsIdx}
+		c := cells[key]
+		if c == nil {
+			c = newChChanCell()
+			c.name = name
+			cells[key] = c
+		} else if isPlaceholderName(c.name) && !isPlaceholderName(name) {
+			c.name = name
+		}
+		c.msgCount++
+		c.lastActivity = firstSeen
+		if !encrypted {
+			c.decryptedCount++
+		}
+		if d.Sender != "" {
+			c.senders[d.Sender]++
+		}
+		if d.Text != "" {
+			n := len(d.Text)
+			c.msglenSum += n
+			c.msglenCount++
+			if !c.haveMsglen || n < c.msglenMin {
+				c.msglenMin = n
+			}
+			if !c.haveMsglen || n > c.msglenMax {
+				c.msglenMax = n
+			}
+			c.haveMsglen = true
+			c.msglenBins[rfBinIndex(n, chMsgLenBinMin, chMsgLenBinWidth, chMsgLenBinCount)]++
+		}
+		c.txSeen[txID] = true
+		if txByChan[hash] == nil {
+			txByChan[hash] = map[int]bool{}
+		}
+		txByChan[hash][txID] = true
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("channel recompute rows: %w", err)
+	}
+
+	tx, err := rw.Begin()
+	if err != nil {
+		return fmt.Errorf("channel recompute begin: %w", err)
+	}
+	defer tx.Rollback()
+	for _, t := range []string{"channel_rollup", "channel_sender_rollup", "channel_rollup_tx"} {
+		if _, err := tx.Exec(`DELETE FROM `+t+` WHERE hour=?`, hour); err != nil {
+			return fmt.Errorf("channel recompute delete %s: %w", t, err)
+		}
+	}
+	for key, c := range cells {
+		var mn, mx interface{}
+		if c.haveMsglen {
+			mn, mx = c.msglenMin, c.msglenMax
+		}
+		if _, err := tx.Exec(`INSERT INTO channel_rollup
+			(hour,channel_hash,observer_idx,msg_count,decrypted_count,name,last_activity,
+			 msglen_sum,msglen_count,msglen_min,msglen_max,msglen_bins)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+			hour, key.hash, key.obs, c.msgCount, c.decryptedCount, c.name, c.lastActivity,
+			c.msglenSum, c.msglenCount, mn, mx, rfPackBins(c.msglenBins)); err != nil {
+			return fmt.Errorf("channel recompute insert rollup: %w", err)
+		}
+		for sender, cnt := range c.senders {
+			if _, err := tx.Exec(`INSERT INTO channel_sender_rollup
+				(hour,channel_hash,observer_idx,sender,msg_count) VALUES (?,?,?,?,?)`,
+				hour, key.hash, key.obs, sender, cnt); err != nil {
+				return fmt.Errorf("channel recompute insert sender: %w", err)
+			}
+		}
+	}
+	for hash, set := range txByChan {
+		if _, err := tx.Exec(`INSERT INTO channel_rollup_tx(hour,channel_hash,distinct_tx)
+			VALUES (?,?,?)`, hour, hash, len(set)); err != nil {
+			return fmt.Errorf("channel recompute insert tx: %w", err)
+		}
+	}
+	return tx.Commit()
+}
