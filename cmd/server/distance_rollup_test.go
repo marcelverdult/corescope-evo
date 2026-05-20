@@ -139,6 +139,49 @@ func TestDistanceRollupMaintenance(t *testing.T) {
 	}
 }
 
+func TestComputeAnalyticsDistanceFromRollup(t *testing.T) {
+	db := setupTestDBFile(t)
+	if err := ensureDistanceRollupTable(db.path); err != nil {
+		t.Fatal(err)
+	}
+	mustExec(t, db, `INSERT INTO nodes(public_key,name,role,lat,lon) VALUES
+		('aa','A','repeater',52.0,4.0),
+		('bb','B','repeater',53.0,5.0)`)
+	mustExec(t, db, `INSERT INTO transmissions(id,raw_hex,hash,first_seen,payload_type,decoded_json)
+		VALUES (1,'aa','h1','2026-05-18T10:00:00Z',1,'{"pubKey":"aa"}')`)
+	mustExec(t, db, `INSERT INTO observations(transmission_id,observer_idx,timestamp,path_json,snr)
+		VALUES (1,1,1779098400,'["bb"]',5.0)`)
+	rw, _ := cachedRW(db.path)
+	if err := runDistanceRollupMaintenance(rw); err != nil {
+		t.Fatal(err)
+	}
+	win := TimeWindow{Since: "2026-05-18T00:00:00Z", Until: "2026-05-19T00:00:00Z"}
+	res, err := computeAnalyticsDistanceFromRollup(db, "", win)
+	if err != nil {
+		t.Fatalf("computeAnalyticsDistanceFromRollup: %v", err)
+	}
+	for _, k := range []string{"summary", "topHops", "topPaths", "catStats", "distHistogram", "distOverTime"} {
+		if _, ok := res[k]; !ok {
+			t.Errorf("missing key %q", k)
+		}
+	}
+	sum := res["summary"].(map[string]interface{})
+	if sum["totalHops"].(int) != 1 {
+		t.Errorf("totalHops=%v want 1", sum["totalHops"])
+	}
+	if sum["totalPaths"].(int) != 1 {
+		t.Errorf("totalPaths=%v want 1", sum["totalPaths"])
+	}
+	tops := res["topHops"].([]map[string]interface{})
+	if len(tops) != 1 {
+		t.Errorf("topHops len=%d want 1", len(tops))
+	}
+	paths := res["topPaths"].([]map[string]interface{})
+	if len(paths) != 1 {
+		t.Errorf("topPaths len=%d want 1", len(paths))
+	}
+}
+
 func TestDistanceHopChain(t *testing.T) {
 	nodes := map[string]*distNode{
 		"aa": {Name: "A", Role: "repeater", Lat: 52.0, Lon: 4.0, HasGPS: true},
