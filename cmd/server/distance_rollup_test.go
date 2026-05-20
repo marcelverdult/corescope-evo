@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"testing"
 	"time"
 )
@@ -276,4 +277,70 @@ func TestDistanceHopChain(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDistanceRollupPerf(t *testing.T) {
+	if testing.Short() {
+		t.Skip("perf test skipped in -short mode")
+	}
+	db := setupTestDBFile(t)
+	if err := ensureDistanceRollupTable(db.path); err != nil {
+		t.Fatal(err)
+	}
+	rw, _ := cachedRW(db.path)
+	// 20 GPS-bearing REPEATERS around the Netherlands. All role="repeater"
+	// so distanceHopChain (which requires canAppearInPath) admits them.
+	for i := 0; i < 20; i++ {
+		pk := fmt.Sprintf("%02x00000000000000000000000000000000000000000000000000000000000000", i)
+		lat := 51.5 + float64(i%5)*0.4
+		lon := 4.0 + float64(i/5)*0.4
+		mustExec(t, db, `INSERT INTO nodes(public_key,name,role,lat,lon) VALUES (?,?,?,?,?)`,
+			pk, fmt.Sprintf("N%d", i), "repeater", lat, lon)
+	}
+	// ~30k transmissions spread over 7 days; each path has 2 hops cycling
+	// among the 20 nodes.
+	base := time.Now().UTC().Add(-6 * 24 * time.Hour)
+	tx, err := rw.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i <= 30000; i++ {
+		ts := base.Add(time.Duration(i) * 18 * time.Second)
+		fs := ts.Format("2006-01-02T15:04:05Z")
+		sender := fmt.Sprintf("%02x00000000000000000000000000000000000000000000000000000000000000", i%20)
+		hop1 := fmt.Sprintf("%02x00000000000000000000000000000000000000000000000000000000000000", (i+7)%20)
+		hop2 := fmt.Sprintf("%02x00000000000000000000000000000000000000000000000000000000000000", (i+11)%20)
+		if _, err := tx.Exec(`INSERT INTO transmissions(id,raw_hex,hash,first_seen,payload_type,decoded_json)
+			VALUES (?,?,?,?,1,?)`, i, "aa", fmt.Sprintf("h%d", i), fs, `{"pubKey":"`+sender+`"}`); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.Exec(`INSERT INTO observations(transmission_id,observer_idx,timestamp,path_json,snr)
+			VALUES (?,1,?,?,5.0)`, i, ts.Unix(), `["`+hop1+`","`+hop2+`"]`); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if err := runDistanceRollupMaintenance(rw); err != nil {
+		t.Fatal(err)
+	}
+
+	win := TimeWindow{
+		Since: base.Format(time.RFC3339),
+		Until: time.Now().UTC().Format(time.RFC3339),
+	}
+	start := time.Now()
+	res, err := computeAnalyticsDistanceFromRollup(db, "", win)
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := res["summary"]; !ok {
+		t.Fatal("missing summary")
+	}
+	if elapsed > 500*time.Millisecond {
+		t.Fatalf("rollup read took %s, want < 500ms", elapsed)
+	}
+	t.Logf("distance rollup read over 30k tx: %s", elapsed)
 }
