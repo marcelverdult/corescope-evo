@@ -95,6 +95,50 @@ func TestRecomputeDistanceRollupHour(t *testing.T) {
 	}
 }
 
+func TestDistanceRollupMaintenance(t *testing.T) {
+	db := setupTestDBFile(t)
+	if err := ensureDistanceRollupTable(db.path); err != nil {
+		t.Fatal(err)
+	}
+	mustExec(t, db, `INSERT INTO nodes(public_key,name,role,lat,lon) VALUES
+		('aa','A','repeater',52.0,4.0),
+		('bb','B','repeater',53.0,5.0)`)
+	mustExec(t, db, `INSERT INTO transmissions(id,raw_hex,hash,first_seen,payload_type,decoded_json)
+		VALUES (1,'aa','h1','2026-05-18T10:00:00Z',1,'{"pubKey":"aa"}')`)
+	mustExec(t, db, `INSERT INTO observations(transmission_id,observer_idx,timestamp,path_json,snr)
+		VALUES (1,1,1779098400,'["bb"]',5.0)`)
+	rw, err := cachedRW(db.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if distanceRollupReady(rw) {
+		t.Fatal("rollup should not be ready before first run")
+	}
+	if err := runDistanceRollupMaintenance(rw); err != nil {
+		t.Fatalf("maintenance 1: %v", err)
+	}
+	if !distanceRollupReady(rw) {
+		t.Fatal("rollup should be ready after first run")
+	}
+	var n int
+	rw.QueryRow(`SELECT COALESCE(SUM(count),0) FROM distance_hourly WHERE observer_idx=-1`).Scan(&n)
+	if n != 1 {
+		t.Fatalf("after run 1 hop count=%d want 1", n)
+	}
+	// Second transmission in the same hour with a new path.
+	mustExec(t, db, `INSERT INTO transmissions(id,raw_hex,hash,first_seen,payload_type,decoded_json)
+		VALUES (2,'bb','h2','2026-05-18T10:20:00Z',1,'{"pubKey":"aa"}')`)
+	mustExec(t, db, `INSERT INTO observations(transmission_id,observer_idx,timestamp,path_json,snr)
+		VALUES (2,1,1779099600,'["bb"]',6.0)`)
+	if err := runDistanceRollupMaintenance(rw); err != nil {
+		t.Fatalf("maintenance 2: %v", err)
+	}
+	rw.QueryRow(`SELECT COALESCE(SUM(count),0) FROM distance_hourly WHERE observer_idx=-1`).Scan(&n)
+	if n != 2 {
+		t.Fatalf("after run 2 hop count=%d want 2", n)
+	}
+}
+
 func TestDistanceHopChain(t *testing.T) {
 	nodes := map[string]*distNode{
 		"aa": {Name: "A", Role: "repeater", Lat: 52.0, Lon: 4.0, HasGPS: true},
