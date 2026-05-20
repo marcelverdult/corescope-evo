@@ -403,8 +403,16 @@ func haversineKm(lat1, lon1, lat2, lon2 float64) float64 {
 }
 
 func (s *PacketStore) GetAnalyticsDistance(region string) map[string]interface{} {
+	return s.GetAnalyticsDistanceWithWindow(region, TimeWindow{})
+}
+
+func (s *PacketStore) GetAnalyticsDistanceWithWindow(region string, window TimeWindow) map[string]interface{} {
+	cacheKey := region
+	if !window.IsZero() {
+		cacheKey = region + "|" + window.CacheKey()
+	}
 	s.cacheMu.Lock()
-	if cached, ok := s.distCache[region]; ok && time.Now().Before(cached.expiresAt) {
+	if cached, ok := s.distCache[cacheKey]; ok && time.Now().Before(cached.expiresAt) {
 		s.cacheHits++
 		s.cacheMu.Unlock()
 		return cached.data
@@ -412,16 +420,27 @@ func (s *PacketStore) GetAnalyticsDistance(region string) map[string]interface{}
 	s.cacheMisses++
 	s.cacheMu.Unlock()
 
-	result := s.computeAnalyticsDistance(region)
+	// SQL rollup path. Falls through to the in-memory compute on flag-off /
+	// not-ready / read error.
+	var result map[string]interface{}
+	if s.analyticsSQLBackend && s.db != nil && distanceRollupReady(s.db.conn) {
+		if r, err := computeAnalyticsDistanceFromRollup(s.db, region, window); err == nil {
+			result = r
+		} else {
+			log.Printf("[distance-rollup] read failed, falling back to in-memory: %v", err)
+		}
+	}
+	if result == nil {
+		result = s.computeAnalyticsDistance(region, window)
+	}
 
 	s.cacheMu.Lock()
-	s.distCache[region] = &cachedResult{data: result, expiresAt: time.Now().Add(s.rfCacheTTL)}
+	s.distCache[cacheKey] = &cachedResult{data: result, expiresAt: time.Now().Add(s.rfCacheTTL)}
 	s.cacheMu.Unlock()
-
 	return result
 }
 
-func (s *PacketStore) computeAnalyticsDistance(region string) map[string]interface{} {
+func (s *PacketStore) computeAnalyticsDistance(region string, window TimeWindow) map[string]interface{} {
 	// #1239: hold s.mu.RLock() only long enough to (a) snapshot the
 	// distHops/distPaths slice headers and (b) build the region match
 	// set (which reads tx.Observations, a field mutated by ingest under
@@ -491,17 +510,25 @@ func (s *PacketStore) computeAnalyticsDistance(region string) map[string]interfa
 	// Filter precomputed hop records (copy to avoid mutating precomputed data during sort)
 	filteredHops := make([]distHopRecord, 0, len(hopsSnap))
 	for i := range hopsSnap {
-		if matchSet == nil || matchSet[hopsSnap[i].tx] {
-			filteredHops = append(filteredHops, hopsSnap[i])
+		if matchSet != nil && !matchSet[hopsSnap[i].tx] {
+			continue
 		}
+		if !window.IsZero() && !window.Includes(hopsSnap[i].Timestamp) {
+			continue
+		}
+		filteredHops = append(filteredHops, hopsSnap[i])
 	}
 
 	// Filter precomputed path records
 	filteredPaths := make([]distPathRecord, 0, len(pathsSnap))
 	for i := range pathsSnap {
-		if matchSet == nil || matchSet[pathsSnap[i].tx] {
-			filteredPaths = append(filteredPaths, pathsSnap[i])
+		if matchSet != nil && !matchSet[pathsSnap[i].tx] {
+			continue
 		}
+		if !window.IsZero() && !window.Includes(pathsSnap[i].Timestamp) {
+			continue
+		}
+		filteredPaths = append(filteredPaths, pathsSnap[i])
 	}
 
 	// Build category stats and time series from precomputed data
