@@ -5,7 +5,10 @@
 package main
 
 import (
+	"database/sql"
+	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // Fixed-bin distance histogram: 0..300 km, 12 km width = 25 bins. Values
@@ -15,6 +18,95 @@ const (
 	distDistBinMin, distDistBinWidth, distDistBinCount = 0, 12, 25
 	distSnrBinMin, distSnrBinWidth, distSnrBinCount    = -30, 1, 50
 )
+
+// distNode is the per-pubkey lookup the recompute uses to resolve hops to
+// GPS-bearing nodes.
+type distNode struct {
+	Name   string
+	Role   string
+	Lat    float64
+	Lon    float64
+	HasGPS bool
+}
+
+// distanceLoadNodeMap fetches all nodes with role + GPS, keyed by pubkey.
+// The recompute calls this once per hour, not per tx.
+func distanceLoadNodeMap(db *sql.DB) (map[string]*distNode, error) {
+	rows, err := db.Query(`SELECT public_key, name, role, lat, lon FROM nodes`)
+	if err != nil {
+		return nil, fmt.Errorf("distance load nodes: %w", err)
+	}
+	defer rows.Close()
+	out := make(map[string]*distNode, 1024)
+	for rows.Next() {
+		var pk string
+		var name, role sql.NullString
+		var lat, lon sql.NullFloat64
+		if err := rows.Scan(&pk, &name, &role, &lat, &lon); err != nil {
+			return nil, fmt.Errorf("distance load nodes scan: %w", err)
+		}
+		n := &distNode{Name: name.String, Role: role.String}
+		if lat.Valid && lon.Valid {
+			n.Lat = lat.Float64
+			n.Lon = lon.Float64
+			n.HasGPS = true
+		}
+		out[pk] = n
+	}
+	return out, rows.Err()
+}
+
+// distanceHopChain reconstructs the chain of GPS-bearing nodes for one
+// observation: sender (if GPS-known) followed by every positional hop that
+// resolves to a GPS-known node. Returns the chain in path order. A chain of
+// fewer than 2 nodes yields no haversine pairs; callers must check.
+func distanceHopChain(pathJSON, resolvedPath, senderPk string, nodeByPk map[string]*distNode) []*distNode {
+	raw := parsePathJSON(pathJSON)
+	if len(raw) == 0 {
+		return nil
+	}
+	var resolved []*string
+	if resolvedPath != "" {
+		_ = json.Unmarshal([]byte(resolvedPath), &resolved)
+	}
+	chain := make([]*distNode, 0, len(raw)+1)
+	if s, ok := nodeByPk[senderPk]; ok && s != nil && s.HasGPS {
+		chain = append(chain, s)
+	}
+	for i, rawHop := range raw {
+		pk := strings.ToLower(rawHop)
+		if i < len(resolved) && resolved[i] != nil && *resolved[i] != "" {
+			pk = strings.ToLower(*resolved[i])
+		}
+		if n, ok := nodeByPk[pk]; ok && n != nil && n.HasGPS {
+			chain = append(chain, n)
+		}
+	}
+	return chain
+}
+
+// distanceClassify returns "R↔R" / "C↔R" / "C↔C" from two roles. The rule
+// is: role contains "repeater" (case-insensitive) → R, else C.
+func distanceClassify(roleA, roleB string) string {
+	aRep := strings.Contains(strings.ToLower(roleA), "repeater")
+	bRep := strings.Contains(strings.ToLower(roleB), "repeater")
+	switch {
+	case aRep && bRep:
+		return "R↔R"
+	case !aRep && !bRep:
+		return "C↔C"
+	default:
+		return "C↔R"
+	}
+}
+
+// distancePairKey returns the unordered-pair key "<min>|<max>".
+func distancePairKey(a, b string) string {
+	if a > b {
+		a, b = b, a
+	}
+	return a + "|" + b
+}
 
 // ensureDistanceRollupTable creates the distance rollup tables. Idempotent.
 func ensureDistanceRollupTable(dbPath string) error {
