@@ -27,10 +27,10 @@ func TestRecomputeDistanceRollupHour(t *testing.T) {
 	if err := ensureDistanceRollupTable(db.path); err != nil {
 		t.Fatal(err)
 	}
-	// 3 GPS-bearing nodes: A (repeater) → B (repeater) → C (client).
-	// Sender is A; path is [B, C]. Distances roughly:
+	// 3 GPS-bearing nodes: A (repeater, sender) → B (repeater) → C (client).
+	// C is a client so canAppearInPath rejects it as a path hop.
+	// Only the A→B hop (R↔R) is valid; distances roughly:
 	//   A(52,4) → B(53,5)  ≈ 127 km   R↔R
-	//   B(53,5) → C(54,6)  ≈ 124 km   C↔R
 	mustExec(t, db, `INSERT INTO nodes(public_key,name,role,lat,lon) VALUES
 		('aa','A','repeater',52.0,4.0),
 		('bb','B','repeater',53.0,5.0),
@@ -47,37 +47,35 @@ func TestRecomputeDistanceRollupHour(t *testing.T) {
 	if err := recomputeDistanceRollupHour(rw, "2026-05-18T10"); err != nil {
 		t.Fatalf("recompute: %v", err)
 	}
-	// Global row (observer_idx=-1) should have 2 hops total.
+	// Global row (observer_idx=-1) should have 1 hop total (A→B only).
 	var n int
 	rw.QueryRow(`SELECT COALESCE(SUM(count),0) FROM distance_hourly WHERE hour=? AND observer_idx=-1`,
 		"2026-05-18T10").Scan(&n)
-	if n != 2 {
-		t.Fatalf("global hop count=%d want 2", n)
+	if n != 1 {
+		t.Fatalf("global hop count=%d want 1", n)
 	}
-	// Per-observer row (oi=7) should also have 2 hops.
+	// Per-observer row (oi=7) should also have 1 hop.
 	rw.QueryRow(`SELECT COALESCE(SUM(count),0) FROM distance_hourly WHERE hour=? AND observer_idx=7`,
 		"2026-05-18T10").Scan(&n)
-	if n != 2 {
-		t.Fatalf("per-observer hop count=%d want 2", n)
+	if n != 1 {
+		t.Fatalf("per-observer hop count=%d want 1", n)
 	}
-	// Per-type breakdown on the global row: 1 R↔R + 1 C↔R.
-	var rr, cr int
+	// Per-type breakdown on the global row: 1 R↔R, 0 C↔R.
+	var rr int
 	rw.QueryRow(`SELECT COALESCE(count,0) FROM distance_hourly WHERE hour=? AND observer_idx=-1 AND type='R↔R'`,
 		"2026-05-18T10").Scan(&rr)
-	rw.QueryRow(`SELECT COALESCE(count,0) FROM distance_hourly WHERE hour=? AND observer_idx=-1 AND type='C↔R'`,
-		"2026-05-18T10").Scan(&cr)
-	if rr != 1 || cr != 1 {
-		t.Fatalf("R↔R=%d C↔R=%d want 1 and 1", rr, cr)
+	if rr != 1 {
+		t.Fatalf("R↔R=%d want 1", rr)
 	}
-	// distance_paths: one row with total_dist ≈ 127+124 = ~251 km.
+	// distance_paths: one row with total_dist ≈ 127 km, hop_count=1.
 	var total float64
 	var hopCount int
 	rw.QueryRow(`SELECT total_dist, hop_count FROM distance_paths WHERE tx_id=1`).Scan(&total, &hopCount)
-	if hopCount != 2 {
-		t.Fatalf("hop_count=%d want 2", hopCount)
+	if hopCount != 1 {
+		t.Fatalf("hop_count=%d want 1", hopCount)
 	}
-	if total < 240 || total > 260 {
-		t.Fatalf("total_dist=%.2f want ~251 km", total)
+	if total < 120 || total > 135 {
+		t.Fatalf("total_dist=%.2f want ~127 km", total)
 	}
 	// distance_path_observers: one row (tx_id=1, observer_idx=7).
 	var oi int
@@ -91,8 +89,8 @@ func TestRecomputeDistanceRollupHour(t *testing.T) {
 	}
 	rw.QueryRow(`SELECT COALESCE(SUM(count),0) FROM distance_hourly WHERE hour=? AND observer_idx=-1`,
 		"2026-05-18T10").Scan(&n)
-	if n != 2 {
-		t.Fatalf("after rerun global=%d want 2", n)
+	if n != 1 {
+		t.Fatalf("after rerun global=%d want 1", n)
 	}
 }
 
@@ -191,8 +189,9 @@ func TestDistanceRollupParity(t *testing.T) {
 	mustExec(t, db, `INSERT INTO nodes(public_key,name,role,lat,lon) VALUES
 		('aa','A','repeater',52.0,4.0),
 		('bb','B','repeater',53.0,5.0),
-		('cc','C','repeater',54.0,6.0)`)
-	// One tx in the current hour, two hops in path.
+		('cc','C','client',54.0,6.0)`)
+	// One tx in the current hour; cc is a client so only bb qualifies as a
+	// path hop → chain is [aa, bb], one hop.
 	now := time.Now().UTC()
 	fs := now.Format("2006-01-02T15:04:05Z")
 	mustExec(t, db, `INSERT INTO transmissions(id,raw_hex,hash,first_seen,payload_type,decoded_json)
@@ -225,8 +224,8 @@ func TestDistanceRollupParity(t *testing.T) {
 	if memTotal != rollupTotal {
 		t.Fatalf("totalHops rollup=%d in-memory=%d", rollupTotal, memTotal)
 	}
-	if rollupTotal != 2 {
-		t.Fatalf("totalHops=%d want 2", rollupTotal)
+	if rollupTotal != 1 {
+		t.Fatalf("totalHops=%d want 1", rollupTotal)
 	}
 	memPaths := memRes["summary"].(map[string]interface{})["totalPaths"].(int)
 	rollupPaths := rollupRes["summary"].(map[string]interface{})["totalPaths"].(int)
@@ -249,12 +248,16 @@ func TestDistanceHopChain(t *testing.T) {
 		name, path, resolved, sender string
 		want                         []string // names in chain order
 	}{
-		{"sender + 2 hops", `["bb","cc"]`, ``, "aa", []string{"A", "B", "C"}},
+		// sender is exempt from canAppearInPath; path hop cc (client) is filtered out.
+		{"sender + 1 repeater hop", `["bb","cc"]`, ``, "aa", []string{"A", "B"}},
 		{"resolved overrides raw", `["AA","BB"]`, `["aa",null]`, "", []string{"A", "B"}},
-		{"no-GPS hop skipped", `["dd","cc"]`, ``, "aa", []string{"A", "C"}},
+		// dd has no GPS (skipped) and cc is a client (filtered by canAppearInPath).
+		{"no-GPS and client hops skipped", `["dd","cc"]`, ``, "aa", []string{"A"}},
 		{"unknown sender ignored", `["aa","bb"]`, ``, "zz", []string{"A", "B"}},
 		{"empty path", `[]`, ``, "aa", nil},
 		{"single GPS node", `[]`, ``, "aa", nil}, // < 2 nodes → caller drops
+		// Explicit: client role is rejected as a path hop even with GPS.
+		{"client hop is skipped", `["cc"]`, ``, "aa", []string{"A"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

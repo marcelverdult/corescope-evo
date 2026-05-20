@@ -80,7 +80,7 @@ func distanceHopChain(pathJSON, resolvedPath, senderPk string, nodeByPk map[stri
 		if i < len(resolved) && resolved[i] != nil && *resolved[i] != "" {
 			pk = strings.ToLower(*resolved[i])
 		}
-		if n, ok := nodeByPk[pk]; ok && n != nil && n.HasGPS {
+		if n, ok := nodeByPk[pk]; ok && n != nil && n.HasGPS && canAppearInPath(n.Role) {
 			chain = append(chain, n)
 		}
 	}
