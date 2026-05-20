@@ -1838,7 +1838,8 @@ func (s *Server) handleAnalyticsDistance(w http.ResponseWriter, r *http.Request)
 		writeError(w, 503, "Packet store unavailable")
 		return
 	}
-	writeJSON(w, s.store.GetAnalyticsDistance(region))
+	window := ParseTimeWindow(r)
+	writeJSON(w, s.store.GetAnalyticsDistanceWithWindow(region, window))
 }
 
 func (s *Server) handleAnalyticsHashSizes(w http.ResponseWriter, r *http.Request) {
