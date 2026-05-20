@@ -249,6 +249,9 @@ func main() {
 	if err := ensureNodeRollupTable(dbPath); err != nil {
 		log.Fatalf("ensureNodeRollupTable: %v", err)
 	}
+	if err := ensureDistanceRollupTable(dbPath); err != nil {
+		log.Fatalf("ensureDistanceRollupTable: %v", err)
+	}
 
 	// Soft-delete observers that are in the blacklist (mark inactive=1) so
 	// historical data from a prior unblocked window is hidden too.
@@ -659,6 +662,23 @@ func main() {
 					continue
 				}
 				runNodeRollupMaintenanceGuarded(rw)
+			}
+		}()
+		go backfillDistanceRollupAsync(dbPath)
+		distanceRollupTicker := time.NewTicker(5 * time.Minute)
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("[distance-rollup] maintenance panic recovered: %v", r)
+				}
+			}()
+			for range distanceRollupTicker.C {
+				rw, err := cachedRW(dbPath)
+				if err != nil {
+					log.Printf("[distance-rollup] maintenance open rw: %v", err)
+					continue
+				}
+				runDistanceRollupMaintenanceGuarded(rw)
 			}
 		}()
 	}
