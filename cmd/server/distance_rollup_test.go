@@ -2,6 +2,7 @@ package main
 
 import (
 	"testing"
+	"time"
 )
 
 func TestEnsureDistanceRollupTable(t *testing.T) {
@@ -179,6 +180,61 @@ func TestComputeAnalyticsDistanceFromRollup(t *testing.T) {
 	paths := res["topPaths"].([]map[string]interface{})
 	if len(paths) != 1 {
 		t.Errorf("topPaths len=%d want 1", len(paths))
+	}
+}
+
+func TestDistanceRollupParity(t *testing.T) {
+	db := setupTestDBFile(t)
+	if err := ensureDistanceRollupTable(db.path); err != nil {
+		t.Fatal(err)
+	}
+	mustExec(t, db, `INSERT INTO nodes(public_key,name,role,lat,lon) VALUES
+		('aa','A','repeater',52.0,4.0),
+		('bb','B','repeater',53.0,5.0),
+		('cc','C','repeater',54.0,6.0)`)
+	// One tx in the current hour, two hops in path.
+	now := time.Now().UTC()
+	fs := now.Format("2006-01-02T15:04:05Z")
+	mustExec(t, db, `INSERT INTO transmissions(id,raw_hex,hash,first_seen,payload_type,decoded_json)
+		VALUES (1,'aa','h1',?,1,'{"pubKey":"aa"}')`, fs)
+	mustExec(t, db, `INSERT INTO observations(transmission_id,observer_idx,timestamp,path_json,snr)
+		VALUES (1,1,?,'["bb","cc"]',5.0)`, now.Unix())
+	rw, _ := cachedRW(db.path)
+	if err := runDistanceRollupMaintenance(rw); err != nil {
+		t.Fatal(err)
+	}
+
+	// In-memory reference.
+	ps := loadStore(t, db.path, 0)
+	memRes := ps.GetAnalyticsDistanceWithWindow("",
+		TimeWindow{Since: now.Add(-1 * time.Hour).Format(time.RFC3339),
+			Until: now.Add(1 * time.Hour).Format(time.RFC3339)})
+
+	// Rollup path.
+	ps.analyticsSQLBackend = true
+	// Drop the cached in-memory result so the flag path takes over.
+	ps.cacheMu.Lock()
+	ps.distCache = map[string]*cachedResult{}
+	ps.cacheMu.Unlock()
+	rollupRes := ps.GetAnalyticsDistanceWithWindow("",
+		TimeWindow{Since: now.Add(-1 * time.Hour).Format(time.RFC3339),
+			Until: now.Add(1 * time.Hour).Format(time.RFC3339)})
+
+	memTotal := memRes["summary"].(map[string]interface{})["totalHops"].(int)
+	rollupTotal := rollupRes["summary"].(map[string]interface{})["totalHops"].(int)
+	if memTotal != rollupTotal {
+		t.Fatalf("totalHops rollup=%d in-memory=%d", rollupTotal, memTotal)
+	}
+	if rollupTotal != 2 {
+		t.Fatalf("totalHops=%d want 2", rollupTotal)
+	}
+	memPaths := memRes["summary"].(map[string]interface{})["totalPaths"].(int)
+	rollupPaths := rollupRes["summary"].(map[string]interface{})["totalPaths"].(int)
+	if memPaths != rollupPaths {
+		t.Fatalf("totalPaths rollup=%d in-memory=%d", rollupPaths, memPaths)
+	}
+	if rollupPaths != 1 {
+		t.Fatalf("totalPaths=%d want 1", rollupPaths)
 	}
 }
 
